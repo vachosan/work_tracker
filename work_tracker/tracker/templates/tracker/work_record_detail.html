@@ -1,0 +1,18 @@
+<h1>{{ work_record.title }}</h1>
+<p>{{ work_record.description }}</p>
+<p>Start Time: {{ work_record.start_time }}</p>
+<p>End Time: {{ work_record.end_time }}</p>
+<p>Note: {{ work_record.note }}</p>
+
+<h2>Add Photo Documentation</h2>
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ photo_form.as_p }}
+    <button type="submit">Upload Photo</button>
+</form>
+
+<h2>Photos</h2>
+{% for photo in work_record.photos.all %}
+    <img src="{{ photo.photo.url }}" alt="{{ photo.description }}">
+    <p>{{ photo.description }}</p>
+{% endfor %}
