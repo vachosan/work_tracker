@@ -16,10 +16,12 @@ Including another URLconf
 """
 from django.urls import path, include
 from django.views.generic import RedirectView
+from django.conf import settings
+from django.conf.urls.static import static
 
 urlpatterns = [
     # path('admin/', admin.site.urls),
     path('tracker/', include('tracker.urls')),  # Všechny cesty pro tracker
     path('', RedirectView.as_view(url='tracker/create/')),  # Přesměrování z kořenové adresy
-]
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)  # Přidání cesty pro soubory v MEDIA_ROOT
 
