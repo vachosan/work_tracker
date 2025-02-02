@@ -18,9 +18,8 @@ from django.urls import path, include
 from django.views.generic import RedirectView
 
 urlpatterns = [
-    #path('admin/', admin.site.urls),
-    path('tracker/', include('tracker.urls')),
-    path('create/', include('tracker.urls')),  # Cesta pro vytváření úkonů
-    path('', RedirectView.as_view(url='create/')),  # Přesměrování z kořenové adresy
+    # path('admin/', admin.site.urls),
+    path('tracker/', include('tracker.urls')),  # Všechny cesty pro tracker
+    path('', RedirectView.as_view(url='tracker/create/')),  # Přesměrování z kořenové adresy
 ]
 
