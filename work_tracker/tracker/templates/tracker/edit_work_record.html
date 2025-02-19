@@ -1,0 +1,9 @@
+<h1>Upravit pracovní úkon</h1>
+<form method="post">
+    {% csrf_token %}
+    {{ work_record_form.as_p }}
+    <button type="submit">Uložit změny</button>
+</form>
+<a href="{% url 'work_record_detail' work_record_form.instance.pk %}">
+    <button>Zpět na detail</button>
+</a>

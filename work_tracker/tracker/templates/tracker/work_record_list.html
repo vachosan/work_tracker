@@ -1,0 +1,13 @@
+<h1>Seznam pracovních úkonů</h1>
+<ul>
+    {% for work_record in work_records %}
+        <li>
+            <a href="{% url 'work_record_detail' work_record.pk %}">
+                {{ work_record.title }} ({{ work_record.date }})
+            </a>
+        </li>
+    {% endfor %}
+</ul>
+<a href="{% url 'create_work_record' %}">
+    <button>Zadat nový úkon</button>
+</a>

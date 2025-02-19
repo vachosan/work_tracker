@@ -7,3 +7,15 @@
     <img src="{{ photo.photo.url }}" alt="{{ photo.description }}" style="max-width: 300px;">
     <p>{{ photo.description }}</p>
 {% endfor %}
+
+<hr>
+<h3>Akce</h3>
+<a href="{% url 'create_work_record' %}">
+    <button>Zadat další úkon</button>
+</a>
+<a href="{% url 'edit_work_record' work_record.pk %}">
+    <button>Editovat úkon</button>
+</a>
+<a href="{% url 'work_record_list' %}">
+    <button>Zpět na seznam</button>
+</a>
