@@ -1,6 +1,12 @@
-<h1>Create Work Record</h1>
-<form method="post">
+<h1>Vytvořit pracovní úkon</h1>
+<form method="post" enctype="multipart/form-data">
     {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">Save</button>
+
+    <h2>Údaje o úkonu</h2>
+    {{ work_record_form.as_p }}
+
+    <h2>Fotodokumentace</h2>
+    {{ photo_form.as_p }}
+
+    <button type="submit">Uložit</button>
 </form>
