@@ -1,9 +1,37 @@
 <h1>Upravit pracovní úkon</h1>
+
+<h2>Údaje o úkonu</h2>
 <form method="post">
     {% csrf_token %}
     {{ work_record_form.as_p }}
-    <button type="submit">Uložit změny</button>
+    <button type="submit" name="save_work_record">Uložit změny</button>
 </form>
-<a href="{% url 'work_record_detail' work_record_form.instance.pk %}">
+
+<hr>
+<h2>Fotodokumentace</h2>
+
+<h3>Přidat novou fotku</h3>
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ photo_form.as_p }}
+    <button type="submit" name="add_photo">Přidat fotku</button>
+</form>
+
+<h3>Stávající fotky</h3>
+<ul>
+    {% for photo in photos %}
+        <li>
+            <img src="{{ photo.photo.url }}" alt="{{ photo.description }}" style="max-width: 300px;">
+            <p>{{ photo.description }}</p>
+            <form method="post" action="{% url 'delete_photo' photo.pk %}">
+                {% csrf_token %}
+                <button type="submit">Smazat</button>
+            </form>
+        </li>
+    {% endfor %}
+</ul>
+
+<hr>
+<a href="{% url 'work_record_detail' work_record.pk %}">
     <button>Zpět na detail</button>
 </a>

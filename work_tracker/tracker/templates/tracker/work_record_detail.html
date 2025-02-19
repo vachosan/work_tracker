@@ -3,10 +3,23 @@
 <p>Datum: {{ work_record.date }}</p>
 
 <h2>Fotodokumentace</h2>
-{% for photo in work_record.photos.all %}
-    <img src="{{ photo.photo.url }}" alt="{{ photo.description }}" style="max-width: 300px;">
-    <p>{{ photo.description }}</p>
-{% endfor %}
+
+<h3>Přidat novou fotku</h3>
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ photo_form.as_p }}
+    <button type="submit">Přidat fotku</button>
+</form>
+
+<h3>Stávající fotky</h3>
+<ul>
+    {% for photo in photos %}
+        <li>
+            <img src="{{ photo.photo.url }}" alt="{{ photo.description }}" style="max-width: 300px;">
+            <p>{{ photo.description }}</p>
+        </li>
+    {% endfor %}
+</ul>
 
 <hr>
 <h3>Akce</h3>
