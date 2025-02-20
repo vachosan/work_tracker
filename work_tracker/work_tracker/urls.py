@@ -19,10 +19,13 @@ from django.views.generic import RedirectView
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.contrib.auth import views as auth_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('tracker/', include('tracker.urls')),  # Všechny cesty pro tracker
     path('', RedirectView.as_view(url='tracker/list/')),  # Přesměrování z kořenové adresy
+    path('accounts/login/', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),
+
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)  # Přidání cesty pro soubory v MEDIA_ROOT
 

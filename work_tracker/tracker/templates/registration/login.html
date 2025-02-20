@@ -1,0 +1,14 @@
+{% extends 'tracker/base.html' %}
+
+{% block title %}Přihlášení{% endblock %}
+
+{% block content %}
+<h1>Přihlášení</h1>
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Přihlásit se</button>
+</form>
+
+<p>Nemáš účet? <a href="{% url 'signup' %}">Zaregistruj se</a></p>
+{% endblock %}

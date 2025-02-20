@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from django.contrib.auth import views as auth_views
 
 urlpatterns = [
     path('create/', views.create_work_record, name='create_work_record'),
@@ -11,4 +12,8 @@ urlpatterns = [
     path('project/create/', views.create_project, name='create_project'),
     path('project/<int:pk>/close/', views.close_project, name='close_project'),
     path('project/<int:pk>/activate/', views.activate_project, name='activate_project'),
+    path('accounts/login/', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),
+    path('accounts/signup/', views.signup, name='signup'),
+    path('accounts/logout/', auth_views.LogoutView.as_view(), name='logout'),
+    
 ]

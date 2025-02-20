@@ -4,6 +4,13 @@
 
 {% block content %}
 <h1>Vytvořit pracovní úkon</h1>
+
+<form method="post">
+    {% csrf_token %}
+    {{ work_record_form.as_p }}
+    <button type="submit" name="save_work_record">Uložit změny</button>
+</form>
+
 <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
     <label for="id_photo">Vyfotit novou fotku:</label>

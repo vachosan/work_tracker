@@ -22,8 +22,8 @@ class WorkRecord(models.Model):
         return self.title
 
 class PhotoDocumentation(models.Model):
-    work_record = models.ForeignKey(WorkRecord, related_name='photos', on_delete=models.CASCADE)
-    photo = models.ImageField(upload_to='photos/', null=True, blank=True)
+    work_record = models.ForeignKey("WorkRecord", related_name="photos", on_delete=models.CASCADE)
+    photo = models.ImageField(upload_to="photos/", null=True, blank=True, default="photos/default.jpg")
     description = models.CharField(max_length=200, blank=True)
 
     def __str__(self):

@@ -9,7 +9,7 @@
     {{ work_record_form.as_p }}
     <button type="submit" name="save_work_record">Uložit změny</button>
 </form>
-
+<!--
 <h2>Fotodokumentace</h2>
 <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
@@ -19,20 +19,25 @@
     <input type="text" id="id_description" name="description">
     <button type="submit">Přidat fotku</button>
 </form>
-
+-->
 <h3>Stávající fotky</h3>
 <ul>
     {% for photo in work_record.photos.all %}
-        <li>
-            <img src="{{ photo.photo.url }}" alt="{{ photo.description }}" style="max-width: 300px;">
-            <p>{{ photo.description }}</p>
-            <form method="post" action="{% url 'delete_photo' photo.pk %}">
-                {% csrf_token %}
-                <button type="submit">Smazat</button>
-            </form>
-        </li>
+        {% if photo.photo %}
+            <li>
+                <img src="{{ photo.photo.url }}" alt="{{ photo.description }}" style="max-width: 300px;">
+                <p>{{ photo.description }}</p>
+                <form method="post" action="{% url 'delete_photo' photo.pk %}">
+                    {% csrf_token %}
+                    <button type="submit">Smazat</button>
+                </form>
+            </li>
+        {% else %}
+            <li><p>Fotografie není dostupná.</p></li>
+        {% endif %}
     {% endfor %}
 </ul>
+
 
 <a href="{% url 'work_record_detail' work_record.pk %}">
     <button>Zpět na detail</button>

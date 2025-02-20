@@ -21,10 +21,16 @@
 <h3>Fotky</h3>
 <ul>
     {% for photo in work_record.photos.all %}
-        <li>
-            <img src="{{ photo.photo.url }}" alt="{{ photo.description }}" style="max-width: 300px;">
-            <p>{{ photo.description }}</p>
-        </li>
+        {% if photo.photo %}
+            <li>
+                <img src="{{ photo.photo.url }}" alt="{{ photo.description }}" style="max-width: 300px;">
+                <p>{{ photo.description }}</p>
+            </li>
+        {% else %}
+            <li>
+                <p>Žádná fotografie k dispozici.</p>
+            </li>
+        {% endif %}
     {% endfor %}
 </ul>
 
