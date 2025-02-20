@@ -1,6 +1,27 @@
 <h1>Seznam pracovních úkonů</h1>
+
+<a href="{% url 'create_project' %}">
+    <button>Vytvořit nový projekt</button>
+</a>
+
+{% for project in projects %}
+    <h2>{{ project.name }}</h2>
+    <p>{{ project.description }}</p>
+
+    <ul>
+        {% for work_record in project.work_records.all %}
+            <li>
+                <a href="{% url 'work_record_detail' work_record.pk %}">
+                    {{ work_record.title }} ({{ work_record.date }})
+                </a>
+            </li>
+        {% endfor %}
+    </ul>
+{% endfor %}
+
+<h2>Úkony bez projektu</h2>
 <ul>
-    {% for work_record in work_records %}
+    {% for work_record in work_records_without_project %}
         <li>
             <a href="{% url 'work_record_detail' work_record.pk %}">
                 {{ work_record.title }} ({{ work_record.date }})
@@ -8,6 +29,7 @@
         </li>
     {% endfor %}
 </ul>
+
 <a href="{% url 'create_work_record' %}">
     <button>Zadat nový úkon</button>
 </a>

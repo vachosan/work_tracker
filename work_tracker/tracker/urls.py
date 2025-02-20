@@ -7,4 +7,6 @@ urlpatterns = [
     path('<int:pk>/edit/', views.edit_work_record, name='edit_work_record'),
     path('photo/<int:pk>/delete/', views.delete_photo, name='delete_photo'),
     path('list/', views.work_record_list, name='work_record_list'),
+    path('project/create/', views.create_project, name='create_project'),  # Nová cesta
+    
 ]
