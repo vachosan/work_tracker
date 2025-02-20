@@ -1,4 +1,13 @@
+{% extends 'tracker/base.html' %}
+
+{% block title %}Seznam úkonů{% endblock %}
+
+{% block content %}
 <h1>Seznam pracovních úkonů</h1>
+
+<a href="{% url 'create_work_record' %}">
+    <button>Přidat úkon</button>
+</a>
 
 <a href="{% url 'create_project' %}">
     <button>Vytvořit nový projekt</button>
@@ -7,6 +16,20 @@
 {% for project in projects %}
     <h2>{{ project.name }}</h2>
     <p>{{ project.description }}</p>
+
+    <a href="{% url 'create_work_record_for_project' project.pk %}">
+        <button>Přidat úkon k tomuto projektu</button>
+    </a>
+
+    {% if not project.is_closed %}
+        <a href="{% url 'close_project' project.pk %}">
+            <button>Uzavřít projekt</button>
+        </a>
+    {% else %}
+        <a href="{% url 'activate_project' project.pk %}">
+            <button>Aktivovat projekt</button>
+        </a>
+    {% endif %}
 
     <ul>
         {% for work_record in project.work_records.all %}
@@ -29,7 +52,4 @@
         </li>
     {% endfor %}
 </ul>
-
-<a href="{% url 'create_work_record' %}">
-    <button>Zadat nový úkon</button>
-</a>
+{% endblock %}

@@ -7,13 +7,17 @@ def create_project(request):
     if request.method == 'POST':
         form = ProjectForm(request.POST)
         if form.is_valid():
-            form.save()
-            return redirect('work_record_list')  # Přesměrování na seznam úkonů
+            project = form.save(commit=False)
+            project.is_closed = False  # Nový projekt je automaticky aktivní
+            project.save()
+            return redirect('work_record_list')
     else:
         form = ProjectForm()
     return render(request, 'tracker/create_project.html', {'form': form})
 
-def create_work_record(request):
+
+
+def create_work_record(request, project_id=None):
     if request.method == 'POST':
         work_record_form = WorkRecordForm(request.POST)
         photo_form = PhotoDocumentationForm(request.POST, request.FILES)
@@ -21,15 +25,19 @@ def create_work_record(request):
         if work_record_form.is_valid():
             work_record = work_record_form.save()
 
-            # Kontrola, zda je fotka součástí formuláře
-            if 'photo' in request.FILES and photo_form.is_valid():
+            if 'photo' in request.FILES:
                 photo = photo_form.save(commit=False)
                 photo.work_record = work_record
                 photo.save()
 
             return redirect('work_record_detail', pk=work_record.pk)
     else:
-        work_record_form = WorkRecordForm()
+        initial_data = {}
+        if project_id:
+            project = Project.objects.get(pk=project_id)
+            initial_data['project'] = project  # Předvyplní projekt
+
+        work_record_form = WorkRecordForm(initial=initial_data)
         photo_form = PhotoDocumentationForm()
 
     return render(request, 'tracker/create_work_record.html', {
@@ -119,3 +127,15 @@ def delete_photo(request, pk):
     work_record_pk = photo.work_record.pk
     photo.delete()
     return redirect('edit_work_record', pk=work_record_pk)
+
+def close_project(request, pk):
+    project = get_object_or_404(Project, pk=pk)
+    project.is_closed = True
+    project.save()
+    return redirect('work_record_list')
+
+def activate_project(request, pk):
+    project = get_object_or_404(Project, pk=pk)
+    project.is_closed = False  # Nastaví projekt jako aktivní
+    project.save()
+    return redirect('work_record_list')

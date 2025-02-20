@@ -4,6 +4,7 @@ from django.utils import timezone
 class Project(models.Model):
     name = models.CharField(max_length=200, verbose_name="Název projektu")
     description = models.TextField(verbose_name="Popis projektu", blank=True)
+    is_closed = models.BooleanField(default=False, verbose_name="Uzavřený projekt")
 
     def __str__(self):
         return self.name

@@ -1,25 +1,28 @@
-<h1>Upravit pracovní úkon</h1>
+{% extends 'tracker/base.html' %}
 
-<h2>Údaje o úkonu</h2>
+{% block title %}Editovat úkon - {{ work_record.title }}{% endblock %}
+
+{% block content %}
+<h1>Editovat úkon</h1>
 <form method="post">
     {% csrf_token %}
     {{ work_record_form.as_p }}
     <button type="submit" name="save_work_record">Uložit změny</button>
 </form>
 
-<hr>
 <h2>Fotodokumentace</h2>
-
-<h3>Přidat novou fotku</h3>
 <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
-    {{ photo_form.as_p }}
-    <button type="submit" name="add_photo">Přidat fotku</button>
+    <label for="id_photo">Vyfotit novou fotku:</label>
+    <input type="file" id="id_photo" name="photo" accept="image/*" capture="environment">
+    <label for="id_description">Popis fotky:</label>
+    <input type="text" id="id_description" name="description">
+    <button type="submit">Přidat fotku</button>
 </form>
 
 <h3>Stávající fotky</h3>
 <ul>
-    {% for photo in photos %}
+    {% for photo in work_record.photos.all %}
         <li>
             <img src="{{ photo.photo.url }}" alt="{{ photo.description }}" style="max-width: 300px;">
             <p>{{ photo.description }}</p>
@@ -31,7 +34,7 @@
     {% endfor %}
 </ul>
 
-<hr>
 <a href="{% url 'work_record_detail' work_record.pk %}">
     <button>Zpět na detail</button>
 </a>
+{% endblock %}

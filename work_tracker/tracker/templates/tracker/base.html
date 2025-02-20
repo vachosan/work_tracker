@@ -1,0 +1,22 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Work Tracker{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'tracker/styles.css' %}">
+</head>
+<body>
+    <div class="navbar">
+        <a href="{% url 'work_record_list' %}">Domů</a>
+        <a href="{% url 'create_work_record' %}">Přidat úkon</a>
+        <a href="{% url 'create_project' %}">Vytvořit projekt</a>
+    </div>
+
+    <div class="content">
+        {% block content %}
+        {% endblock %}
+    </div>
+</body>
+</html>

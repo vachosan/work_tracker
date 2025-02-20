@@ -11,8 +11,14 @@ class WorkRecordForm(forms.ModelForm):
         model = WorkRecord
         fields = ['title', 'description', 'date', 'project']
         widgets = {
-            'date': forms.DateInput(attrs={'type': 'date'}),  # Použij HTML5 date picker
+            'date': forms.DateInput(attrs={'type': 'date'}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        print("Filtruji projekty: pouze aktivní")
+        self.fields['project'].queryset = Project.objects.filter(is_closed=False)  # Pouze aktivní projekty
+
 class PhotoDocumentationForm(forms.ModelForm):
     class Meta:
         model = PhotoDocumentation

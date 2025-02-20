@@ -1,12 +1,19 @@
+{% extends 'tracker/base.html' %}
+
+{% block title %}Vytvořit úkon{% endblock %}
+
+{% block content %}
 <h1>Vytvořit pracovní úkon</h1>
 <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
-
-    <h2>Údaje o úkonu</h2>
-    {{ work_record_form.as_p }}
-
-    <h2>Fotodokumentace (volitelné)</h2>
-    {{ photo_form.as_p }}
-
-    <button type="submit">Uložit úkon</button>
+    <label for="id_photo">Vyfotit novou fotku:</label>
+    <input type="file" id="id_photo" name="photo" accept="image/*" capture="environment">
+    <label for="id_description">Popis fotky:</label>
+    <input type="text" id="id_description" name="description">
+    <button type="submit">Přidat fotku</button>
 </form>
+
+<a href="{% url 'work_record_list' %}">
+    <button class="btn-back">Zpět na seznam</button>
+</a>
+{% endblock %}

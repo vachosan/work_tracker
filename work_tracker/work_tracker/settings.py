@@ -32,8 +32,11 @@ SECRET_KEY = 'django-insecure-rt-r2h%h7$%&$%+&avaqa1qq19b1p#n8i&597+^2v(gaq_j#_*
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
-
+ALLOWED_HOSTS = [
+    '10.0.0.224',  # Přidej IP adresu
+    'localhost',   # Lokální vývoj
+    '127.0.0.1',   # Lokální vývoj
+]
 
 # Application definition
 
@@ -124,7 +127,9 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = 'static/'
-
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'static'),  # Přidá cestu k tvé složce static
+]
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
