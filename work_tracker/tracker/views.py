@@ -15,6 +15,9 @@ def logout_view(request):
     logout(request)
     return redirect('login')
 
+def home(request):
+    return render(request, 'home.html')  # Vykreslí šablonu `home.html`
+
 def signup(request):
     if request.method == 'POST':
         form = CustomUserCreationForm(request.POST)

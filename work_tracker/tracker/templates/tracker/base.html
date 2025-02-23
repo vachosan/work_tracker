@@ -1,22 +1,40 @@
 {% load static %}
+
 <!DOCTYPE html>
 <html lang="cs">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Work Tracker{% endblock %}</title>
-    <link rel="stylesheet" href="{% static 'tracker/styles.css' %}">
+    <title>Work Tracker</title>
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <!-- Přidejte zde své CSS soubory nebo odkazy na Bootstrap, pokud používáte -->
 </head>
 <body>
-    <div class="navbar">
-        <a href="{% url 'work_record_list' %}">Domů</a>
-        <a href="{% url 'create_work_record' %}">Přidat úkon</a>
-        <a href="{% url 'create_project' %}">Vytvořit projekt</a>
-    </div>
+    <header>
+        <nav>
+            <ul>
+                <li><a href="{% url 'home' %}">Domů</a></li>
+                <!-- Další odkazy v navigaci -->
+                {% if user.is_authenticated %}
+                    <li><form action="{% url 'logout' %}" method="post">
+                        {% csrf_token %}
+                        <button type="submit">Odhlásit</button>
+                    </form></li>
+                {% else %}
+                    <li><a href="{% url 'login' %}">Přihlásit</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+    </header>
 
-    <div class="content">
+    <main>
         {% block content %}
+        <!-- Zde se bude vkládat obsah stránek -->
         {% endblock %}
-    </div>
+    </main>
+
+    <footer>
+        <!-- Patička stránky -->
+    </footer>
 </body>
 </html>
