@@ -1,69 +1,81 @@
 {% extends 'tracker/base.html' %}
-
 {% block title %}Seznam úkonů{% endblock %}
 
 {% block content %}
-<h1>Seznam pracovních úkonů</h1>
+<h1 class="mb-4">Seznam pracovních úkonů</h1>
 
-<a href="{% url 'create_work_record' %}">
-  <button>Přidat úkon</button>
-</a>
-
-<a href="{% url 'create_project' %}">
-  <button>Vytvořit nový projekt</button>
-</a>
-
-<a href="{% url 'closed_projects_list' %}">
-  <button>Uzavřené projekty</button>
-</a>
+<!-- horní lišta: vlevo nový projekt, vpravo uzavřené projekty -->
+<div class="mb-3 d-flex justify-content-between align-items-center">
+  <div>
+    <a href="{% url 'create_project' %}" class="btn btn-success">
+      <i class="bi bi-folder-plus"></i> Vytvořit nový projekt
+    </a>
+  </div>
+  <div>
+    <a href="{% url 'closed_projects_list' %}" class="btn btn-secondary">
+      <i class="bi bi-archive"></i> Uzavřené projekty
+    </a>
+  </div>
+</div>
 
 {% for project in projects %}
-  <h2>{{ project.name }}</h2>
-  <p>{{ project.description }}</p>
+<div id="project-{{ project.pk }}" class="card mb-4 shadow-sm">
+  <div class="card-body">
+    <!-- hlavička projektu: vlevo název+popis, vpravo tlačítka (vždy vpravo) -->
+    <div class="d-flex align-items-start gap-3 flex-wrap">
+      <div class="flex-grow-1 min-w-0">
+        <h4 class="mb-1 text-truncate">{{ project.name }}</h4>
+        {% if project.description %}
+          <p class="text-muted mb-0 small">{{ project.description }}</p>
+        {% endif %}
+      </div>
 
-  {% if project.is_foreman %}
-    <a href="{% url 'edit_project' project.pk %}">
-      <button>Editovat projekt</button>
-    </a>
-  {% endif %}
+      <!-- tlačítka vpravo; ms-auto je drží u pravého okraje -->
+      <div class="d-flex ms-auto align-items-center gap-2 flex-wrap justify-content-end">
+        {% if project.is_member and not project.is_closed %}
+          <a href="{% url 'create_work_record_for_project' project.pk %}"
+             class="btn btn-primary fw-bold">
+            <i class="bi bi-plus-lg"></i> Přidat úkon
+          </a>
+        {% endif %}
 
-  {% if project.is_member and not project.is_closed %}
-    <a href="{% url 'create_work_record_for_project' project.pk %}">
-      <button>Přidat úkon k tomuto projektu</button>
-    </a>
-  {% endif %}
+        {% if project.is_foreman %}
+          <a href="{% url 'edit_project' project.pk %}"
+             class="btn btn-outline-warning">
+            <i class="bi bi-pencil"></i> Editovat
+          </a>
 
-  {% if project.is_foreman and not project.is_closed %}
-    <a href="{% url 'close_project' project.pk %}">
-      <button>Uzavřít projekt</button>
-    </a>
-  {% endif %}
+          {% if not project.is_closed %}
+            <a href="{% url 'close_project' project.pk %}"
+               class="btn btn-outline-danger">
+              <i class="bi bi-lock"></i> Uzavřít
+            </a>
+          {% else %}
+            <a href="{% url 'activate_project' project.pk %}"
+               class="btn btn-outline-success">
+              <i class="bi bi-unlock"></i> Aktivovat
+            </a>
+          {% endif %}
+        {% endif %}
+      </div>
+    </div>
 
-  <ul>
-    {% for work_record in project.work_records.all %}
-      <li>
-        <a href="{% url 'work_record_detail' work_record.pk %}">
-          {{ work_record.title }} ({{ work_record.date }})
-        </a>
-      </li>
-    {% empty %}
-      <li>Žádné úkony.</li>
-    {% endfor %}
-  </ul>
-
-  <hr>
+    <!-- seznam úkonů -->
+    {% if project.work_records.all %}
+      <ul class="list-group list-group-flush mt-3">
+        {% for work_record in project.work_records.all %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <a href="{% url 'work_record_detail' work_record.pk %}">
+              {{ work_record.title|default:"Bez názvu" }}
+            </a>
+            <small class="text-muted">{{ work_record.date|date:"d.m.Y" }}</small>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="text-muted mt-2"><em>Žádné úkony</em></p>
+    {% endif %}
+  </div>
+</div>
 {% endfor %}
-
-<h2>Úkony bez projektu</h2>
-<ul>
-  {% for work_record in work_records_without_project %}
-    <li>
-      <a href="{% url 'work_record_detail' work_record.pk %}">
-        {{ work_record.title }} ({{ work_record.date }})
-      </a>
-    </li>
-  {% empty %}
-    <li>Žádné úkony.</li>
-  {% endfor %}
-</ul>
 {% endblock %}

@@ -1,16 +1,26 @@
 {% extends 'tracker/base.html' %}
-
-{% block title %}Vytvořit projekt{% endblock %}
+{% block title %}Nový projekt{% endblock %}
 
 {% block content %}
-<h1>Vytvořit nový projekt</h1>
-<form method="post">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">Uložit projekt</button>
-</form>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h4 m-0">Vytvořit nový projekt</h1>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'work_record_list' %}">
+    <i class="bi bi-arrow-left"></i> Zpět na hlavní
+  </a>
+</div>
 
-<a href="{% url 'work_record_list' %}">
-    <button>Zpět na seznam</button>
-</a>
+<form method="post" class="vstack gap-3">
+  {% csrf_token %}
+  <div class="card border-0 shadow-sm">
+    <div class="card-body vstack gap-3">
+      {{ form.as_p }}
+      <div class="d-flex gap-2">
+        <button class="btn btn-success" type="submit">
+          <i class="bi bi-folder-plus"></i> Vytvořit projekt
+        </button>
+        <a class="btn btn-outline-secondary" href="{% url 'work_record_list' %}">Zrušit</a>
+      </div>
+    </div>
+  </div>
+</form>
 {% endblock %}

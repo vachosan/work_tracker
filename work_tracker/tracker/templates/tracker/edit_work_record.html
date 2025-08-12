@@ -1,45 +1,61 @@
 {% extends 'tracker/base.html' %}
-
-{% block title %}Editovat úkon - {{ work_record.title }}{% endblock %}
+{% block title %}Upravit úkon{% endblock %}
 
 {% block content %}
-<h1>Editovat úkon</h1>
-<form method="post">
-    {% csrf_token %}
-    {{ work_record_form.as_p }}
-    <button type="submit" name="save_work_record">Uložit změny</button>
-</form>
-<!--
-<h2>Fotodokumentace</h2>
-<form method="post" enctype="multipart/form-data">
-    {% csrf_token %}
-    <label for="id_photo">Vyfotit novou fotku:</label>
-    <input type="file" id="id_photo" name="photo" accept="image/*" capture="environment">
-    <label for="id_description">Popis fotky:</label>
-    <input type="text" id="id_description" name="description">
-    <button type="submit">Přidat fotku</button>
-</form>
--->
-<h3>Stávající fotky</h3>
-<ul>
-    {% for photo in work_record.photos.all %}
-        {% if photo.photo %}
-            <li>
-                <img src="{{ photo.photo.url }}" alt="{{ photo.description }}" style="max-width: 300px;">
-                <p>{{ photo.description }}</p>
-                <form method="post" action="{% url 'delete_photo' photo.pk %}">
-                    {% csrf_token %}
-                    <button type="submit">Smazat</button>
-                </form>
-            </li>
-        {% else %}
-            <li><p>Fotografie není dostupná.</p></li>
-        {% endif %}
-    {% endfor %}
-</ul>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h4 m-0">Upravit úkon</h1>
+  <a href="{% url 'work_record_list' %}#project-{{ work_record.project_id }}"
+     class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left"></i> Zpět na projekt
+  </a>
+</div>
 
+<form method="post" class="vstack gap-3">
+  {% csrf_token %}
 
-<a href="{% url 'work_record_detail' work_record.pk %}">
-    <button>Zpět na detail</button>
-</a>
+  <div class="card border-0 shadow-sm">
+    <div class="card-body vstack gap-3">
+      <h2 class="h6 m-0">Údaje o úkonu</h2>
+      {{ work_record_form.as_p }}
+      <div class="d-flex gap-2">
+        <button class="btn btn-primary" name="save_work_record" type="submit">
+          <i class="bi bi-save"></i> Uložit změny
+        </button>
+        <a href="{% url 'work_record_list' %}#project-{{ work_record.project_id }}"
+           class="btn btn-outline-secondary">Zrušit</a>
+      </div>
+    </div>
+  </div>
+</form>
+
+<hr class="my-4">
+
+<h2 class="h5 mb-3">Fotodokumentace</h2>
+<div class="row g-3 mb-4">
+  {% for photo in photos %}
+    <div class="col-6 col-md-3 text-center">
+      <a href="{{ photo.photo.url }}" target="_blank">
+        <img src="{{ photo.photo.url }}" alt="{{ photo.description }}"
+             class="img-fluid rounded shadow-sm">
+      </a>
+      <form method="post" action="{% url 'delete_photo' photo.pk %}" class="mt-2">
+        {% csrf_token %}
+        <button class="btn btn-sm btn-outline-danger" type="submit">
+          <i class="bi bi-trash"></i> Smazat
+        </button>
+      </form>
+    </div>
+  {% empty %}
+    <p class="text-muted">Žádné fotky.</p>
+  {% endfor %}
+</div>
+
+<h2 class="h5 mb-3">Přidat novou fotku</h2>
+<form method="post" enctype="multipart/form-data" class="vstack gap-2">
+  {% csrf_token %}
+  {{ photo_form.as_p }}
+  <button class="btn btn-success" name="add_photo" type="submit">
+    <i class="bi bi-upload"></i> Nahrát
+  </button>
+</form>
 {% endblock %}

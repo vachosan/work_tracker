@@ -1,26 +1,35 @@
 {% extends 'tracker/base.html' %}
-
-{% block title %}Vytvořit úkon{% endblock %}
+{% block title %}Nový úkon{% endblock %}
 
 {% block content %}
-<h1>Vytvořit pracovní úkon</h1>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h4 m-0">Přidat nový úkon</h1>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'work_record_list' %}">
+    <i class="bi bi-arrow-left"></i> Zpět na hlavní
+  </a>
+</div>
 
-<form method="post">
-    {% csrf_token %}
-    {{ work_record_form.as_p }}
-    <button type="submit" name="save_work_record">Uložit změny</button>
+<form method="post" enctype="multipart/form-data" class="vstack gap-3">
+  {% csrf_token %}
+  <div class="card border-0 shadow-sm">
+    <div class="card-body vstack gap-3">
+      <h2 class="h6 m-0">Údaje o úkonu</h2>
+      {{ work_record_form.as_p }}
+    </div>
+  </div>
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-body vstack gap-3">
+      <h2 class="h6 m-0">Fotodokumentace</h2>
+      {{ photo_form.as_p }}
+    </div>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button class="btn btn-primary" type="submit">
+      <i class="bi bi-save"></i> Uložit úkon
+    </button>
+    <a href="{% url 'work_record_list' %}" class="btn btn-outline-secondary">Zrušit</a>
+  </div>
 </form>
-
-<form method="post" enctype="multipart/form-data">
-    {% csrf_token %}
-    <label for="id_photo">Vyfotit novou fotku:</label>
-    <input type="file" id="id_photo" name="photo" accept="image/*" capture="environment">
-    <label for="id_description">Popis fotky:</label>
-    <input type="text" id="id_description" name="description">
-    <button type="submit">Přidat fotku</button>
-</form>
-
-<a href="{% url 'work_record_list' %}">
-    <button class="btn-back">Zpět na seznam</button>
-</a>
 {% endblock %}

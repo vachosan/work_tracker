@@ -5,6 +5,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
 from django.db.models import Max, F
+from django.urls import reverse
 
 from .models import Project, WorkRecord, PhotoDocumentation, ProjectMembership
 from .forms import (
@@ -256,6 +257,7 @@ def work_record_detail(request, pk):
 def edit_work_record(request, pk):
     work_record = get_object_or_404(WorkRecord, pk=pk)
 
+    # přístup jen pro členy projektu
     if work_record.project_id and not user_can_view_project(request.user, work_record.project_id):
         return redirect('work_record_list')
 
@@ -266,8 +268,12 @@ def edit_work_record(request, pk):
         if 'save_work_record' in request.POST:
             work_record_form = WorkRecordForm(request.POST, instance=work_record)
             if work_record_form.is_valid():
-                work_record_form.save()
-                return redirect('work_record_detail', pk=work_record.pk)
+                work_record = work_record_form.save()
+                from django.urls import reverse
+                url = reverse('work_record_list')
+                if work_record.project_id:
+                    url = f"{url}#project-{work_record.project_id}"
+                return redirect(url)
 
         elif 'add_photo' in request.POST:
             photo_form = PhotoDocumentationForm(request.POST, request.FILES)

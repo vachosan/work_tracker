@@ -1,43 +1,57 @@
 {% extends 'tracker/base.html' %}
-
-{% block title %}Detail úkonu - {{ work_record.title }}{% endblock %}
+{% block title %}Detail úkonu{% endblock %}
 
 {% block content %}
-<h1>{{ work_record.title }}</h1>
-<p>{{ work_record.description }}</p>
-<p>Datum: {{ work_record.date }}</p>
-<p>Projekt: {{ work_record.project.name|default:"Bez projektu" }}</p>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h4 m-0">{{ work_record.title|default:"Bez názvu" }}</h1>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm"
+       href="{% url 'work_record_list' %}#project-{{ work_record.project_id }}">
+      <i class="bi bi-arrow-left"></i> Zpět na projekt
+    </a>
+    <a class="btn btn-outline-primary btn-sm"
+       href="{% url 'edit_work_record' work_record.pk %}">
+      <i class="bi bi-pencil"></i> Upravit
+    </a>
+  </div>
+</div>
 
-<h2>Fotodokumentace</h2>
-<form method="post" enctype="multipart/form-data">
-    {% csrf_token %}
-    <label for="id_photo">Vyfotit novou fotku:</label>
-    <input type="file" id="id_photo" name="photo" accept="image/*" capture="environment">
-    <label for="id_description">Popis fotky:</label>
-    <input type="text" id="id_description" name="description">
-    <button type="submit">Přidat fotku</button>
-</form>
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    {% if work_record.description %}
+      <p class="mb-2">{{ work_record.description }}</p>
+    {% else %}
+      <p class="text-muted mb-2">Bez popisu.</p>
+    {% endif %}
+    <small class="text-muted">Datum: {{ work_record.date|date:"d.m.Y" }}</small>
+  </div>
+</div>
 
-<h3>Fotky</h3>
-<ul>
-    {% for photo in work_record.photos.all %}
-        {% if photo.photo %}
-            <li>
-                <img src="{{ photo.photo.url }}" alt="{{ photo.description }}" style="max-width: 300px;">
-                <p>{{ photo.description }}</p>
-            </li>
-        {% else %}
-            <li>
-                <p>Žádná fotografie k dispozici.</p>
-            </li>
+<h2 class="h5 mb-3">Fotodokumentace</h2>
+{% if photos %}
+  <div class="row g-3 mb-4">
+    {% for photo in photos %}
+      <div class="col-6 col-md-3">
+        <a href="{{ photo.photo.url }}" target="_blank" class="d-block">
+          <img src="{{ photo.photo.url }}" alt="{{ photo.description }}"
+               class="img-fluid rounded shadow-sm">
+        </a>
+        {% if photo.description %}
+          <small class="d-block mt-1 text-muted">{{ photo.description }}</small>
         {% endif %}
+      </div>
     {% endfor %}
-</ul>
+  </div>
+{% else %}
+  <p class="text-muted">Žádné fotky.</p>
+{% endif %}
 
-<a href="{% url 'edit_work_record' work_record.pk %}">
-    <button>Editovat úkon</button>
-</a>
-<a href="{% url 'work_record_list' %}">
-    <button>Zpět na seznam</button>
-</a>
+<h2 class="h5 mb-3">Přidat fotku</h2>
+<form method="post" enctype="multipart/form-data" class="vstack gap-2">
+  {% csrf_token %}
+  {{ photo_form.as_p }}
+  <button class="btn btn-primary" type="submit">
+    <i class="bi bi-upload"></i> Nahrát
+  </button>
+</form>
 {% endblock %}

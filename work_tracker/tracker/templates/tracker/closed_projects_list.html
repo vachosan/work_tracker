@@ -1,24 +1,42 @@
 {% extends 'tracker/base.html' %}
 {% block title %}Uzavřené projekty{% endblock %}
+
 {% block content %}
-<h1>Uzavřené projekty</h1>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h4 m-0">Uzavřené projekty</h1>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'work_record_list' %}">
+    <i class="bi bi-arrow-left"></i> Zpět na hlavní
+  </a>
+</div>
 
-<a href="{% url 'work_record_list' %}">
-  <button>Zpět na otevřené</button>
-</a>
+{% if projects %}
+  <div class="row g-3">
+    {% for project in projects %}
+      <div class="col-12 col-md-6">
+        <div class="card border-0 shadow-sm h-100">
+          <div class="card-body d-flex flex-column">
+            <h2 class="h5 mb-1">{{ project.name }}</h2>
+            {% if project.description %}
+              <p class="text-muted">{{ project.description }}</p>
+            {% endif %}
+            {% if project.latest_work_time %}
+              <span class="badge text-bg-secondary mb-3">Poslední úkon: {{ project.latest_work_time|date:"d.m.Y H:i" }}</span>
+            {% endif %}
 
-{% for project in projects %}
-  <h2>{{ project.name }}</h2>
-  <p>{{ project.description }}</p>
-
-  {% if project.is_foreman %}
-    <a href="{% url 'activate_project' project.pk %}">
-      <button>Otevřít projekt</button>
-    </a>
-  {% endif %}
-
-  <hr>
-{% empty %}
-  <p>Nemáš žádné uzavřené projekty.</p>
-{% endfor %}
+            <div class="mt-auto">
+              {% if project.is_foreman %}
+                <a class="btn btn-sm btn-success" href="{% url 'activate_project' project.pk %}">
+                  <i class="bi bi-unlock"></i> Otevřít projekt
+                </a>
+              {% endif %}
+              <a class="btn btn-sm btn-outline-secondary" href="{% url 'work_record_list' %}#project-{{ project.pk }}">Detail</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="alert alert-info">Žádné uzavřené projekty.</div>
+{% endif %}
 {% endblock %}

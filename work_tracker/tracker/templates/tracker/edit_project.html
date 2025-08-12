@@ -1,32 +1,51 @@
 {% extends 'tracker/base.html' %}
 {% block title %}Editace projektu{% endblock %}
+
 {% block content %}
-<h2>Editace projektu: {{ project.name }}</h2>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h4 m-0">Editace projektu: {{ project.name }}</h1>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'work_record_list' %}#project-{{ project.pk }}">
+    <i class="bi bi-arrow-left"></i> Zpět na projekt
+  </a>
+</div>
 
-<form method="post">
+<form method="post" class="vstack gap-3">
   {% csrf_token %}
-  {{ project_form.as_p }}
-  <button type="submit" name="save_project">Uložit změny</button>
+  <div class="card border-0 shadow-sm">
+    <div class="card-body vstack gap-3">
+      <h2 class="h6 m-0">Základní údaje</h2>
+      {{ project_form.as_p }}
+      <button class="btn btn-primary" name="save_project" type="submit">
+        <i class="bi bi-save"></i> Uložit změny
+      </button>
+    </div>
+  </div>
 </form>
 
-<hr>
-<h3>Členové</h3>
-<ul>
-  {% for m in members %}
-    <li>
-      {{ m.user.username }} — {{ m.get_role_display }}
-      <a href="{% url 'remove_member' project.pk m.user.pk %}">Odebrat</a>
-    </li>
-  {% empty %}
-    <li>Zatím žádní členové.</li>
-  {% endfor %}
-</ul>
+<hr class="my-4">
 
-<hr>
-<h3>Přidat člena</h3>
-<form method="post">
-  {% csrf_token %}
-  {{ add_member_form.as_p }}
-  <button type="submit" name="add_member">Přidat</button>
-</form>
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    <h2 class="h6">Členové projektu</h2>
+    <ul class="list-group list-group-flush mb-3">
+      {% for m in members %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+          <span>{{ m.user.username }} — <span class="text-muted">{{ m.get_role_display }}</span></span>
+          <a class="btn btn-sm btn-outline-danger" href="{% url 'remove_member' project.pk m.user.pk %}">Odebrat</a>
+        </li>
+      {% empty %}
+        <li class="list-group-item text-muted">Žádní členové.</li>
+      {% endfor %}
+    </ul>
+
+    <h3 class="h6">Přidat člena</h3>
+    <form method="post" class="vstack gap-2">
+      {% csrf_token %}
+      {{ add_member_form.as_p }}
+      <button class="btn btn-success" name="add_member" type="submit">
+        <i class="bi bi-person-plus"></i> Přidat
+      </button>
+    </form>
+  </div>
+</div>
 {% endblock %}
