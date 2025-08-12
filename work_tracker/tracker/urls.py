@@ -20,6 +20,8 @@ urlpatterns = [
     path('project/<int:pk>/close/', views.close_project, name='close_project'),
     path('project/<int:pk>/activate/', views.activate_project, name='activate_project'),
     path('projects/closed/', views.closed_projects_list, name='closed_projects_list'),
+    path('project/<int:pk>/', views.project_detail, name='project_detail'),
+
 
 ]
 

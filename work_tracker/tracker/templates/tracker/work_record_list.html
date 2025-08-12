@@ -4,7 +4,6 @@
 {% block content %}
 <h1 class="mb-4">Seznam pracovních úkonů</h1>
 
-<!-- horní lišta: vlevo nový projekt, vpravo uzavřené projekty -->
 <div class="mb-3 d-flex justify-content-between align-items-center">
   <div>
     <a href="{% url 'create_project' %}" class="btn btn-success">
@@ -21,38 +20,36 @@
 {% for project in projects %}
 <div id="project-{{ project.pk }}" class="card mb-4 shadow-sm">
   <div class="card-body">
-    <!-- hlavička projektu: vlevo název+popis, vpravo tlačítka (vždy vpravo) -->
+
     <div class="d-flex align-items-start gap-3 flex-wrap">
       <div class="flex-grow-1 min-w-0">
-        <h4 class="mb-1 text-truncate">{{ project.name }}</h4>
+        <h4 class="mb-1 text-truncate">
+          <a href="{% url 'project_detail' project.pk %}" class="text-decoration-none">
+            {{ project.name }}
+          </a>
+        </h4>
         {% if project.description %}
           <p class="text-muted mb-0 small">{{ project.description }}</p>
         {% endif %}
       </div>
 
-      <!-- tlačítka vpravo; ms-auto je drží u pravého okraje -->
       <div class="d-flex ms-auto align-items-center gap-2 flex-wrap justify-content-end">
         {% if project.is_member and not project.is_closed %}
-          <a href="{% url 'create_work_record_for_project' project.pk %}"
-             class="btn btn-primary fw-bold">
+          <a href="{% url 'create_work_record_for_project' project.pk %}" class="btn btn-primary fw-bold">
             <i class="bi bi-plus-lg"></i> Přidat úkon
           </a>
         {% endif %}
 
         {% if project.is_foreman %}
-          <a href="{% url 'edit_project' project.pk %}"
-             class="btn btn-outline-warning">
+          <a href="{% url 'edit_project' project.pk %}" class="btn btn-outline-warning">
             <i class="bi bi-pencil"></i> Editovat
           </a>
-
           {% if not project.is_closed %}
-            <a href="{% url 'close_project' project.pk %}"
-               class="btn btn-outline-danger">
+            <a href="{% url 'close_project' project.pk %}" class="btn btn-outline-danger">
               <i class="bi bi-lock"></i> Uzavřít
             </a>
           {% else %}
-            <a href="{% url 'activate_project' project.pk %}"
-               class="btn btn-outline-success">
+            <a href="{% url 'activate_project' project.pk %}" class="btn btn-outline-success">
               <i class="bi bi-unlock"></i> Aktivovat
             </a>
           {% endif %}
@@ -60,20 +57,31 @@
       </div>
     </div>
 
-    <!-- seznam úkonů -->
-    {% if project.work_records.all %}
-      <ul class="list-group list-group-flush mt-3">
-        {% for work_record in project.work_records.all %}
-          <li class="list-group-item d-flex justify-content-between align-items-center">
-            <a href="{% url 'work_record_detail' work_record.pk %}">
-              {{ work_record.title|default:"Bez názvu" }}
-            </a>
-            <small class="text-muted">{{ work_record.date|date:"d.m.Y" }}</small>
-          </li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="text-muted mt-2"><em>Žádné úkony</em></p>
+    {# Posledních 5 úkonů — spolehlivě přes slice #}
+    {% with recent=project.work_records.all|slice:":5" %}
+      {% if recent %}
+        <ul class="list-group list-group-flush mt-3">
+          {% for wr in recent %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+              <a href="{% url 'work_record_detail' wr.pk %}">
+                {{ wr.title|default:"Bez názvu" }}
+              </a>
+              <small class="text-muted">{{ wr.date|date:"d.m.Y" }}</small>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="text-muted mt-2"><em>Žádné úkony</em></p>
+      {% endif %}
+    {% endwith %}
+
+    {# Link na plný seznam, pokud je víc než 5 #}
+    {% if project.wr_count|default:0 > 5 %}
+      <div class="mt-2">
+        <a href="{% url 'project_detail' project.pk %}" class="btn btn-sm btn-outline-secondary">
+          Zobrazit dalších {{ project.wr_count|add:'-5' }}…
+        </a>
+      </div>
     {% endif %}
   </div>
 </div>

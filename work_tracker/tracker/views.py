@@ -6,6 +6,11 @@ from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
 from django.db.models import Max, F
 from django.urls import reverse
+from django.db.models import Max, F, Count, Q
+from django.db.models import Prefetch
+from django.core.paginator import Paginator
+from django.utils.dateparse import parse_date
+from .models import WorkRecord, Project
 
 from .models import Project, WorkRecord, PhotoDocumentation, ProjectMembership
 from .forms import (
@@ -43,6 +48,47 @@ def signup(request):
     return render(request, 'registration/signup.html', {'form': form})
 
 # ------------------ Projekty ------------------
+
+@login_required
+def project_detail(request, pk):
+    """Stránka všech úkonů projektu + vyhledávání, filtry, stránkování."""
+    project = get_object_or_404(Project, pk=pk)
+
+    # práva
+    if not user_can_view_project(request.user, project.pk):
+        return redirect('work_record_list')
+
+    qs = WorkRecord.objects.filter(project=project).order_by('-created_at')
+
+    # filtry (GET)
+    q = request.GET.get('q', '').strip()
+    df = parse_date(request.GET.get('date_from') or '')
+    dt = parse_date(request.GET.get('date_to') or '')
+
+    if q:
+        qs = qs.filter(Q(title__icontains=q) | Q(description__icontains=q))
+    if df:
+        qs = qs.filter(date__gte=df)
+    if dt:
+        qs = qs.filter(date__lte=dt)
+
+    # stránkování
+    paginator = Paginator(qs, 20)  # 20 na stránku
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    # flag pro tlačítka
+    is_foreman = ProjectMembership.objects.filter(
+        user=request.user, project=project, role=ProjectMembership.Role.FOREMAN
+    ).exists()
+
+    return render(request, 'tracker/project_detail.html', {
+        'project': project,
+        'page_obj': page_obj,
+        'q': q,
+        'date_from': request.GET.get('date_from', ''),
+        'date_to': request.GET.get('date_to', ''),
+        'is_foreman': is_foreman,
+    })
 
 @login_required
 def edit_project(request, pk):
@@ -166,16 +212,21 @@ def closed_projects_list(request):
 
 @login_required
 def work_record_list(request):
-    # pouze aktivní projekty, seřazené podle nejnovějšího úkonu
+    latest_wr = WorkRecord.objects.order_by('-created_at')  # pro pořadí v prefetchi
+
     projects = (
         user_projects_qs(request.user)
         .filter(is_closed=False)
-        .annotate(latest_work_time=Max('work_records__created_at'))
+        .annotate(
+            latest_work_time=Max('work_records__created_at'),
+            wr_count=Count('work_records')
+        )
         .order_by(F('latest_work_time').desc(nulls_last=True), '-id')
-        .prefetch_related('work_records')
+        .prefetch_related(
+            Prefetch('work_records', queryset=latest_wr)  # abychom měli nové nahoře
+        )
     )
 
-    # flagy pro šablonu
     for p in projects:
         p.is_foreman = ProjectMembership.objects.filter(
             user=request.user, project=p, role=ProjectMembership.Role.FOREMAN
@@ -184,13 +235,9 @@ def work_record_list(request):
             user=request.user, project=p
         ).exists()
 
-    work_records_without_project = WorkRecord.objects.filter(project__isnull=True)
-
     return render(request, 'tracker/work_record_list.html', {
         'projects': projects,
-        'work_records_without_project': work_records_without_project,
     })
-
 
 @login_required
 def create_work_record(request, project_id=None):
