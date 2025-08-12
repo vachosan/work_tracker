@@ -1,0 +1,32 @@
+{% extends 'tracker/base.html' %}
+{% block title %}Editace projektu{% endblock %}
+{% block content %}
+<h2>Editace projektu: {{ project.name }}</h2>
+
+<form method="post">
+  {% csrf_token %}
+  {{ project_form.as_p }}
+  <button type="submit" name="save_project">Uložit změny</button>
+</form>
+
+<hr>
+<h3>Členové</h3>
+<ul>
+  {% for m in members %}
+    <li>
+      {{ m.user.username }} — {{ m.get_role_display }}
+      <a href="{% url 'remove_member' project.pk m.user.pk %}">Odebrat</a>
+    </li>
+  {% empty %}
+    <li>Zatím žádní členové.</li>
+  {% endfor %}
+</ul>
+
+<hr>
+<h3>Přidat člena</h3>
+<form method="post">
+  {% csrf_token %}
+  {{ add_member_form.as_p }}
+  <button type="submit" name="add_member">Přidat</button>
+</form>
+{% endblock %}

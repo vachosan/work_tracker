@@ -4,7 +4,10 @@ from django.core.files import File
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
-
+from .models import Project, WorkRecord, PhotoDocumentation, ProjectMembership
+from .forms import ProjectEditForm, AddMemberForm
+from .models import ProjectMembership
+from django.db.models import Max, F
 from .forms import (
     WorkRecordForm,
     PhotoDocumentationForm,
@@ -39,6 +42,60 @@ def signup(request):
     return render(request, 'registration/signup.html', {'form': form})
 
 # ------------------ Projekty ------------------
+@login_required
+def edit_project(request, pk):
+    project = get_object_or_404(Project, pk=pk)
+
+    # Jen stavbyvedoucí
+    from .models import ProjectMembership
+    membership = ProjectMembership.objects.filter(user=request.user, project=project, role=ProjectMembership.Role.FOREMAN).first()
+    if not membership:
+        return redirect('work_record_list')
+
+    # Formuláře
+    project_form = ProjectEditForm(instance=project)
+    add_member_form = AddMemberForm()
+
+    if request.method == 'POST':
+        if 'save_project' in request.POST:
+            project_form = ProjectEditForm(request.POST, instance=project)
+            if project_form.is_valid():
+                project_form.save()
+                return redirect('work_record_list')
+
+        elif 'add_member' in request.POST:
+            add_member_form = AddMemberForm(request.POST)
+            if add_member_form.is_valid():
+                user = add_member_form.cleaned_data['user']
+                role = add_member_form.cleaned_data['role']
+                ProjectMembership.objects.get_or_create(
+                    user=user,
+                    project=project,
+                    defaults={'role': role}
+                )
+                return redirect('edit_project', pk=pk)
+
+    members = ProjectMembership.objects.filter(project=project).select_related('user')
+
+    return render(request, 'tracker/edit_project.html', {
+        'project': project,
+        'project_form': project_form,
+        'add_member_form': add_member_form,
+        'members': members,
+    })
+
+
+@login_required
+def remove_member(request, pk, user_id):
+    project = get_object_or_404(Project, pk=pk)
+
+    # Jen stavbyvedoucí
+    membership = ProjectMembership.objects.filter(user=request.user, project=project, role=ProjectMembership.Role.FOREMAN).first()
+    if not membership:
+        return redirect('work_record_list')
+
+    ProjectMembership.objects.filter(user_id=user_id, project=project).delete()
+    return redirect('edit_project', pk=pk)
 
 @login_required
 def create_project(request):
@@ -48,46 +105,77 @@ def create_project(request):
             project = form.save(commit=False)
             project.is_closed = False
             project.save()
+
+            # >>> přidej autora jako STAVBYVEDOUCÍHO (FOREMAN)
+            ProjectMembership.objects.get_or_create(
+                user=request.user,
+                project=project,
+                defaults={"role": ProjectMembership.Role.FOREMAN},
+            )
+
             return redirect('work_record_list')
     else:
         form = ProjectForm()
     return render(request, 'tracker/create_project.html', {'form': form})
-
 @login_required
 def close_project(request, pk):
-    # pouze stavbyvedoucí daného projektu
-    if not user_is_foreman(request.user, pk):
-        return redirect('work_record_list')
     project = get_object_or_404(Project, pk=pk)
+    if not ProjectMembership.objects.filter(user=request.user, project=project, role=ProjectMembership.Role.FOREMAN).exists():
+        return redirect('work_record_list')
     project.is_closed = True
     project.save()
     return redirect('work_record_list')
 
 @login_required
 def activate_project(request, pk):
-    # pouze stavbyvedoucí daného projektu
-    if not user_is_foreman(request.user, pk):
-        return redirect('work_record_list')
     project = get_object_or_404(Project, pk=pk)
+    if not ProjectMembership.objects.filter(user=request.user, project=project, role=ProjectMembership.Role.FOREMAN).exists():
+        return redirect('work_record_list')
     project.is_closed = False
     project.save()
-    return redirect('work_record_list')
+    return redirect('closed_projects_list')  # po otevření se vrať na „uzavřené“, ať je to přehledné
+
+@login_required
+def closed_projects_list(request):
+    projects = (
+        user_projects_qs(request.user)
+        .filter(is_closed=True)
+        .annotate(latest_work_time=Max('work_records__created_at'))
+        .order_by(F('latest_work_time').desc(nulls_last=True), '-id')
+    )
+    for p in projects:
+        p.is_foreman = ProjectMembership.objects.filter(
+            user=request.user, project=p, role=ProjectMembership.Role.FOREMAN
+        ).exists()
+    return render(request, 'tracker/closed_projects_list.html', {'projects': projects})
 
 # ------------------ WorkRecord ------------------
 
 @login_required
 def work_record_list(request):
-    # zobraz jen projekty, kde je uživatel členem
-    projects = user_projects_qs(request.user).prefetch_related('work_records')
+    # projekty, kde je uživatel členem
+    projects = (
+        user_projects_qs(request.user)
+        .filter(is_closed=False) # pouze aktivní projekty
+        .annotate(
+            latest_work_time=Max('work_records__created_at')  # poslední úkon v projektu
+        )
+        .order_by(F('latest_work_time').desc(nulls_last=True), '-id')  # nejnovější nahoře, prázdné projekty nakonec
+        .prefetch_related('work_records')
+    )
 
-    # Úkony bez projektu (zvaž: můžeš je skrýt úplně, nebo nechat viditelné pro všechny přihlášené)
+    # flag pro tlačítko "Editovat projekt" (jen pro FOREMAN)
+    for p in projects:
+        p.is_foreman = ProjectMembership.objects.filter(
+            user=request.user, project=p, role=ProjectMembership.Role.FOREMAN
+        ).exists()
+
     work_records_without_project = WorkRecord.objects.filter(project__isnull=True)
 
     return render(request, 'tracker/work_record_list.html', {
         'projects': projects,
         'work_records_without_project': work_records_without_project,
     })
-
 @login_required
 def create_work_record(request, project_id=None):
     if request.method == 'POST':

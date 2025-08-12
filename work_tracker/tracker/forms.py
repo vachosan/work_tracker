@@ -2,6 +2,20 @@ from django import forms
 from .models import WorkRecord, PhotoDocumentation, Project
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
+from .models import Project, ProjectMembership
+
+User = get_user_model()
+
+class ProjectEditForm(forms.ModelForm):
+    class Meta:
+        model = Project
+        fields = ['name', 'description', 'is_closed']
+
+class AddMemberForm(forms.Form):
+    user = forms.ModelChoiceField(queryset=User.objects.all(), label="Uživatel")
+    role = forms.ChoiceField(choices=ProjectMembership.Role.choices, label="Role")
+
 
 class CustomUserCreationForm(UserCreationForm):
     email = forms.EmailField(required=True)

@@ -16,6 +16,7 @@ class WorkRecord(models.Model):
     title = models.CharField(max_length=200, blank=True)
     description = models.TextField(blank=True)
     date = models.DateField(default=timezone.now)
+    created_at = models.DateTimeField(default=timezone.now)  
     project = models.ForeignKey(
         "Project",
         on_delete=models.SET_NULL,
