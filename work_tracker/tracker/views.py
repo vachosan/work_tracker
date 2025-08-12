@@ -4,17 +4,17 @@ from django.core.files import File
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
-from .models import Project, WorkRecord, PhotoDocumentation, ProjectMembership
-from .forms import ProjectEditForm, AddMemberForm
-from .models import ProjectMembership
 from django.db.models import Max, F
+
+from .models import Project, WorkRecord, PhotoDocumentation, ProjectMembership
 from .forms import (
     WorkRecordForm,
     PhotoDocumentationForm,
     ProjectForm,
     CustomUserCreationForm,
+    ProjectEditForm,
+    AddMemberForm,
 )
-from .models import WorkRecord, PhotoDocumentation, Project
 from .permissions import (
     user_projects_qs,
     user_can_view_project,
@@ -42,17 +42,17 @@ def signup(request):
     return render(request, 'registration/signup.html', {'form': form})
 
 # ------------------ Projekty ------------------
+
 @login_required
 def edit_project(request, pk):
     project = get_object_or_404(Project, pk=pk)
 
     # Jen stavbyvedoucí
-    from .models import ProjectMembership
-    membership = ProjectMembership.objects.filter(user=request.user, project=project, role=ProjectMembership.Role.FOREMAN).first()
-    if not membership:
+    if not ProjectMembership.objects.filter(
+        user=request.user, project=project, role=ProjectMembership.Role.FOREMAN
+    ).exists():
         return redirect('work_record_list')
 
-    # Formuláře
     project_form = ProjectEditForm(instance=project)
     add_member_form = AddMemberForm()
 
@@ -89,13 +89,14 @@ def edit_project(request, pk):
 def remove_member(request, pk, user_id):
     project = get_object_or_404(Project, pk=pk)
 
-    # Jen stavbyvedoucí
-    membership = ProjectMembership.objects.filter(user=request.user, project=project, role=ProjectMembership.Role.FOREMAN).first()
-    if not membership:
+    if not ProjectMembership.objects.filter(
+        user=request.user, project=project, role=ProjectMembership.Role.FOREMAN
+    ).exists():
         return redirect('work_record_list')
 
     ProjectMembership.objects.filter(user_id=user_id, project=project).delete()
     return redirect('edit_project', pk=pk)
+
 
 @login_required
 def create_project(request):
@@ -106,7 +107,7 @@ def create_project(request):
             project.is_closed = False
             project.save()
 
-            # >>> přidej autora jako STAVBYVEDOUCÍHO (FOREMAN)
+            # autor = FOREMAN
             ProjectMembership.objects.get_or_create(
                 user=request.user,
                 project=project,
@@ -117,23 +118,31 @@ def create_project(request):
     else:
         form = ProjectForm()
     return render(request, 'tracker/create_project.html', {'form': form})
+
+
 @login_required
 def close_project(request, pk):
     project = get_object_or_404(Project, pk=pk)
-    if not ProjectMembership.objects.filter(user=request.user, project=project, role=ProjectMembership.Role.FOREMAN).exists():
+    if not ProjectMembership.objects.filter(
+        user=request.user, project=project, role=ProjectMembership.Role.FOREMAN
+    ).exists():
         return redirect('work_record_list')
     project.is_closed = True
     project.save()
     return redirect('work_record_list')
 
+
 @login_required
 def activate_project(request, pk):
     project = get_object_or_404(Project, pk=pk)
-    if not ProjectMembership.objects.filter(user=request.user, project=project, role=ProjectMembership.Role.FOREMAN).exists():
+    if not ProjectMembership.objects.filter(
+        user=request.user, project=project, role=ProjectMembership.Role.FOREMAN
+    ).exists():
         return redirect('work_record_list')
     project.is_closed = False
     project.save()
-    return redirect('closed_projects_list')  # po otevření se vrať na „uzavřené“, ať je to přehledné
+    return redirect('closed_projects_list')
+
 
 @login_required
 def closed_projects_list(request):
@@ -143,31 +152,35 @@ def closed_projects_list(request):
         .annotate(latest_work_time=Max('work_records__created_at'))
         .order_by(F('latest_work_time').desc(nulls_last=True), '-id')
     )
+
+    # flag pro šablonu (zobrazit tlačítka jen foremanovi)
     for p in projects:
         p.is_foreman = ProjectMembership.objects.filter(
             user=request.user, project=p, role=ProjectMembership.Role.FOREMAN
         ).exists()
+
     return render(request, 'tracker/closed_projects_list.html', {'projects': projects})
 
 # ------------------ WorkRecord ------------------
 
 @login_required
 def work_record_list(request):
-    # projekty, kde je uživatel členem
+    # pouze aktivní projekty, seřazené podle nejnovějšího úkonu
     projects = (
         user_projects_qs(request.user)
-        .filter(is_closed=False) # pouze aktivní projekty
-        .annotate(
-            latest_work_time=Max('work_records__created_at')  # poslední úkon v projektu
-        )
-        .order_by(F('latest_work_time').desc(nulls_last=True), '-id')  # nejnovější nahoře, prázdné projekty nakonec
+        .filter(is_closed=False)
+        .annotate(latest_work_time=Max('work_records__created_at'))
+        .order_by(F('latest_work_time').desc(nulls_last=True), '-id')
         .prefetch_related('work_records')
     )
 
-    # flag pro tlačítko "Editovat projekt" (jen pro FOREMAN)
+    # flagy pro šablonu
     for p in projects:
         p.is_foreman = ProjectMembership.objects.filter(
             user=request.user, project=p, role=ProjectMembership.Role.FOREMAN
+        ).exists()
+        p.is_member = ProjectMembership.objects.filter(
+            user=request.user, project=p
         ).exists()
 
     work_records_without_project = WorkRecord.objects.filter(project__isnull=True)
@@ -176,6 +189,8 @@ def work_record_list(request):
         'projects': projects,
         'work_records_without_project': work_records_without_project,
     })
+
+
 @login_required
 def create_work_record(request, project_id=None):
     if request.method == 'POST':
@@ -185,7 +200,7 @@ def create_work_record(request, project_id=None):
         if work_record_form.is_valid():
             work_record = work_record_form.save()
 
-            # po uložení ověřit, že má user přístup k projektu (pokud je vybraný)
+            # ověř přístup k projektu
             if work_record.project_id and not user_can_view_project(request.user, work_record.project_id):
                 return redirect('work_record_list')
 
@@ -198,7 +213,6 @@ def create_work_record(request, project_id=None):
     else:
         initial_data = {}
         if project_id:
-            # zajistí 404, pokud user nemá přístup
             project = get_project_or_404_for_user(request.user, project_id)
             initial_data['project'] = project
 
@@ -210,11 +224,11 @@ def create_work_record(request, project_id=None):
         'photo_form': photo_form,
     })
 
+
 @login_required
 def work_record_detail(request, pk):
     work_record = get_object_or_404(WorkRecord, pk=pk)
 
-    # přístup jen pro členy projektu
     if work_record.project_id and not user_can_view_project(request.user, work_record.project_id):
         return redirect('work_record_list')
 
@@ -237,11 +251,11 @@ def work_record_detail(request, pk):
         'photos': valid_photos,
     })
 
+
 @login_required
 def edit_work_record(request, pk):
     work_record = get_object_or_404(WorkRecord, pk=pk)
 
-    # přístup jen pro členy projektu
     if work_record.project_id and not user_can_view_project(request.user, work_record.project_id):
         return redirect('work_record_list')
 
@@ -278,7 +292,6 @@ def edit_work_record(request, pk):
 def add_photo(request, work_record_id):
     work_record = get_object_or_404(WorkRecord, pk=work_record_id)
 
-    # přístup jen pro členy projektu
     if work_record.project_id and not user_can_view_project(request.user, work_record.project_id):
         return redirect('work_record_list')
 
@@ -287,7 +300,6 @@ def add_photo(request, work_record_id):
         photo = request.FILES.get("photo")
 
         if not photo:
-            # použij default z MEDIA_ROOT/photos/default.jpg
             default_photo_path = os.path.join(settings.MEDIA_ROOT, "photos", "default.jpg")
             with open(default_photo_path, 'rb') as default_file:
                 photo = File(default_file, name="default.jpg")
@@ -300,12 +312,14 @@ def add_photo(request, work_record_id):
 
     return redirect("work_record_detail", pk=work_record_id)
 
+
 @login_required
 def delete_photo(request, pk):
     photo = get_object_or_404(PhotoDocumentation, pk=pk)
-    # přístup jen pro členy projektu
+
     if photo.work_record.project_id and not user_can_view_project(request.user, photo.work_record.project_id):
         return redirect('work_record_list')
+
     work_record_pk = photo.work_record.pk
     photo.delete()
     return redirect('edit_work_record', pk=work_record_pk)
