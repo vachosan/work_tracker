@@ -21,3 +21,5 @@ db.sqlite3
 
 # Ignorovat složku s médii (obrázky)
 /media/
+
+.env
