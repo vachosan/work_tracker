@@ -15,19 +15,15 @@ environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
 SECRET_KEY = env("SECRET_KEY", default="dev-insecure-change-me")
 DEBUG = env("DEBUG")  # nastavíš v .env (True/False)
 
-ALLOWED_HOSTS = env.list(
-    "ALLOWED_HOSTS",
-    default=["127.0.0.1", "localhost", "79.76.125.39"],
-)
+ALLOWED_HOSTS = ["129.159.223.132","localhost","127.0.0.1"]
 
 CSRF_TRUSTED_ORIGINS = env.list(
     "CSRF_TRUSTED_ORIGINS",
     default=[
-        "http://79.76.125.39",
-        "https://79.76.125.39",
+        "http://129.159.223.132",
+        "https://129.159.223.132",
     ],
 )
-
 # Apps
 INSTALLED_APPS = [
     "django.contrib.admin",
