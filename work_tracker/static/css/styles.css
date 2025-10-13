@@ -143,26 +143,39 @@ ul li:hover {
 
 /* Navigace */
 .navbar {
-    background-color: #222;
-    color: white;
-    padding: 15px 20px;
-    margin-bottom: 20px;
-    border-radius: 8px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+    background-color: #fff !important;
+    color: #222;
+    padding: 0.25rem 0.75rem !important; /* menší výška */
+    margin-bottom: 12px;
+    border-radius: 0;
+    border-bottom: 1px solid #dee2e6; /* jemná linka, jako v Bootstrapu */
 }
 
+/* text značky vlevo */
+.navbar .navbar-brand {
+    font-size: 1rem !important;
+    margin: 0;
+    padding: 0;
+}
+
+/* odkazy uvnitř navbaru */
 .navbar a {
-    color: white;
-    font-size: 1em;
+    color: inherit;               /* nepřepisuj na bílé */
+    font-size: 0.95rem;
     font-weight: 600;
-    margin-right: 15px;
-    transition: 0.3s;
+    margin-right: 12px;
+    text-decoration: none;
+}
+.navbar a:hover {
+    text-decoration: none;
+    opacity: 0.8;
 }
 
-.navbar a:hover {
-    text-decoration: underline;
+/* malé tlačítko Odhlásit */
+.navbar .btn-sm {
+    padding: 2px 6px !important;
+    line-height: 1.2;
+    font-size: 0.8rem;
 }
 
 /* Mobilní optimalizace */

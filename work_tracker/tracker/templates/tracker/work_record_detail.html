@@ -33,8 +33,7 @@
     {% for photo in photos %}
       <div class="col-6 col-md-3">
         <a href="{{ photo.photo.url }}" target="_blank" class="d-block">
-          <img src="{{ photo.photo.url }}" alt="{{ photo.description }}"
-               class="img-fluid rounded shadow-sm">
+          <img src="{{ photo.photo.url }}" alt="{{ photo.description }}" class="img-fluid rounded shadow-sm">
         </a>
         {% if photo.description %}
           <small class="d-block mt-1 text-muted">{{ photo.description }}</small>
@@ -49,9 +48,52 @@
 <h2 class="h5 mb-3">Přidat fotku</h2>
 <form method="post" enctype="multipart/form-data" class="vstack gap-2">
   {% csrf_token %}
-  {{ photo_form.as_p }}
-  <button class="btn btn-primary" type="submit">
+
+  <!-- Dvě akce: Kamera / Galerie (oba inputy mají stejný name="photo") -->
+  <input id="cameraInput" type="file" name="photo" accept="image/*" capture="environment" class="d-none">
+  <label for="cameraInput" class="btn btn-outline-primary w-100">📷 Vyfotit</label>
+
+  <input id="galleryInput" type="file" name="photo" accept="image/*" class="d-none">
+  <label for="galleryInput" class="btn btn-outline-secondary w-100">🖼️ Vybrat z galerie</label>
+
+  <img id="photoPreview" class="img-fluid mt-2 d-none" alt="Náhled">
+
+  {% if photo_form.non_field_errors %}
+    <div class="text-danger small">{{ photo_form.non_field_errors }}</div>
+  {% endif %}
+
+  <div class="border-top pt-2">
+    <button class="btn btn-link p-0" type="button" data-bs-toggle="collapse" data-bs-target="#photoDescCollapse" aria-expanded="false">
+      ➕ Přidat popis fotky (volitelné)
+    </button>
+    <div class="collapse mt-2" id="photoDescCollapse">
+      {{ photo_form.description.label_tag }}
+      {{ photo_form.description }}
+      {% for error in photo_form.description.errors %}
+        <div class="text-danger small">{{ error }}</div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <button class="btn btn-primary mt-2" type="submit">
     <i class="bi bi-upload"></i> Nahrát
   </button>
 </form>
+
+<script>
+  (function() {
+    const cam = document.getElementById('cameraInput');
+    const gal = document.getElementById('galleryInput');
+    const preview = document.getElementById('photoPreview');
+
+    function showPreview(file) {
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      preview.src = url;
+      preview.classList.remove('d-none');
+    }
+    cam && cam.addEventListener('change', e => showPreview(e.target.files[0]));
+    gal && gal.addEventListener('change', e => showPreview(e.target.files[0]));
+  })();
+</script>
 {% endblock %}

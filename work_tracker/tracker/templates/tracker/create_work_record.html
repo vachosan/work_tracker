@@ -11,17 +11,65 @@
 
 <form method="post" enctype="multipart/form-data" class="vstack gap-3">
   {% csrf_token %}
+
   <div class="card border-0 shadow-sm">
     <div class="card-body vstack gap-3">
-      <h2 class="h6 m-0">Údaje o úkonu</h2>
-      {{ work_record_form.as_p }}
+      
+
+      {% for field in work_record_form %}
+        {% if field.name != 'description' %}
+          <div>
+            {{ field.label_tag }}
+            {{ field }}
+            {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+            {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
+          </div>
+        {% endif %}
+      {% endfor %}
+
+      <div class="border-top pt-2">
+        <button class="btn btn-link p-0" type="button" data-bs-toggle="collapse" data-bs-target="#descCollapse" aria-expanded="false">
+          ➕ Přidat popis úkonu
+        </button>
+        <div class="collapse mt-2" id="descCollapse">
+          {{ work_record_form.description.label_tag }}
+          {{ work_record_form.description }}
+          {% for error in work_record_form.description.errors %}
+            <div class="text-danger small">{{ error }}</div>
+          {% endfor %}
+        </div>
+      </div>
     </div>
   </div>
 
   <div class="card border-0 shadow-sm">
-    <div class="card-body vstack gap-3">
+    <div class="card-body vstack gap-2">
       <h2 class="h6 m-0">Fotodokumentace</h2>
-      {{ photo_form.as_p }}
+
+      <input id="cameraInput" type="file" name="photo" accept="image/*" capture="environment" class="d-none">
+      <label for="cameraInput" class="btn btn-outline-primary w-100">📷 Vyfotit</label>
+
+      <input id="galleryInput" type="file" name="photo" accept="image/*" class="d-none">
+      <label for="galleryInput" class="btn btn-outline-secondary w-100">🖼️ Vybrat z galerie</label>
+
+      <img id="photoPreview" class="img-fluid mt-2 d-none" alt="Náhled">
+
+      {% if photo_form.non_field_errors %}
+        <div class="text-danger small">{{ photo_form.non_field_errors }}</div>
+      {% endif %}
+
+      <div class="border-top pt-2">
+        <button class="btn btn-link p-0" type="button" data-bs-toggle="collapse" data-bs-target="#photoDescCollapse" aria-expanded="false">
+          ➕ Přidat popis fotky 
+        </button>
+        <div class="collapse mt-2" id="photoDescCollapse">
+          {{ photo_form.description.label_tag }}
+          {{ photo_form.description }}
+          {% for error in photo_form.description.errors %}
+            <div class="text-danger small">{{ error }}</div>
+          {% endfor %}
+        </div>
+      </div>
     </div>
   </div>
 
@@ -32,4 +80,22 @@
     <a href="{% url 'work_record_list' %}" class="btn btn-outline-secondary">Zrušit</a>
   </div>
 </form>
+
+<script>
+  (function() {
+    const cam = document.getElementById('cameraInput');
+    const gal = document.getElementById('galleryInput');
+    const preview = document.getElementById('photoPreview');
+
+    function showPreview(file) {
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      preview.src = url;
+      preview.classList.remove('d-none');
+    }
+
+    cam && cam.addEventListener('change', e => showPreview(e.target.files[0]));
+    gal && gal.addEventListener('change', e => showPreview(e.target.files[0]));
+  })();
+</script>
 {% endblock %}
