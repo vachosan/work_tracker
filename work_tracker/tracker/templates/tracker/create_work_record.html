@@ -87,15 +87,14 @@
     const gal = document.getElementById('galleryInput');
     const preview = document.getElementById('photoPreview');
 
-    function showPreview(file) {
-      if (!file) return;
-      const url = URL.createObjectURL(file);
-      preview.src = url;
-      preview.classList.remove('d-none');
+    async function handleChange(e) {
+      const f = e.target.files && e.target.files[0];
+      if (!f) return;
+      await setCompressedFileToInput(e.target, f, preview);
     }
 
-    cam && cam.addEventListener('change', e => showPreview(e.target.files[0]));
-    gal && gal.addEventListener('change', e => showPreview(e.target.files[0]));
+    cam && cam.addEventListener('change', handleChange);
+    gal && gal.addEventListener('change', handleChange);
   })();
 </script>
 {% endblock %}
