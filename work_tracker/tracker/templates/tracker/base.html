@@ -66,30 +66,38 @@ async function setCompressedFileToInput(input, file, previewEl) {
   }
   msg.style.display = 'block';
 
-  // ⚙️ Nastavení komprese
-  const options = {
-    maxSizeMB: 1.0,              // max. 1 MB
-    maxWidthOrHeight: 1600,      // přepočítá rozměry
-    useWebWorker: true,
-    fileType: 'image/jpeg'       // převede i z HEIC
-  };
+const options = {
+  maxSizeMB: 1.2,              // 👉 mírně nad 1 MB – dovolíme knihovně víc prostoru
+  maxWidthOrHeight: 2000,      // 👉 zvětšíme limit rozměrů, takže méně se škáluje
+  useWebWorker: true,
+  fileType: 'image/jpeg',
+  initialQuality: 0.9          // 👉 manuálně nasměrujeme kvalitu výš
+};
 
   try {
-    const compressedFile = await imageCompression(file, options);
+    let compressed = await imageCompression(file, options);
 
-    // 🔁 Nahradí původní soubor
+    // 🩹 OPRAVA: pokud knihovna vrátí Blob, převeď ho na File
+    if (!(compressed instanceof File)) {
+      compressed = new File([compressed], file.name.replace(/\.[^.]+$/, '') + '.jpg', {
+        type: 'image/jpeg',
+        lastModified: Date.now()
+      });
+    }
+
+    // 🔁 Nahrazení původního souboru
     const dt = new DataTransfer();
-    dt.items.add(compressedFile);
+    dt.items.add(compressed);
     input.files = dt.files;
 
     // 🖼️ Náhled
     if (previewEl) {
-      const url = URL.createObjectURL(compressedFile);
+      const url = URL.createObjectURL(compressed);
       previewEl.src = url;
       previewEl.classList.remove('d-none');
     }
 
-    console.log("Compressed:", Math.round(compressedFile.size / 1024), "KB");
+    console.log("Compressed:", Math.round(compressed.size / 1024), "KB");
 
   } catch (err) {
     console.error("Compression failed:", err);
@@ -101,11 +109,11 @@ async function setCompressedFileToInput(input, file, previewEl) {
     }
 
   } finally {
-    // ⏳ schová toast po 1 s
     setTimeout(() => { if (msg) msg.style.display = 'none'; }, 1000);
   }
 }
 </script>
+
 
 
 </body>
