@@ -15,13 +15,23 @@ environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
 SECRET_KEY = env("SECRET_KEY", default="dev-insecure-change-me")
 DEBUG = env("DEBUG")  # nastavíš v .env (True/False)
 
-ALLOWED_HOSTS = ["129.159.223.132","localhost","127.0.0.1"]
+ALLOWED_HOSTS = [
+    "129.159.223.132",
+    "localhost",
+    "127.0.0.1",
+    "moraviatrees.cz",
+    "www.moraviatrees.cz",
+]
 
 CSRF_TRUSTED_ORIGINS = env.list(
     "CSRF_TRUSTED_ORIGINS",
     default=[
         "http://129.159.223.132",
         "https://129.159.223.132",
+        "http://moraviatrees.cz",
+        "https://moraviatrees.cz",
+        "http://www.moraviatrees.cz",
+        "https://www.moraviatrees.cz",
     ],
 )
 # Apps
