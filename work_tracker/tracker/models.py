@@ -25,6 +25,10 @@ class WorkRecord(models.Model):
         related_name="work_records",
         verbose_name="Projekt",
     )
+
+    latitude = models.FloatField(null=True, blank=True, help_text="Zeměpisná šířka (latitude, např. 49.684)")
+    longitude = models.FloatField(null=True, blank=True, help_text="Zeměpisná délka (longitude, např. 18.676)")
+
     # start_time = models.DateTimeField(default=timezone.now)
     # end_time = models.DateTimeField(null=True, blank=True)
     # note = models.TextField(blank=True)

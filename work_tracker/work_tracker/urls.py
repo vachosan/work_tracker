@@ -28,6 +28,6 @@ urlpatterns = [
     path('', RedirectView.as_view(url='tracker/list/')),  # Přesměrování z kořenové adresy
     path('accounts/login/', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),
     path('', views.home, name='home'),
-
+    
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)  # Přidání cesty pro soubory v MEDIA_ROOT
 

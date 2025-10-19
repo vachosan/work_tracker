@@ -14,6 +14,7 @@ environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
 # Security
 SECRET_KEY = env("SECRET_KEY", default="dev-insecure-change-me")
 DEBUG = env("DEBUG")  # nastavíš v .env (True/False)
+MAPY_API_KEY = env("MAPY_API_KEY", default="")
 
 ALLOWED_HOSTS = [
     "129.159.223.132",
@@ -22,6 +23,8 @@ ALLOWED_HOSTS = [
     "moraviatrees.cz",
     "www.moraviatrees.cz",
 ]
+
+
 
 CSRF_TRUSTED_ORIGINS = env.list(
     "CSRF_TRUSTED_ORIGINS",

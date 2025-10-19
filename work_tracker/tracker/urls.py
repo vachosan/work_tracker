@@ -22,6 +22,10 @@ urlpatterns = [
     path('projects/closed/', views.closed_projects_list, name='closed_projects_list'),
     path('project/<int:pk>/', views.project_detail, name='project_detail'),
     path('project/<int:pk>/export_zip/', views.export_selected_zip, name='export_selected_zip'),
+    path("map-test/", views.map_test, name="map_test"),
+    path("mapy-key-test/", views.mapy_key_test, name="mapy_key_test"),
+    path("map-rest/", views.mapy_geocode_test, name="mapy_geocode_test"),
+    path("map-leaflet/", views.map_leaflet_test, name="map_leaflet_test"),
 
 
 ]

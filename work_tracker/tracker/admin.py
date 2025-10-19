@@ -31,8 +31,8 @@ class ProjectAdmin(admin.ModelAdmin):
 
 @admin.register(WorkRecord)
 class WorkRecordAdmin(admin.ModelAdmin):
-    list_display = ("title", "project", "date")
-    list_filter = ("project", "date")
+    list_display = ("title", "project", "date", "latitude", "longitude")
+    list_filter = ("project", "date", "latitude", "longitude")
     search_fields = ("title", "description")
     date_hierarchy = "date"
     autocomplete_fields = ("project",)

@@ -3,6 +3,7 @@ import io
 import zipfile
 import unicodedata
 import re
+import requests
 from datetime import date
 from django.conf import settings
 from django.core.files import File
@@ -16,7 +17,7 @@ from django.db.models import Prefetch
 from django.core.paginator import Paginator
 from django.utils.dateparse import parse_date
 from .models import WorkRecord, Project
-
+from django.http import JsonResponse
 from .models import Project, WorkRecord, PhotoDocumentation, ProjectMembership
 from .forms import (
     WorkRecordForm,
@@ -435,3 +436,39 @@ def export_selected_zip(request, pk):
     filename = f'{slugify_folder(project.name)}_{today_str}.zip'
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
+
+
+# ------------------ Test mapy ------------------
+
+def map_test(request):
+    # testovací souřadnice – Třinec
+    context = {
+        "latitude": 49.684,
+        "longitude": 18.676,
+        "mapy_key": settings.MAPY_API_KEY,
+    }
+    return render(request, "tracker/map_test.html", context)
+
+def mapy_key_test(request):
+    return JsonResponse({
+        "mapy_key": settings.MAPY_API_KEY or "❌ Žádný klíč nenalezen"
+    })
+
+def mapy_geocode_test(request):
+    query = request.GET.get("q", "Ostrava")
+    url = "https://api.mapy.cz/v1/geocode"
+    params = {"query": query, "lang": "cs", "key": settings.MAPY_API_KEY}
+
+    r = requests.get(url, params=params)
+    data = r.json()
+    print(data)
+
+    return render(request, "tracker/map_rest_test.html", {"data": data, "query": query})
+
+
+def map_leaflet_test(request):
+    context = {
+        "mapy_key": settings.MAPY_API_KEY,
+    }
+    return render(request, "tracker/map_leaflet.html", context)
+

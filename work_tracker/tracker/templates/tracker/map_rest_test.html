@@ -1,0 +1,24 @@
+{% extends "tracker/base.html" %}
+{% block content %}
+<div class="container py-3">
+  <h5>Test Mapy.cz REST API</h5>
+  <form method="get" class="mb-3">
+    <input type="text" name="q" value="{{ query }}" placeholder="Zadej adresu" class="form-control mb-2">
+    <button type="submit" class="btn btn-primary">Vyhledat</button>
+  </form>
+
+  {% if data.items %}
+    <ul class="list-group">
+      {% for item in data.items %}
+        <li class="list-group-item">
+          <strong>{{ item.name }}</strong><br>
+          {{ item.location }}<br>
+          Lat: {{ item.position.lat }}, Lon: {{ item.position.lon }}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>Žádné výsledky.</p>
+  {% endif %}
+</div>
+{% endblock %}
