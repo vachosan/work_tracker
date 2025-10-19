@@ -1,4 +1,9 @@
 import os
+import io
+import zipfile
+import unicodedata
+import re
+from datetime import date
 from django.conf import settings
 from django.core.files import File
 from django.shortcuts import render, redirect, get_object_or_404
@@ -376,3 +381,57 @@ def delete_photo(request, pk):
     work_record_pk = photo.work_record.pk
     photo.delete()
     return redirect('edit_work_record', pk=work_record_pk)
+
+@login_required
+def export_selected_zip(request, pk):
+    """Export vybraných nebo všech úkonů projektu do ZIPu."""
+    from django.http import HttpResponse
+
+    project = get_object_or_404(Project, pk=pk)
+
+    if not user_can_view_project(request.user, project.pk):
+        return redirect('work_record_list')
+
+    # Inicializace proměnné, aby existovala i mimo větve
+    selected_ids = []
+
+    # vybrané nebo všechny úkony
+    if "export_all" in request.POST:
+        work_records = WorkRecord.objects.filter(project=project)
+    else:
+        selected_ids = request.POST.getlist("selected_records")
+        if not selected_ids:
+            return redirect("project_detail", pk=pk)
+        work_records = WorkRecord.objects.filter(id__in=selected_ids, project=project)
+
+    # helper na čisté názvy
+    def slugify_folder(name):
+        name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
+        name = re.sub(r'[^a-zA-Z0-9_-]+', '_', name)
+        return name.strip('_') or 'ukon'
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for record in work_records:
+            folder = slugify_folder(record.title or f"ukon_{record.id}")
+            photos = PhotoDocumentation.objects.filter(work_record=record)
+            for photo in photos:
+                if photo.photo and os.path.exists(photo.photo.path):
+                    base_filename = os.path.basename(photo.photo.name)
+                    ext = os.path.splitext(base_filename)[1] or ".jpg"
+
+                    if photo.description:
+                        safe_name = slugify_folder(photo.description)
+                        filename = f"{safe_name}{ext}"
+                    else:
+                        filename = base_filename
+
+                    arcname = os.path.join(folder, filename)
+                    zipf.write(photo.photo.path, arcname=arcname)
+
+    buffer.seek(0)
+    response = HttpResponse(buffer.getvalue(), content_type='application/zip')
+    today_str = date.today().strftime("%Y-%m-%d")
+    filename = f'{slugify_folder(project.name)}_{today_str}.zip'
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response

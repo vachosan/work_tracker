@@ -21,6 +21,7 @@ urlpatterns = [
     path('project/<int:pk>/activate/', views.activate_project, name='activate_project'),
     path('projects/closed/', views.closed_projects_list, name='closed_projects_list'),
     path('project/<int:pk>/', views.project_detail, name='project_detail'),
+    path('project/<int:pk>/export_zip/', views.export_selected_zip, name='export_selected_zip'),
 
 
 ]
