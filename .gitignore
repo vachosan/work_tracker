@@ -1,25 +1,32 @@
-# Python
+# --- Python ---
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# --- Databáze ---
 *.db
 *.sqlite3
+db.sqlite3
 
-# Virtual environment
+# --- Virtuální prostředí ---
 venv/
 .venv/
 
-# Django
+# --- Django ---
 *.log
 local_settings.py
-db.sqlite3
+.env
+.env.*
 
-# IDE
+# --- Statické a mediální soubory ---
+/staticfiles/
+/media/
+work_tracker/media/
+
+# --- IDE / vývojové nástroje ---
 .vscode/
 .idea/
 
-# Ignorovat složku s médii (obrázky)
-/media/
-work_tracker/media/
-.env
+# --- Interní dokumentace a poznámky ---
+/docs/
