@@ -467,8 +467,38 @@ def mapy_geocode_test(request):
 
 
 def map_leaflet_test(request):
+    records = WorkRecord.objects.all().order_by("-id")[:50]
+    coords = [
+        {
+            "id": r.id,
+            "title": r.title or "(bez názvu)",
+            "description": r.description or "",
+            "project": r.project.name if r.project else "",
+            "lat": r.latitude,
+            "lon": r.longitude,
+        }
+        for r in records if r.latitude and r.longitude
+    ]
+
     context = {
         "mapy_key": settings.MAPY_API_KEY,
+        "work_records": records,
+        "records_with_coords": coords,
     }
     return render(request, "tracker/map_leaflet.html", context)
 
+def save_coordinates(request):
+    if request.method == "POST":
+        record_id = request.POST.get("record_id")
+        lat = request.POST.get("latitude")
+        lon = request.POST.get("longitude")
+
+        try:
+            record = WorkRecord.objects.get(id=record_id)
+            record.latitude = lat
+            record.longitude = lon
+            record.save()
+            return JsonResponse({"status": "ok"})
+        except WorkRecord.DoesNotExist:
+            return JsonResponse({"status": "error", "msg": "Record not found"})
+    return JsonResponse({"status": "error", "msg": "Invalid request"})
