@@ -22,6 +22,7 @@ ALLOWED_HOSTS = [
     "127.0.0.1",
     "moraviatrees.cz",
     "www.moraviatrees.cz",
+    "10.0.0.242",
 ]
 
 

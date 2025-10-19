@@ -23,8 +23,10 @@
 document.addEventListener("DOMContentLoaded", function () {
   const API_KEY = "{{ mapy_key }}";
 
-  const map = L.map("map").setView([49.8729317, 14.8981184], 14);
+  // 1️⃣ Vytvoření mapy
+  const map = L.map("map").setView([49.8729317, 14.8981184], 13);
 
+  // 2️⃣ Načtení dlaždic z Mapy.cz API
   L.tileLayer(`https://api.mapy.com/v1/maptiles/basic/256/{z}/{x}/{y}?apikey=${API_KEY}`, {
     minZoom: 0,
     maxZoom: 19,
@@ -32,7 +34,7 @@ document.addEventListener("DOMContentLoaded", function () {
       '<a href="https://api.mapy.com/copyright" target="_blank">&copy; Seznam.cz a.s. a další</a>',
   }).addTo(map);
 
-  // přidáme logo Mapy.com (povinné)
+  // 3️⃣ Přidání loga Mapy.com (povinné)
   const LogoControl = L.Control.extend({
     options: { position: "bottomleft" },
     onAdd: function (map) {
@@ -46,6 +48,45 @@ document.addEventListener("DOMContentLoaded", function () {
     },
   });
   new LogoControl().addTo(map);
+
+  // 4️⃣ Získání polohy uživatele
+  if ("geolocation" in navigator) {
+    navigator.geolocation.getCurrentPosition(
+        function (pos) {
+            const lat = pos.coords.latitude;
+            const lon = pos.coords.longitude;
+
+            L.marker([lat, lon])
+                .addTo(map)
+                .bindPopup(`<b>Tady jsi!</b><br>Lat: ${lat.toFixed(5)}, Lon: ${lon.toFixed(5)}`)
+                .openPopup();
+
+            map.setView([lat, lon], 16);
+        },
+        function (error) {
+            console.error("Chyba při získávání polohy:", error);
+            alert("Nepodařilo se získat vaši polohu. Používám výchozí (Ostrava).");
+
+    // fallback na Ostravu
+            const lat = 49.83465;
+            const lon = 18.28204;
+            L.marker([lat, lon])
+                .addTo(map)
+                .bindPopup("Výchozí poloha: Ostrava")
+                .openPopup();
+
+            map.setView([lat, lon], 13);
+    },
+    {
+        enableHighAccuracy: true,  // zkusí GPS, ne IP
+        timeout: 5000,             // max. 5 s čekání
+        maximumAge: 0
+    }
+    );
+
+  } else {
+    alert("Tento prohlížeč nepodporuje geolokaci.");
+  }
 });
 </script>
 {% endblock %}
