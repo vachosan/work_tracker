@@ -4,6 +4,8 @@ import zipfile
 import unicodedata
 import re
 import requests
+import tempfile
+from django.http import FileResponse
 from datetime import date
 from django.conf import settings
 from django.core.files import File
@@ -385,18 +387,13 @@ def delete_photo(request, pk):
 
 @login_required
 def export_selected_zip(request, pk):
-    """Export vybraných nebo všech úkonů projektu do ZIPu."""
-    from django.http import HttpResponse
-
+    """Export vybraných nebo všech úkonů projektu do ZIPu (úsporně přes tempfile)."""
     project = get_object_or_404(Project, pk=pk)
 
     if not user_can_view_project(request.user, project.pk):
         return redirect('work_record_list')
 
-    # Inicializace proměnné, aby existovala i mimo větve
-    selected_ids = []
-
-    # vybrané nebo všechny úkony
+    # zjištění vybraných nebo všech úkonů
     if "export_all" in request.POST:
         work_records = WorkRecord.objects.filter(project=project)
     else:
@@ -405,38 +402,49 @@ def export_selected_zip(request, pk):
             return redirect("project_detail", pk=pk)
         work_records = WorkRecord.objects.filter(id__in=selected_ids, project=project)
 
-    # helper na čisté názvy
+    # funkce pro čisté názvy složek/souborů
     def slugify_folder(name):
         name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
         name = re.sub(r'[^a-zA-Z0-9_-]+', '_', name)
         return name.strip('_') or 'ukon'
 
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for record in work_records:
-            folder = slugify_folder(record.title or f"ukon_{record.id}")
-            photos = PhotoDocumentation.objects.filter(work_record=record)
-            for photo in photos:
-                if photo.photo and os.path.exists(photo.photo.path):
-                    base_filename = os.path.basename(photo.photo.name)
-                    ext = os.path.splitext(base_filename)[1] or ".jpg"
+    # vytvoření dočasného souboru
+    temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+    zip_path = temp_zip.name
 
-                    if photo.description:
-                        safe_name = slugify_folder(photo.description)
-                        filename = f"{safe_name}{ext}"
-                    else:
-                        filename = base_filename
+    try:
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for record in work_records:
+                folder = slugify_folder(record.title or f"ukon_{record.id}")
+                photos = PhotoDocumentation.objects.filter(work_record=record)
 
-                    arcname = os.path.join(folder, filename)
-                    zipf.write(photo.photo.path, arcname=arcname)
+                for photo in photos:
+                    if photo.photo and os.path.exists(photo.photo.path):
+                        base_filename = os.path.basename(photo.photo.name)
+                        ext = os.path.splitext(base_filename)[1] or ".jpg"
 
-    buffer.seek(0)
-    response = HttpResponse(buffer.getvalue(), content_type='application/zip')
-    today_str = date.today().strftime("%Y-%m-%d")
-    filename = f'{slugify_folder(project.name)}_{today_str}.zip'
-    response['Content-Disposition'] = f'attachment; filename="{filename}"'
-    return response
+                        if photo.description:
+                            safe_name = slugify_folder(photo.description)
+                            filename = f"{safe_name}{ext}"
+                        else:
+                            filename = base_filename
 
+                        arcname = os.path.join(folder, filename)
+                        zipf.write(photo.photo.path, arcname=arcname)
+
+        # připravíme streamovanou odpověď
+        today_str = date.today().strftime("%Y-%m-%d")
+        filename = f'{slugify_folder(project.name)}_{today_str}.zip'
+        response = FileResponse(open(zip_path, "rb"), as_attachment=True)
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+    finally:
+        # po odeslání ZIP smažeme
+        try:
+            os.remove(zip_path)
+        except OSError:
+            pass
 
 # ------------------ Test mapy ------------------
 
