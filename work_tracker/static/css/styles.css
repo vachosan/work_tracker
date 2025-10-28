@@ -236,3 +236,16 @@ ul li:hover {
         height: auto;
     }
 }
+
+/* --- Čtvercová ikonová tlačítka (pro Work Tracker) --- */
+.btn-icon-square {
+  width: 38px !important;
+  height: 38px !important;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border-radius: 0.5rem !important;
+  font-size: 1.2rem !important;
+  line-height: 1 !important;
+}
