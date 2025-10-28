@@ -13,6 +13,34 @@
        href="{% url 'edit_work_record' work_record.pk %}">
       <i class="bi bi-pencil"></i> Upravit
     </a>
+    <!-- 🗑️ Tlačítko pro vyvolání potvrzovacího modalu -->
+    <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#deleteConfirmModal">
+      <i class="bi bi-trash"></i> Smazat
+    </button>
+  </div>
+  <!-- Modal pro potvrzení smazání -->
+  <div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-labelledby="deleteConfirmModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header bg-danger text-white py-2">
+          <h6 class="modal-title m-0" id="deleteConfirmModalLabel">Potvrdit smazání</h6>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Zavřít"></button>
+        </div>
+        <div class="modal-body small">
+          Opravdu chceš smazat úkon <strong>{{ work_record.title|default:"(bez názvu)" }}</strong>
+          včetně všech připojených fotek? Tato akce je nevratná.
+        </div>
+        <div class="modal-footer py-2">
+          <form method="post" action="{% url 'delete_work_record' work_record.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger btn-sm">
+              <i class="bi bi-trash"></i> Ano, smazat
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Zrušit</button>
+          </form>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 

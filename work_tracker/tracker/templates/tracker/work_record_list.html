@@ -57,15 +57,14 @@
       </div>
     </div>
 
-    {# Posledních 5 úkonů — spolehlivě přes slice #}
+    {# Posledních 5 úkonů — klikatelné celé řádky #}
     {% with recent=project.work_records.all|slice:":5" %}
       {% if recent %}
         <ul class="list-group list-group-flush mt-3">
           {% for wr in recent %}
-            <li class="list-group-item d-flex justify-content-between align-items-center">
-              <a href="{% url 'work_record_detail' wr.pk %}">
-                {{ wr.title|default:"Bez názvu" }}
-              </a>
+            <li class="list-group-item d-flex justify-content-between align-items-center workrecord-row"
+                data-href="{% url 'work_record_detail' wr.pk %}">
+              <span>{{ wr.title|default:"Bez názvu" }}</span>
               <small class="text-muted">{{ wr.date|date:"d.m.Y" }}</small>
             </li>
           {% endfor %}
@@ -86,4 +85,28 @@
   </div>
 </div>
 {% endfor %}
+
+
+
+<script>
+document.querySelectorAll('.workrecord-row').forEach(row => {
+  let moved = false;
+
+  // Mobil – rozlišuje scroll a tap
+  row.addEventListener('touchstart', () => moved = false, {passive: true});
+  row.addEventListener('touchmove', () => moved = true, {passive: true});
+  row.addEventListener('touchend', (e) => {
+    if (!moved) {
+      window.location = row.dataset.href;
+    }
+  });
+
+  // Desktop – klasické kliknutí
+  row.addEventListener('click', (e) => {
+    if (!e.target.closest('a, button, input')) {
+      window.location = row.dataset.href;
+    }
+  });
+});
+</script>
 {% endblock %}

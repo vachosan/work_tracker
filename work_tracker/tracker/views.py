@@ -6,6 +6,7 @@ import re
 import requests
 import tempfile
 import zipstream
+from django.contrib import messages
 from django.http import StreamingHttpResponse
 from django.http import FileResponse
 from datetime import date
@@ -282,6 +283,32 @@ def create_work_record(request, project_id=None):
         'photo_form': photo_form,
     })
 
+@login_required
+def delete_work_record(request, pk):
+    """Smazání úkonu včetně fotek a souborů z disku."""
+    work_record = get_object_or_404(WorkRecord, pk=pk)
+
+    # kontrola oprávnění
+    if not user_can_view_project(request.user, work_record.project.pk):
+        return redirect('work_record_list')
+
+    if request.method == "POST":
+        # smažeme všechny fotky
+        photos = PhotoDocumentation.objects.filter(work_record=work_record)
+        for photo in photos:
+            if photo.photo and os.path.exists(photo.photo.path):
+                try:
+                    os.remove(photo.photo.path)
+                except Exception as e:
+                    print(f"⚠️ Nepodařilo se smazat soubor {photo.photo.path}: {e}")
+            photo.delete()
+
+        # smažeme samotný úkon
+        work_record.delete()
+        messages.success(request, "Úkon byl úspěšně smazán včetně fotek.")
+        return redirect("project_detail", pk=work_record.project.pk)
+
+    return render(request, "tracker/confirm_delete_work_record.html", {"work_record": work_record})
 
 @login_required
 def work_record_detail(request, pk):

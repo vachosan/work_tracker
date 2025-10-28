@@ -178,6 +178,20 @@ ul li:hover {
     font-size: 0.8rem;
 }
 
+/* --- Klikatelné řádky v seznamech úkonů --- */
+.workrecord-row {
+  cursor: pointer !important;
+  transition: background-color 0.15s ease-in-out;
+}
+
+.workrecord-row:hover {
+  background-color: #f8f9fa;
+}
+
+.workrecord-row:active {
+  background-color: #e9ecef;
+}
+
 /* Mobilní optimalizace */
 @media (max-width: 768px) {
     body {
