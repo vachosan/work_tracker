@@ -5,6 +5,8 @@ import unicodedata
 import re
 import requests
 import tempfile
+import zipstream
+from django.http import StreamingHttpResponse
 from django.http import FileResponse
 from datetime import date
 from django.conf import settings
@@ -387,13 +389,13 @@ def delete_photo(request, pk):
 
 @login_required
 def export_selected_zip(request, pk):
-    """Export vybraných nebo všech úkonů projektu do ZIPu (úsporně přes tempfile)."""
+    """Export vybraných nebo všech úkonů projektu jako streamovaný ZIP (nízká paměťová náročnost)."""
     project = get_object_or_404(Project, pk=pk)
 
     if not user_can_view_project(request.user, project.pk):
         return redirect('work_record_list')
 
-    # zjištění vybraných nebo všech úkonů
+    # vybrané nebo všechny úkony
     if "export_all" in request.POST:
         work_records = WorkRecord.objects.filter(project=project)
     else:
@@ -402,49 +404,40 @@ def export_selected_zip(request, pk):
             return redirect("project_detail", pk=pk)
         work_records = WorkRecord.objects.filter(id__in=selected_ids, project=project)
 
-    # funkce pro čisté názvy složek/souborů
+    # helper na čisté názvy
     def slugify_folder(name):
         name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
         name = re.sub(r'[^a-zA-Z0-9_-]+', '_', name)
         return name.strip('_') or 'ukon'
 
-    # vytvoření dočasného souboru
-    temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
-    zip_path = temp_zip.name
+    # vytvoření streamovacího ZIP objektu
+    z = zipstream.ZipFile(mode='w', compression=zipfile.ZIP_DEFLATED)
 
-    try:
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            for record in work_records:
-                folder = slugify_folder(record.title or f"ukon_{record.id}")
-                photos = PhotoDocumentation.objects.filter(work_record=record)
+    for record in work_records:
+        folder = slugify_folder(record.title or f"ukon_{record.id}")
+        photos = PhotoDocumentation.objects.filter(work_record=record)
 
-                for photo in photos:
-                    if photo.photo and os.path.exists(photo.photo.path):
-                        base_filename = os.path.basename(photo.photo.name)
-                        ext = os.path.splitext(base_filename)[1] or ".jpg"
+        for photo in photos:
+            if photo.photo and os.path.exists(photo.photo.path):
+                base_filename = os.path.basename(photo.photo.name)
+                ext = os.path.splitext(base_filename)[1] or ".jpg"
 
-                        if photo.description:
-                            safe_name = slugify_folder(photo.description)
-                            filename = f"{safe_name}{ext}"
-                        else:
-                            filename = base_filename
+                if photo.description:
+                    safe_name = slugify_folder(photo.description)
+                    filename = f"{safe_name}{ext}"
+                else:
+                    filename = base_filename
 
-                        arcname = os.path.join(folder, filename)
-                        zipf.write(photo.photo.path, arcname=arcname)
+                arcname = os.path.join(folder, filename)
+                z.write(photo.photo.path, arcname)
 
-        # připravíme streamovanou odpověď
-        today_str = date.today().strftime("%Y-%m-%d")
-        filename = f'{slugify_folder(project.name)}_{today_str}.zip'
-        response = FileResponse(open(zip_path, "rb"), as_attachment=True)
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
-        return response
+    # příprava odpovědi
+    today_str = date.today().strftime("%Y-%m-%d")
+    filename = f'{slugify_folder(project.name)}_{today_str}.zip'
 
-    finally:
-        # po odeslání ZIP smažeme
-        try:
-            os.remove(zip_path)
-        except OSError:
-            pass
+    response = StreamingHttpResponse(z, content_type='application/zip')
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
 # ------------------ Test mapy ------------------
 
