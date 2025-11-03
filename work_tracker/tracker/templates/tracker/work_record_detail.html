@@ -8,6 +8,17 @@
   </h1>
 
   <div class="d-flex gap-2 flex-shrink-0">
+    {% if work_record.latitude and work_record.longitude %}
+      <a href="{% url 'map_leaflet_test' %}?record={{ work_record.id }}{% if work_record.project_id %}&project={{ work_record.project_id }}{% endif %}"
+         class="btn btn-outline-success btn-icon-square" title="Zobrazit v mapě">
+        <i class="bi bi-geo-alt"></i>
+      </a>
+    {% else %}
+      <a href="{% url 'map_leaflet_test' %}?record={{ work_record.id }}{% if work_record.project_id %}&project={{ work_record.project_id }}{% endif %}"
+         class="btn btn-outline-success btn-icon-square" title="Přidat polohu">
+        <i class="bi bi-geo"></i>
+      </a>
+    {% endif %}
     <a href="{% url 'work_record_list' %}#project-{{ work_record.project_id }}"
        class="btn btn-outline-secondary btn-icon-square" title="Zpět na projekt">
       <i class="bi bi-arrow-left"></i>

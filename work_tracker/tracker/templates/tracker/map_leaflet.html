@@ -6,6 +6,14 @@
   <p class="text-muted small">
     Mapa se přiblíží podle tvé polohy (pokud ji prohlížeč dovolí). Klikni na mapu pro označení stromu a ulož souřadnice k úkonu.
   </p>
+  <div class="d-flex gap-2 mb-2">
+    <a href="{% url 'work_record_list' %}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-list-ul"></i> Zpět na seznam
+    </a>
+    <a id="backDetailLink" href="#" class="btn btn-outline-primary btn-sm d-none">
+      <i class="bi bi-arrow-left-circle"></i> Zpět na detail
+    </a>
+  </div>
 
   <!-- Výběr úkonu -->
   <label for="recordSelect" class="form-label">Vyber úkon (strom):</label>
@@ -66,6 +74,18 @@ document.addEventListener("DOMContentLoaded", function () {
   const recordSelect = document.getElementById('recordSelect');
   const projectLabel = document.querySelector('label[for="projectSelect"]');
   const recordLabel = document.querySelector('label[for="recordSelect"]');
+  const backDetailLink = document.getElementById('backDetailLink');
+
+  function updateBackLink(rid) {
+    const id = rid || (recordSelect ? recordSelect.value : null);
+    if (!backDetailLink) return;
+    if (id) {
+      backDetailLink.href = `/tracker/${id}/`;
+      backDetailLink.classList.remove('d-none');
+    } else {
+      backDetailLink.classList.add('d-none');
+    }
+  }
 
   // move project selector above record selector
   if (projectLabel && projectSelect && recordLabel && recordLabel.parentNode) {
@@ -92,11 +112,16 @@ document.addEventListener("DOMContentLoaded", function () {
       const match = Array.from(recordSelect.options).find(o => o.value === prev);
       if (match) recordSelect.value = prev;
     }
+    updateBackLink();
   }
 
   if (projectSelect) {
     projectSelect.addEventListener('change', (e) => { populateRecordSelect(e.target.value); if (typeof updateMarkers === 'function') updateMarkers(e.target.value); });
     populateRecordSelect(projectSelect.value);
+  }
+
+  if (recordSelect) {
+    recordSelect.addEventListener('change', () => updateBackLink(recordSelect.value));
   }
 
   // výchozí centrum
@@ -238,6 +263,7 @@ function updateMarkers(projectId) {
     .forEach(r => {
       if (r.lat && r.lon) {
         const m = L.marker([r.lat, r.lon], { icon: wrIcon });
+        m.recordId = Number(r.id);
         const titleText = (r.title && r.title.trim()) ? r.title : '(bez názvu)';
         const detailUrl = `/tracker/${r.id}/`;
         let popupHtml = `
@@ -255,6 +281,35 @@ function updateMarkers(projectId) {
     });
 }
 updateMarkers(projectSelect ? projectSelect.value : '');
+
+// Deep-link handling: focus record and/or set project from URL
+(function(){
+  const params = new URLSearchParams(window.location.search);
+  const rid = params.get('record');
+  const proj = params.get('project');
+  if (proj && projectSelect) {
+    projectSelect.value = proj;
+    populateRecordSelect(proj);
+    updateMarkers(proj);
+  }
+  if (rid) {
+    if (recordSelect) recordSelect.value = rid;
+    const rec = (records || []).find(r => String(r.id) === String(rid));
+    if (rec) {
+      const desired = (rec.project_id === null) ? 'none' : String(rec.project_id);
+      if (projectSelect && String(projectSelect.value) !== desired) {
+        projectSelect.value = desired;
+        populateRecordSelect(desired);
+        updateMarkers(desired);
+      }
+    }
+    let target = null;
+    clusterLayer.eachLayer(layer => { if (layer && Number(layer.recordId) === Number(rid)) target = layer; });
+    if (target) {
+      clusterLayer.zoomToShowLayer(target, () => { const ll = target.getLatLng(); map.setView(ll, Math.max(map.getZoom(), 18)); target.openPopup(); });
+    }
+  }
+})();
 
   // logo Mapy.com (povinné)
   const LogoControl = L.Control.extend({
@@ -274,6 +329,7 @@ updateMarkers(projectSelect ? projectSelect.value : '');
 });
 </script>
 {% endblock %}
+
 
 
 
