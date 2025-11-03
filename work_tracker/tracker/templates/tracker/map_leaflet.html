@@ -264,17 +264,16 @@ function updateMarkers(projectId) {
       if (r.lat && r.lon) {
         const m = L.marker([r.lat, r.lon], { icon: wrIcon });
         m.recordId = Number(r.id);
-        const titleText = (r.title && r.title.trim()) ? r.title : '(bez názvu)';
+                const titleText = (r.title && r.title.trim()) ? r.title : '(bez nazvu)';
         const detailUrl = `/tracker/${r.id}/`;
         let popupHtml = `
           <div class="wr-popup">
             <div><a href="${detailUrl}" class="wr-title">${titleText}</a></div>
-            ${r.project ? `<div class=\"text-muted\"><small>${r.project}</small></div>` : ''}
-            ${r.description ? `<div class=\"wr-desc\">${r.description}</div>` : ''}
-            <div class=\"wr-links\"><a class=\\"keep-mapy\\" href=\\"https://mapy.cz/zakladni?x=${r.lon}&y=${r.lat}&z=18\\" target=\\"_blank\\" rel=\\"noopener\\">Mapy.cz</a></div>
+            ${r.project ? `<div class="text-muted"><small>${r.project}</small></div>` : ''}
+            ${r.description ? `<div class="wr-desc">${r.description}</div>` : ''}
+            <div class="wr-links"><a class="keep-mapy" href="https://mapy.cz/zakladni?x=${r.lon}&y=${r.lat}&z=18" target="_blank" rel="noopener">Mapy.cz</a></div>
           </div>
         `;
-        popupHtml += `<br><a href=\"https://mapy.cz/zakladni?x=${r.lon}&y=${r.lat}&z=18\" target=\"_blank\">Otevt v Mapy.cz</a>`;
         m.bindPopup(popupHtml);
         clusterLayer.addLayer(m);
       }
@@ -329,6 +328,7 @@ updateMarkers(projectSelect ? projectSelect.value : '');
 });
 </script>
 {% endblock %}
+
 
 
 
