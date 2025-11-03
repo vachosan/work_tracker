@@ -249,3 +249,24 @@ ul li:hover {
   font-size: 1.2rem !important;
   line-height: 1 !important;
 }
+
+/* --- Map (Leaflet) styles --- */
+/* Green dot for clustered markers */
+.wr-dot {
+  background: #2ecc71;
+  border: 1px solid #2ecc71;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.15);
+}
+.wr-dot::after { content: ''; }
+
+/* Popup content styling */
+.leaflet-popup-content .wr-popup .wr-links { text-align: right; margin-top: 4px; }
+.leaflet-popup-content .wr-popup .wr-links a { font-size: .85em; color: #6c757d; text-decoration: underline; }
+.leaflet-popup-content .wr-popup .wr-title { font-weight: 600; text-decoration: none; }
+.leaflet-popup-content .wr-popup .wr-title:hover { text-decoration: underline; }
+
+/* Hide any auto-rendered Mapy.cz links we didn't render ourselves */
+.leaflet-popup-content a[href^="https://mapy.cz"]:not(.keep-mapy) { display: none; }
