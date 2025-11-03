@@ -44,13 +44,32 @@
   href="https://unpkg.com/leaflet@1.9.2/dist/leaflet.css"
 />
 <script src="https://unpkg.com/leaflet@1.9.2/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css">
+<script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
 {{ records_for_select|json_script:"records-data" }}
 {{ records_with_coords|json_script:"coords-data" }}
 {{ projects_js|json_script:"projects-data" }}
 
+<style>
+  /* Malá zelená tečka jako DivIcon pro clusterované markery */
+  .wr-dot {
+    background: #2ecc71;
+    border: 1px solid #2ecc71;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.15);
+  }
+  .wr-dot::after { content: ''; }
+</style>
+
 <script>
 document.addEventListener("DOMContentLoaded", function () {
   const API_KEY = "{{ mapy_key }}";
+  // jednotný styl pro body (zelené kolečko)
+  const circleStyle = { color: "#2ecc71", fillColor: "#2ecc71", fillOpacity: 0.9, radius: 6, weight: 1 };
+  const wrIcon = L.divIcon({ className: 'wr-dot', iconSize: [12,12] });
 
   // populate second select (records) based on selected project
   const recordsForSelect = JSON.parse(document.getElementById('records-data').textContent);
@@ -155,7 +174,7 @@ document.addEventListener("DOMContentLoaded", function () {
     selectedLon = lng.toFixed(7);
 
     if (marker) map.removeLayer(marker);
-    marker = L.marker([lat, lng]).addTo(map).bindPopup("Zvolený strom").openPopup();
+    marker = L.circleMarker([lat, lng], circleStyle).addTo(map).bindPopup("Zvolený strom").openPopup();
 
     document.getElementById("coordsInfo").innerText = `Lat: ${selectedLat}, Lon: ${selectedLon}`;
     document.getElementById("saveBtn").disabled = false;
@@ -213,9 +232,14 @@ document.addEventListener("DOMContentLoaded", function () {
   });
   // vykreslení všech existujících úkonů s GPS
 let records = JSON.parse(document.getElementById('coords-data').textContent);
-const markerLayer = L.layerGroup().addTo(map);
+const clusterLayer = L.markerClusterGroup({
+  disableClusteringAtZoom: 17,
+  spiderfyOnMaxZoom: true,
+  chunkedLoading: true
+});
+map.addLayer(clusterLayer);
 function updateMarkers(projectId) {
-  markerLayer.clearLayers();
+  clusterLayer.clearLayers();
   records
     .filter(r => {
       if (!projectId) return true;               // all projects
@@ -224,12 +248,13 @@ function updateMarkers(projectId) {
     })
     .forEach(r => {
       if (r.lat && r.lon) {
-        const m = L.marker([r.lat, r.lon]).addTo(markerLayer);
+        const m = L.marker([r.lat, r.lon], { icon: wrIcon });
         let popupHtml = `<b>${r.title}</b>`;
         if (r.project) popupHtml += `<br><small>${r.project}</small>`;
         if (r.description) popupHtml += `<br>${r.description}`;
-        popupHtml += `<br><a href=\"https://mapy.cz/zakladni?x=${r.lon}&y=${r.lat}&z=18\" target=\"_blank\">Otevrit v Mapy.cz</a>`;
+        popupHtml += `<br><a href=\"https://mapy.cz/zakladni?x=${r.lon}&y=${r.lat}&z=18\" target=\"_blank\">Otevt v Mapy.cz</a>`;
         m.bindPopup(popupHtml);
+        clusterLayer.addLayer(m);
       }
     });
 }
@@ -253,6 +278,7 @@ updateMarkers(projectSelect ? projectSelect.value : '');
 });
 </script>
 {% endblock %}
+
 
 
 
