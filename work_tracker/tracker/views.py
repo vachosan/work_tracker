@@ -3,7 +3,6 @@ import io
 import zipfile
 import unicodedata
 import re
-import requests
 import tempfile
 import zipstream
 from django.contrib import messages
@@ -466,6 +465,7 @@ def export_selected_zip(request, pk):
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
 
+"""
 # ------------------ Test mapy ------------------
 
 def map_test(request):
@@ -494,39 +494,74 @@ def mapy_geocode_test(request):
     return render(request, "tracker/map_rest_test.html", {"data": data, "query": query})
 
 
+"""
+@login_required
 def map_leaflet_test(request):
-    records = WorkRecord.objects.all().order_by("-id")[:50]
+    visible_projects = user_projects_qs(request.user)
+    records = (
+        WorkRecord.objects
+        .filter(Q(project__in=visible_projects) | Q(project__isnull=True))
+        .order_by("-id")[:50]
+    )
+    projects = visible_projects.order_by("name")
+    projects_js = list(projects.values("id", "name"))
     coords = [
         {
             "id": r.id,
             "title": r.title or "(bez názvu)",
             "description": r.description or "",
             "project": r.project.name if r.project else "",
+            "project_id": r.project_id,
             "lat": r.latitude,
             "lon": r.longitude,
         }
         for r in records if r.latitude and r.longitude
     ]
 
+    records_for_select = [
+        {
+            "id": r.id,
+            "title": (r.title or ""),
+            "project_id": r.project_id,
+            "has_coords": bool(r.latitude and r.longitude),
+        }
+        for r in records
+    ]
+
     context = {
         "mapy_key": settings.MAPY_API_KEY,
+        "projects": projects,
+        "projects_js": projects_js,
         "work_records": records,
         "records_with_coords": coords,
+        "records_for_select": records_for_select,
     }
     return render(request, "tracker/map_leaflet.html", context)
 
+@login_required
 def save_coordinates(request):
-    if request.method == "POST":
-        record_id = request.POST.get("record_id")
-        lat = request.POST.get("latitude")
-        lon = request.POST.get("longitude")
+    if request.method != "POST":
+        return JsonResponse({"status": "error", "msg": "Invalid request"}, status=405)
 
-        try:
-            record = WorkRecord.objects.get(id=record_id)
-            record.latitude = lat
-            record.longitude = lon
-            record.save()
-            return JsonResponse({"status": "ok"})
-        except WorkRecord.DoesNotExist:
-            return JsonResponse({"status": "error", "msg": "Record not found"})
-    return JsonResponse({"status": "error", "msg": "Invalid request"})
+    record_id = request.POST.get("record_id")
+    lat_str = request.POST.get("latitude")
+    lon_str = request.POST.get("longitude")
+
+    try:
+        record = WorkRecord.objects.get(id=record_id)
+    except WorkRecord.DoesNotExist:
+        return JsonResponse({"status": "error", "msg": "Record not found"}, status=404)
+
+    if record.project_id and not user_can_view_project(request.user, record.project_id):
+        return JsonResponse({"status": "error", "msg": "Forbidden"}, status=403)
+
+    try:
+        lat = float(lat_str)
+        lon = float(lon_str)
+    except (TypeError, ValueError):
+        return JsonResponse({"status": "error", "msg": "Invalid coordinates"}, status=400)
+
+    record.latitude = lat
+    record.longitude = lon
+    record.save(update_fields=["latitude", "longitude"])
+    return JsonResponse({"status": "ok"})
