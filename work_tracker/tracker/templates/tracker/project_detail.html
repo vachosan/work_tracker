@@ -15,6 +15,11 @@
 
 <div class="card border-0 shadow-sm mb-3">
   <div class="card-body">
+    <div class="d-flex justify-content-end mb-2">
+      <a class="btn btn-outline-success btn-sm" href="{% url 'map_leaflet_test' %}?project={{ project.pk }}">
+        <i class="bi bi-map"></i> Mapa projektu
+      </a>
+    </div>
     <form method="get" class="row g-2">
       <div class="col-12 col-md-4">
         <input type="text" name="q" value="{{ q }}" class="form-control" placeholder="Hledat v názvu/popisu…">
@@ -58,7 +63,17 @@
             <input type="checkbox" name="selected_records" value="{{ wr.id }}" class="form-check-input me-2">
             <span>{{ wr.title|default:"Bez názvu" }}</span>
           </div>
-          <small class="text-muted">{{ wr.date|date:"d.m.Y" }}</small>
+          <div class="d-flex align-items-center gap-2">
+            {% if wr.latitude and wr.longitude %}
+              <i class="bi bi-geo-alt-fill text-success" title="Has location"></i>
+            {% else %}
+              <i class="bi bi-geo text-muted" title="No location"></i>
+            {% endif %}
+            <a href="{% url 'map_leaflet_test' %}?record={{ wr.id }}&project={{ project.pk }}" class="text-muted" title="Open in map">
+              <i class="bi bi-map"></i>
+            </a>
+            <small class="text-muted">{{ wr.date|date:"d.m.Y" }}</small>
+          </div>
         </div>
       </div>
     {% empty %}

@@ -34,6 +34,9 @@
       </div>
 
       <div class="d-flex ms-auto align-items-center gap-2 flex-wrap justify-content-end">
+        <a href="{% url 'map_leaflet_test' %}?project={{ project.pk }}" class="btn btn-outline-success" title="Zobrazit projekt v mapě">
+          <i class="bi bi-map"></i> Mapa
+        </a>
         {% if project.is_member and not project.is_closed %}
           <a href="{% url 'create_work_record_for_project' project.pk %}" class="btn btn-primary fw-bold">
             <i class="bi bi-plus-lg"></i> Přidat úkon
@@ -64,8 +67,13 @@
           {% for wr in recent %}
             <li class="list-group-item d-flex justify-content-between align-items-center workrecord-row"
                 data-href="{% url 'work_record_detail' wr.pk %}">
-              <span>{{ wr.title|default:"Bez názvu" }}</span>
-              <small class="text-muted">{{ wr.date|date:"d.m.Y" }}</small>
+              <span>{% if wr.latitude and wr.longitude %}<i class="bi bi-geo-alt-fill text-success me-1" title="Má polohu"></i>{% else %}<i class="bi bi-geo text-muted me-1" title="Bez polohy"></i>{% endif %} {{ wr.title|default:"Bez názvu" }}</span>
+              <div class="d-flex align-items-center gap-2">
+                <a href="{% url 'map_leaflet_test' %}?record={{ wr.id }}{% if project.pk %}&project={{ project.pk }}{% endif %}" class="text-muted" title="Open in map">
+                  <i class="bi bi-map"></i>
+                </a>
+                <small class="text-muted">{{ wr.date|date:"d.m.Y" }}</small>
+              </div>
             </li>
           {% endfor %}
         </ul>
@@ -110,3 +118,5 @@ document.querySelectorAll('.workrecord-row').forEach(row => {
 });
 </script>
 {% endblock %}
+
+
