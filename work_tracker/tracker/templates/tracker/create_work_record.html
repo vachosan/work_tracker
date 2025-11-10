@@ -11,6 +11,8 @@
 
 <form method="post" enctype="multipart/form-data" class="vstack gap-3">
   {% csrf_token %}
+  {% if request.GET.lat %}<input type="hidden" name="latitude" value="{{ request.GET.lat }}">{% endif %}
+  {% if request.GET.lon %}<input type="hidden" name="longitude" value="{{ request.GET.lon }}">{% endif %}
 
   <div class="card border-0 shadow-sm">
     <div class="card-body vstack gap-3">

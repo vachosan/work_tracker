@@ -1,103 +1,149 @@
 {% extends "tracker/base.html" %}
-{% block title %}Test – mapa a uložení souřadnic{% endblock %}
+{% block title %}Mapa{% endblock %}
 {% block content %}
-<div class="container py-3">
-  <h5>📍 Test – výběr stromu a uložení souřadnic</h5>
-  <p class="text-muted small">
-    Mapa se přiblíží podle tvé polohy (pokud ji prohlížeč dovolí). Klikni na mapu pro označení stromu a ulož souřadnice k úkonu.
-  </p>
-  <div class="d-flex gap-2 mb-2">
-    <a href="{% url 'work_record_list' %}" class="btn btn-outline-secondary btn-sm">
-      <i class="bi bi-list-ul"></i> Zpět na seznam
-    </a>
-    <a id="backDetailLink" href="#" class="btn btn-outline-primary btn-sm d-none">
-      <i class="bi bi-arrow-left-circle"></i> Zpět na detail
-    </a>
-  </div>
+<style>
+  html, body { height: 100%; overflow: hidden; }
+  body { margin: 0; }
+  /* fullscreen map overrides */
+  main.container { padding: 0 !important; max-width: none; }
+  nav.navbar, footer { display: none; }
+  /* map fills viewport */
+  #map { position: fixed; inset: 0; z-index: 1; }
+  /* translucent top bar */
+  #map-topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px;
+    background: rgba(255,255,255,.85);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    box-shadow: 0 2px 12px rgba(0,0,0,.1);
+  }
+  /* floating action buttons */
+  #map-fabs { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 1100; }
+  #map-fabs .fab-btn { width: 56px; height: 56px; display: inline-flex; align-items: center; justify-content: center; font-size: 1.25rem; }
+  /* layer panel (toggled by FAB) */
+  #layerPanel { position: fixed; right: 16px; bottom: 88px; z-index: 1100; width: 200px; border-radius: 12px; }
+  /* marker and leaflet tweaks */
+  .wr-dot { width: 12px; height: 12px; background: #2ecc71; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.2); }
+  .leaflet-control-layers { display: none !important; }
+  .leaflet-container { background: #f3f3f3; }
+  .wr-popup .wr-title { font-weight: 600; text-decoration: none; }
+  .wr-popup .wr-desc { margin-top: 4px; }
+  /* offcanvas styling */
+  .offcanvas-top { border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,.15); background: rgba(255,255,255,.98); }
+  .offcanvas-header { border-bottom: 1px solid rgba(0,0,0,.05); }
+</style>
 
-  <!-- Výběr úkonu -->
-  <label for="recordSelect" class="form-label">Vyber úkon (strom):</label>
-  <select id="recordSelect" class="form-select mb-3">
-  {% for record in work_records %}
-    <option value="{{ record.id }}">
-      #{{ record.id }} – {{ record.title|default:"(bez názvu)" }}
-      {% if record.description %} • {{ record.description|truncatechars:60 }}{% endif %}
-      {% if record.project %} • {{ record.project.name }}{% endif %}
-    </option>
-  {% endfor %}
-</select>
+<!-- Fullscreen map -->
+<div id="map"></div>
 
-  <!-- Project select -->
-  <label for="projectSelect" class="form-label">Vyber projekt:</label>
-  <select id="projectSelect" class="form-select mb-3">
-    <option value="">Vsechny projekty</option>
-    <option value="none">Bez projektu</option>
-    {% for p in projects %}
-      <option value="{{ p.id }}">{{ p.name }}</option>
-    {% endfor %}
-  </select>
-
-  <!-- Mapa -->
-  <div id="map" style="width:100%; height:400px; border-radius:10px;"></div>
-
-  <div class="mt-3 small text-muted" id="coordsInfo">Klikni na mapu pro výběr bodu.</div>
-
-  <!-- Tlačítko pro uložení -->
-  <button id="saveBtn" class="btn btn-success mt-2" disabled>💾 Uložit polohu</button>
+<!-- Top bar overlay -->
+<div id="map-topbar">
+  <a id="mapBackLink" href="{% url 'work_record_list' %}" class="btn btn-light btn-sm rounded-pill shadow-sm">
+    <i class="bi bi-arrow-left"></i> Zpět
+  </a>
+  <div class="fw-semibold small text-dark">Mapa</div>
+  <button class="btn btn-light btn-sm rounded-pill shadow-sm" type="button" data-bs-toggle="offcanvas" data-bs-target="#mapControlsPanel" aria-controls="mapControlsPanel" title="Nastavení">
+    <i class="bi bi-sliders"></i>
+  </button>
 </div>
 
-<!-- Leaflet knihovna -->
-<link
-  rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.2/dist/leaflet.css"
-/>
+<!-- Floating action buttons (bottom-right) -->
+<div id="map-fabs" class="d-flex flex-column align-items-end gap-2">
+  <button id="saveFab" class="btn btn-success rounded-circle shadow fab-btn" type="button" title="Uložit polohu" aria-label="Uložit polohu" disabled>
+    <i class="bi bi-check-lg"></i>
+  </button>
+  <button id="createFab" class="btn btn-primary rounded-circle shadow fab-btn" type="button" title="Přidat záznam" aria-label="Přidat záznam">
+    <i class="bi bi-plus-lg"></i>
+  </button>
+  <button id="layersFab" class="btn btn-secondary rounded-circle shadow fab-btn" type="button" aria-expanded="false" aria-controls="layerPanel" title="Vrstvy">
+    <i class="bi bi-layers"></i>
+  </button>
+</div>
+
+<!-- Simple custom layers panel -->
+<div id="layerPanel" class="card shadow-sm p-2 d-none">
+  <div class="form-check">
+    <input class="form-check-input" type="radio" name="baseLayer" id="layerBasic" value="basic" checked>
+    <label class="form-check-label" for="layerBasic">Základní</label>
+  </div>
+  <div class="form-check">
+    <input class="form-check-input" type="radio" name="baseLayer" id="layerAerial" value="aerial">
+    <label class="form-check-label" for="layerAerial">Ortofoto</label>
+  </div>
+  <div class="form-check">
+    <input class="form-check-input" type="radio" name="baseLayer" id="layerHybrid" value="hybrid">
+    <label class="form-check-label" for="layerHybrid">Hybridní</label>
+  </div>
+  <div class="text-muted small mt-1">Zdroj: Mapy.cz</div>
+  
+</div>
+
+<!-- Controls offcanvas -->
+<div class="offcanvas offcanvas-top" tabindex="-1" id="mapControlsPanel" aria-labelledby="mapControlsLabel" style="height:auto; max-height:75vh;">
+  <div class="offcanvas-header py-2">
+    <h6 class="offcanvas-title" id="mapControlsLabel">Nastavení a uložení</h6>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Zavřít"></button>
+  </div>
+  <div class="offcanvas-body">
+    <label for="projectSelect" class="form-label">Vyber projekt:</label>
+    <select id="projectSelect" class="form-select mb-3">
+      <option value="">Všechny projekty</option>
+      <option value="none">Bez projektu</option>
+      {% for p in projects %}
+        <option value="{{ p.id }}">{{ p.name }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="recordSelect" class="form-label">Vyber úkon (strom):</label>
+    <select id="recordSelect" class="form-select mb-2">
+    {% for record in work_records %}
+      <option value="{{ record.id }}">#{{ record.id }} - {{ record.title|default:"(bez názvu)" }}{% if record.project %} · {{ record.project.name }}{% endif %}</option>
+    {% endfor %}
+    </select>
+
+    <div class="small text-muted mb-2" id="coordsInfo">Klikni na mapu pro výběr bodu.</div>
+    <button id="saveBtn" class="btn btn-success" disabled>Uložit polohu</button>
+  </div>
+</div>
+
+<!-- Leaflet and plugins -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.2/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.2/dist/leaflet.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css">
 <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+
+<!-- Data for JS -->
 {{ records_for_select|json_script:"records-data" }}
 {{ records_with_coords|json_script:"coords-data" }}
 {{ projects_js|json_script:"projects-data" }}
 
-
-
 <script>
-document.addEventListener("DOMContentLoaded", function () {
+document.addEventListener('DOMContentLoaded', function () {
   const API_KEY = "{{ mapy_key }}";
-  // jednotný styl pro body (zelené kolečko)
-  const circleStyle = { color: "#2ecc71", fillColor: "#2ecc71", fillOpacity: 0.9, radius: 6, weight: 1 };
   const wrIcon = L.divIcon({ className: 'wr-dot', iconSize: [12,12] });
 
-  // populate second select (records) based on selected project
   const recordsForSelect = JSON.parse(document.getElementById('records-data').textContent);
   const projectSelect = document.getElementById('projectSelect');
   const recordSelect = document.getElementById('recordSelect');
-  const projectLabel = document.querySelector('label[for="projectSelect"]');
-  const recordLabel = document.querySelector('label[for="recordSelect"]');
-  const backDetailLink = document.getElementById('backDetailLink');
+  const backLink = document.getElementById('mapBackLink');
+  const saveFab = document.getElementById('saveFab');
+  const createFab = document.getElementById('createFab');
 
   function updateBackLink(rid) {
     const id = rid || (recordSelect ? recordSelect.value : null);
-    if (!backDetailLink) return;
-    if (id) {
-      backDetailLink.href = `/tracker/${id}/`;
-      backDetailLink.classList.remove('d-none');
-    } else {
-      backDetailLink.classList.add('d-none');
-    }
-  }
-
-  // move project selector above record selector
-  if (projectLabel && projectSelect && recordLabel && recordLabel.parentNode) {
-    recordLabel.parentNode.insertBefore(projectLabel, recordLabel);
-    recordLabel.parentNode.insertBefore(projectSelect, recordLabel);
+    if (!backLink) return;
+    backLink.href = id ? `/tracker/${id}/` : `{% url 'work_record_list' %}`;
   }
 
   function populateRecordSelect(projectId) {
+    if (!recordSelect) return;
     const prev = recordSelect.value;
     recordSelect.innerHTML = '';
     const filtered = recordsForSelect.filter(r => {
-      if (!projectId) return true; // all
+      if (!projectId) return true;              // all
       if (projectId === 'none') return !r.project_id; // no project
       return String(r.project_id) === String(projectId);
     });
@@ -105,29 +151,28 @@ document.addEventListener("DOMContentLoaded", function () {
       const opt = document.createElement('option');
       opt.value = r.id;
       const base = (r.title && r.title.trim()) ? r.title : '(bez nazvu)';
-      opt.textContent = r.has_coords ? `${base} \u{1F4CD}` : base; // add 📍 if has coords
+      opt.textContent = r.has_coords ? `${base} 📍` : base;
       recordSelect.appendChild(opt);
     });
-    if (prev) {
-      const match = Array.from(recordSelect.options).find(o => o.value === prev);
-      if (match) recordSelect.value = prev;
-    }
-    updateBackLink();
+    if (prev) recordSelect.value = prev;
+    if (!recordSelect.value && filtered.length) recordSelect.value = filtered[0].id;
+    updateBackLink(recordSelect.value);
   }
 
   if (projectSelect) {
-    projectSelect.addEventListener('change', (e) => { populateRecordSelect(e.target.value); if (typeof updateMarkers === 'function') updateMarkers(e.target.value); });
-    populateRecordSelect(projectSelect.value);
+    projectSelect.addEventListener('change', () => {
+      populateRecordSelect(projectSelect.value);
+      if (typeof updateMarkers === 'function') updateMarkers(projectSelect.value);
+    });
   }
-
   if (recordSelect) {
     recordSelect.addEventListener('change', () => updateBackLink(recordSelect.value));
   }
 
-  // výchozí centrum
-  const savedView = (()=>{ try { return JSON.parse(localStorage.getItem("wt_map_view")); } catch(e){ return null } })();
-  const map = L.map("map");
-  if (savedView && Array.isArray(savedView.center) && typeof savedView.zoom === "number") {
+  // Map init and saved view
+  const savedView = (()=>{ try { return JSON.parse(localStorage.getItem('wt_map_view')); } catch(e){ return null } })();
+  const map = L.map('map');
+  if (savedView && Array.isArray(savedView.center) && typeof savedView.zoom === 'number') {
     map.setView(savedView.center, savedView.zoom);
   } else {
     map.setView([49.83465, 18.28204], 15);
@@ -137,203 +182,230 @@ document.addEventListener("DOMContentLoaded", function () {
     localStorage.setItem('wt_map_view', JSON.stringify({ center: [c.lat, c.lng], zoom: map.getZoom() }));
   });
 
-  // vrstvy Mapy.cz
+  // Mapy.cz layers
   const basic = L.tileLayer(
     `https://api.mapy.com/v1/maptiles/basic/256/{z}/{x}/{y}?apikey=${API_KEY}`,
     { attribution: '&copy; <a href="https://mapy.cz/">Seznam.cz a.s.</a>' }
   ).addTo(map);
-
   const aerial = L.tileLayer(
     `https://api.mapy.com/v1/maptiles/aerial/256/{z}/{x}/{y}?apikey=${API_KEY}`,
     { attribution: '&copy; <a href="https://mapy.cz/">Seznam.cz a.s.</a>' }
   );
-
   const hybrid = L.tileLayer(
     `https://api.mapy.com/v1/maptiles/hybrid/256/{z}/{x}/{y}?apikey=${API_KEY}`,
     { attribution: '&copy; <a href="https://mapy.cz/">Seznam.cz a.s.</a>' }
   );
 
-  // přepínač vrstev
-  L.control.layers(
-    { "Základní": basic, "Ortofoto": aerial, "Hybridní": hybrid }
-  ).addTo(map);
+  // FAB-driven layer panel
+  (function setupLayerPanel(){
+    const panel = document.getElementById('layerPanel');
+    const fab = document.getElementById('layersFab');
+    function showPanel(show){
+      if (!panel) return;
+      panel.classList.toggle('d-none', !show);
+      if (fab) fab.setAttribute('aria-expanded', show ? 'true' : 'false');
+    }
+    if (fab) {
+      fab.addEventListener('click', () => {
+        const isOpen = fab.getAttribute('aria-expanded') === 'true';
+        showPanel(!isOpen);
+      });
+    }
+    document.querySelectorAll('input[name="baseLayer"]').forEach(r => r.addEventListener('change', (e) => {
+      if (!e.target.checked) return;
+      switch(e.target.value){
+        case 'aerial':
+          map.addLayer(aerial); map.removeLayer(basic); map.removeLayer(hybrid); break;
+        case 'hybrid':
+          map.addLayer(hybrid); map.removeLayer(basic); map.removeLayer(aerial); break;
+        default:
+          map.addLayer(basic); map.removeLayer(aerial); map.removeLayer(hybrid); break;
+      }
+    }));
+    // close panel on outside click
+    document.addEventListener('click', (ev) => {
+      if (!panel || panel.classList.contains('d-none')) return;
+      const target = ev.target;
+      if (panel.contains(target) || (fab && fab.contains(target))) return;
+      showPanel(false);
+    });
+  })();
 
-  // přibližná poloha uživatele (modrý puntík)
+  // Geolocation
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
       pos => {
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
         map.setView([lat, lon], 18);
-        L.circle([lat, lon], { radius: 5, color: "blue", fillOpacity: 0.6 })
+        L.circle([lat, lon], { radius: 5, color: 'blue', fillOpacity: 0.6 })
           .addTo(map)
-          .bindPopup("Tvoje přibližná poloha")
+          .bindPopup('Tvoje přibližná poloha')
           .openPopup();
       },
-      err => {
-        console.warn("GPS nedostupná:", err);
-      },
+      err => { console.warn('GPS nedostupná:', err); },
       { enableHighAccuracy: true, timeout: 4000 }
     );
   }
 
-  // kliknutí na mapu → marker + souřadnice
+  // Click to select point
   let selectedLat = null;
   let selectedLon = null;
   let marker = null;
-
-  map.on("click", function (e) {
+  const coordsInfo = document.getElementById('coordsInfo');
+  const saveBtn = document.getElementById('saveBtn');
+  map.on('click', function (e) {
     const { lat, lng } = e.latlng;
     selectedLat = lat.toFixed(7);
     selectedLon = lng.toFixed(7);
-
     if (marker) map.removeLayer(marker);
-    marker = L.circleMarker([lat, lng], circleStyle).addTo(map).bindPopup("Zvolený strom").openPopup();
-
-    document.getElementById("coordsInfo").innerText = `Lat: ${selectedLat}, Lon: ${selectedLon}`;
-    document.getElementById("saveBtn").disabled = false;
+    marker = L.circleMarker([lat, lng], { color: '#2ecc71', fillColor: '#2ecc71', fillOpacity: 0.9, radius: 6, weight: 1 })
+      .addTo(map).bindPopup('Zvolený bod').openPopup();
+    if (coordsInfo) coordsInfo.innerText = `Lat: ${selectedLat}, Lon: ${selectedLon}`;
+    if (saveBtn) saveBtn.disabled = false;
+    if (saveFab) saveFab.disabled = false;
   });
 
-  // odeslání souřadnic AJAXem
-  document.getElementById("saveBtn").addEventListener("click", function () {
-    const recordId = document.getElementById("recordSelect").value;
-    if (!selectedLat || !selectedLon) return alert("Nejdřív klikni do mapy.");
-    fetch("{% url 'save_coordinates' %}", {
-      method: "POST",
-      headers: {
-        "X-CSRFToken": "{{ csrf_token }}",
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body: new URLSearchParams({
-        record_id: recordId,
-        latitude: selectedLat,
-        longitude: selectedLon
+  function handleSave() {
+      const recordId = recordSelect ? recordSelect.value : null;
+      if (!recordId) return alert('Vyber prosím úkon.');
+      if (!selectedLat || !selectedLon) return alert('Nejdřív klikni do mapy.');
+      fetch('{% url 'save_coordinates' %}', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ record_id: recordId, latitude: selectedLat, longitude: selectedLon })
       })
-    })
       .then(resp => resp.json())
       .then(data => {
-  if (data.status === "ok") {
-    const recIdNum = Number(recordId);
-    const projectsData = JSON.parse(document.getElementById("projects-data").textContent);
-    const recInfo = recordsForSelect.find(r => Number(r.id) === recIdNum);
-    if (recInfo) { recInfo.has_coords = true; }
-    const selOpt = Array.from(recordSelect.options).find(o => Number(o.value) === recIdNum);
-    if (selOpt) {
-      const base = recInfo && recInfo.title && recInfo.title.trim() ? recInfo.title : "(bez nazvu)";
-      if (!/\u{1F4CD}$/.test(selOpt.textContent)) selOpt.textContent = `${base} \u{1F4CD}`;
-    }
-    const existing = records.find(r => Number(r.id) === recIdNum);
-    const projName = (recInfo && recInfo.project_id)
-      ? ((projectsData.find(p => Number(p.id) === Number(recInfo.project_id)) || {}).name || "")
-      : "";
-    if (existing) {
-      existing.lat = Number(selectedLat);
-      existing.lon = Number(selectedLon);
-      existing.project = projName;
-      existing.project_id = recInfo ? recInfo.project_id : null;
-    } else {
-      records.push({ id: recIdNum, title: recInfo && recInfo.title ? recInfo.title : "(bez nazvu)", description: "", project: projName, project_id: recInfo ? recInfo.project_id : null, lat: Number(selectedLat), lon: Number(selectedLon) });
-    }
-    if (typeof updateMarkers === "function") updateMarkers(projectSelect ? projectSelect.value : "");
-    map.setView([Number(selectedLat), Number(selectedLon)], Math.max(map.getZoom(), 18));
-  
-  } else {
-    alert("Chyba: " + data.msg);
+        if (data.status === 'ok') {
+          const recIdNum = Number(recordId);
+          const recInfo = recordsForSelect.find(r => Number(r.id) === recIdNum);
+          if (recInfo) { recInfo.has_coords = true; }
+          if (recordSelect) {
+            const selOpt = Array.from(recordSelect.options).find(o => Number(o.value) === recIdNum);
+            if (selOpt && !/📍$/.test(selOpt.textContent)) selOpt.textContent = `${selOpt.textContent} 📍`;
+          }
+          const existing = records.find(r => Number(r.id) === recIdNum);
+          if (existing) {
+            existing.lat = Number(selectedLat);
+            existing.lon = Number(selectedLon);
+            existing.project_id = recInfo ? recInfo.project_id : existing.project_id ?? null;
+            existing.project = existing.project ?? (recInfo && recInfo.project_name ? recInfo.project_name : '');
+          } else {
+            const baseTitle = recInfo && recInfo.title ? recInfo.title : '(bez nazvu)';
+            records.push({ id: recIdNum, title: baseTitle, description: '', project: '', project_id: recInfo ? recInfo.project_id : null, lat: Number(selectedLat), lon: Number(selectedLon) });
+          }
+          if (typeof updateMarkers === 'function') updateMarkers(projectSelect ? projectSelect.value : '');
+          map.setView([Number(selectedLat), Number(selectedLon)], Math.max(map.getZoom(), 18));
+        } else {
+          alert('Chyba: ' + data.msg);
+        }
+      })
+      .catch(err => alert('Chyba při komunikaci se serverem: ' + err));
   }
-})
 
-      .catch(err => alert("Chyba při komunikaci se serverem: " + err));
-  });
-  // vykreslení všech existujících úkonů s GPS
-let records = JSON.parse(document.getElementById('coords-data').textContent);
-const clusterLayer = L.markerClusterGroup({
-  disableClusteringAtZoom: 17,
-  spiderfyOnMaxZoom: true,
-  chunkedLoading: true
-});
-map.addLayer(clusterLayer);
-function updateMarkers(projectId) {
-  clusterLayer.clearLayers();
-  records
-    .filter(r => {
-      if (!projectId) return true;               // all projects
-      if (projectId === 'none') return r.project_id === null; // no project
-      return String(r.project_id) === String(projectId);
-    })
-    .forEach(r => {
-      if (r.lat && r.lon) {
-        const m = L.marker([r.lat, r.lon], { icon: wrIcon });
-        m.recordId = Number(r.id);
-                const titleText = (r.title && r.title.trim()) ? r.title : '(bez nazvu)';
-        const detailUrl = `/tracker/${r.id}/`;
-        let popupHtml = `
-          <div class="wr-popup">
-            <div><a href="${detailUrl}" class="wr-title">${titleText}</a></div>
-            ${r.project ? `<div class="text-muted"><small>${r.project}</small></div>` : ''}
-            ${r.description ? `<div class="wr-desc">${r.description}</div>` : ''}
-            <div class="wr-links"><a class="keep-mapy" href="https://mapy.cz/zakladni?x=${r.lon}&y=${r.lat}&z=18" target="_blank" rel="noopener">Mapy.cz</a></div>
-          </div>
-        `;
-        m.bindPopup(popupHtml);
-        clusterLayer.addLayer(m);
+  // Save from offcanvas button
+  if (saveBtn) { saveBtn.addEventListener('click', handleSave); }
+  // Save from floating FAB
+  if (saveFab) { saveFab.addEventListener('click', handleSave); }
+
+  // Create new record, prefill selected coordinates via query string
+  if (createFab) {
+    createFab.addEventListener('click', function() {
+      if (!selectedLat || !selectedLon) {
+        alert('Nejdřív klikni do mapy a vyber bod.');
+        return;
       }
+      let url = '/tracker/create/';
+      const projVal = projectSelect ? projectSelect.value : '';
+      if (projVal && projVal !== 'none') { url += `${projVal}/`; }
+      const params = [];
+      params.push(`lat=${selectedLat}`);
+      params.push(`lon=${selectedLon}`);
+      if (params.length) url += `?${params.join('&')}`;
+      window.location.href = url;
     });
-}
-updateMarkers(projectSelect ? projectSelect.value : '');
-
-// Deep-link handling: focus record and/or set project from URL
-(function(){
-  const params = new URLSearchParams(window.location.search);
-  const rid = params.get('record');
-  const proj = params.get('project');
-  if (proj && projectSelect) {
-    projectSelect.value = proj;
-    populateRecordSelect(proj);
-    updateMarkers(proj);
   }
-  if (rid) {
-    if (recordSelect) recordSelect.value = rid;
-    const rec = (records || []).find(r => String(r.id) === String(rid));
-    if (rec) {
-      const desired = (rec.project_id === null) ? 'none' : String(rec.project_id);
-      if (projectSelect && String(projectSelect.value) !== desired) {
-        projectSelect.value = desired;
-        populateRecordSelect(desired);
-        updateMarkers(desired);
+
+  // Existing records and clustering
+  let records = JSON.parse(document.getElementById('coords-data').textContent);
+  const clusterLayer = L.markerClusterGroup({ disableClusteringAtZoom: 17, spiderfyOnMaxZoom: true, chunkedLoading: true });
+  map.addLayer(clusterLayer);
+
+  function updateMarkers(projectId) {
+    clusterLayer.clearLayers();
+    records
+      .filter(r => {
+        if (!projectId) return true;
+        if (projectId === 'none') return r.project_id === null;
+        return String(r.project_id) === String(projectId);
+      })
+      .forEach(r => {
+        if (r.lat && r.lon) {
+          const m = L.marker([r.lat, r.lon], { icon: wrIcon });
+          m.recordId = Number(r.id);
+          const titleText = (r.title && r.title.trim()) ? r.title : '(bez nazvu)';
+          const detailUrl = `/tracker/${r.id}/`;
+          const popupHtml = `
+            <div class="wr-popup">
+              <div><a href="${detailUrl}" class="wr-title">${titleText}</a></div>
+              ${r.project ? `<div class="text-muted"><small>${r.project}</small></div>` : ''}
+              ${r.description ? `<div class="wr-desc">${r.description}</div>` : ''}
+              <div class="wr-links"><a class="keep-mapy" href="https://mapy.cz/zakladni?x=${r.lon}&y=${r.lat}&z=18" target="_blank" rel="noopener">Mapy.cz</a></div>
+            </div>`;
+          m.bindPopup(popupHtml);
+          clusterLayer.addLayer(m);
+        }
+      });
+  }
+  updateMarkers(projectSelect ? projectSelect.value : '');
+
+  // Deep-link handling
+  (function(){
+    const params = new URLSearchParams(window.location.search);
+    const rid = params.get('record');
+    const proj = params.get('project');
+    if (proj && projectSelect) {
+      projectSelect.value = proj;
+      populateRecordSelect(proj);
+      updateMarkers(proj);
+    }
+    if (rid) {
+      if (recordSelect) recordSelect.value = rid;
+      const rec = (records || []).find(r => String(r.id) === String(rid));
+      if (rec) {
+        const desired = (rec.project_id === null) ? 'none' : String(rec.project_id);
+        if (projectSelect && String(projectSelect.value) !== desired) {
+          projectSelect.value = desired;
+          populateRecordSelect(desired);
+          updateMarkers(desired);
+        }
+      }
+      let target = null;
+      clusterLayer.eachLayer(layer => { if (layer && Number(layer.recordId) === Number(rid)) target = layer; });
+      if (target) {
+        clusterLayer.zoomToShowLayer(target, () => { const ll = target.getLatLng(); map.setView(ll, Math.max(map.getZoom(), 18)); target.openPopup(); });
       }
     }
-    let target = null;
-    clusterLayer.eachLayer(layer => { if (layer && Number(layer.recordId) === Number(rid)) target = layer; });
-    if (target) {
-      clusterLayer.zoomToShowLayer(target, () => { const ll = target.getLatLng(); map.setView(ll, Math.max(map.getZoom(), 18)); target.openPopup(); });
-    }
-  }
-})();
+  })();
 
-  // logo Mapy.com (povinné)
+  // Required Mapy.cz logo
   const LogoControl = L.Control.extend({
-    options: { position: "bottomleft" },
+    options: { position: 'bottomleft' },
     onAdd: function () {
-      const container = L.DomUtil.create("div");
-      const link = L.DomUtil.create("a", "", container);
-      link.href = "http://mapy.com/";
-      link.target = "_blank";
-      link.innerHTML =
-        '<img src="https://api.mapy.com/img/api/logo.svg" width="100px" />';
+      const container = L.DomUtil.create('div');
+      const link = L.DomUtil.create('a', '', container);
+      link.href = 'http://mapy.com/';
+      link.target = '_blank';
+      link.innerHTML = '<img src="https://api.mapy.com/img/api/logo.svg" width="100px" />';
       L.DomEvent.disableClickPropagation(link);
       return container;
     },
   });
   new LogoControl().addTo(map);
+
+  // initial fill
+  if (projectSelect) populateRecordSelect(projectSelect.value);
 });
 </script>
 {% endblock %}
-
-
-
-
-
-
-
-
-

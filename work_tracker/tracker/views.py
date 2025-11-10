@@ -258,6 +258,17 @@ def create_work_record(request, project_id=None):
         if work_record_form.is_valid():
             work_record = work_record_form.save()
 
+            # Set coordinates if provided (from map)
+            lat_str = request.POST.get("latitude") or request.GET.get("lat")
+            lon_str = request.POST.get("longitude") or request.GET.get("lon")
+            try:
+                if lat_str is not None and lon_str is not None:
+                    work_record.latitude = float(lat_str)
+                    work_record.longitude = float(lon_str)
+                    work_record.save(update_fields=["latitude", "longitude"]) 
+            except (TypeError, ValueError):
+                pass
+
             # ověř přístup k projektu
             if work_record.project_id and not user_can_view_project(request.user, work_record.project_id):
                 return redirect('work_record_list')
