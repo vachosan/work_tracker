@@ -9,6 +9,16 @@
   nav.navbar, footer { display: none; }
   /* map fills viewport */
   #map { position: fixed; inset: 0; z-index: 1; }
+  /* locate button (top-left) */
+  #map-locate { position: fixed; left: 12px; top: calc(56px + 8px); z-index: 1100; }
+  #map-locate .locate-btn {
+    width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,.7); color: #222; border: 1px solid rgba(0,0,0,.2);
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  }
+  #map-locate .locate-btn svg { width: 20px; height: 20px; opacity: .85; }
+  #map-locate .locate-btn:hover { background: rgba(255,255,255,.9); }
+  #map-locate .locate-btn:active { background: rgba(255,255,255,1); }
   /* translucent top bar */
   #map-topbar {
     position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
@@ -22,8 +32,7 @@
   /* floating action buttons */
   #map-fabs { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 1100; }
   #map-fabs .fab-btn { width: 56px; height: 56px; display: inline-flex; align-items: center; justify-content: center; font-size: 1.25rem; }
-  /* layer panel (toggled by FAB) */
-  #layerPanel { position: fixed; right: 16px; bottom: 88px; z-index: 1100; width: 200px; border-radius: 12px; }
+  /* layer panel removed */
   /* marker and leaflet tweaks */
   .wr-dot { width: 12px; height: 12px; background: #2ecc71; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.2); }
   .leaflet-control-layers { display: none !important; }
@@ -57,28 +66,23 @@
   <button id="createFab" class="btn btn-primary rounded-circle shadow fab-btn" type="button" title="Přidat záznam" aria-label="Přidat záznam">
     <i class="bi bi-plus-lg"></i>
   </button>
-  <button id="layersFab" class="btn btn-secondary rounded-circle shadow fab-btn" type="button" aria-expanded="false" aria-controls="layerPanel" title="Vrstvy">
-    <i class="bi bi-layers"></i>
+</div>
+
+<!-- Less prominent locate button (bottom-left) -->
+<div id="map-locate">
+  <button id="locateBtn" class="btn btn-light btn-sm rounded-circle shadow locate-btn" type="button" title="Zaměřit na mou polohu" aria-label="Zaměřit na mou polohu">
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="2" opacity="0.95" />
+      <line x1="12" y1="2" x2="12" y2="6" stroke="currentColor" stroke-width="2" opacity="0.95" />
+      <line x1="12" y1="18" x2="12" y2="22" stroke="currentColor" stroke-width="2" opacity="0.95" />
+      <line x1="2" y1="12" x2="6" y2="12" stroke="currentColor" stroke-width="2" opacity="0.95" />
+      <line x1="18" y1="12" x2="22" y2="12" stroke="currentColor" stroke-width="2" opacity="0.95" />
+      <circle cx="12" cy="12" r="1.8" fill="currentColor" opacity="0.95" />
+    </svg>
   </button>
 </div>
 
-<!-- Simple custom layers panel -->
-<div id="layerPanel" class="card shadow-sm p-2 d-none">
-  <div class="form-check">
-    <input class="form-check-input" type="radio" name="baseLayer" id="layerBasic" value="basic" checked>
-    <label class="form-check-label" for="layerBasic">Základní</label>
-  </div>
-  <div class="form-check">
-    <input class="form-check-input" type="radio" name="baseLayer" id="layerAerial" value="aerial">
-    <label class="form-check-label" for="layerAerial">Ortofoto</label>
-  </div>
-  <div class="form-check">
-    <input class="form-check-input" type="radio" name="baseLayer" id="layerHybrid" value="hybrid">
-    <label class="form-check-label" for="layerHybrid">Hybridní</label>
-  </div>
-  <div class="text-muted small mt-1">Zdroj: Mapy.cz</div>
-  
-</div>
+<!-- Layers FAB/panel removed: using only aerial ortofoto -->
 
 <!-- Controls offcanvas -->
 <div class="offcanvas offcanvas-top" tabindex="-1" id="mapControlsPanel" aria-labelledby="mapControlsLabel" style="height:auto; max-height:75vh;">
@@ -131,6 +135,14 @@ document.addEventListener('DOMContentLoaded', function () {
   const backLink = document.getElementById('mapBackLink');
   const saveFab = document.getElementById('saveFab');
   const createFab = document.getElementById('createFab');
+  const locateBtn = document.getElementById('locateBtn');
+
+  // Deep-link params
+  const urlParams = new URLSearchParams(window.location.search);
+  const paramRecord = urlParams.get('record');
+  const paramProject = urlParams.get('project');
+  const paramLocate = urlParams.has('locate');
+  const paramFit = urlParams.has('fit');
 
   function updateBackLink(rid) {
     const id = rid || (recordSelect ? recordSelect.value : null);
@@ -171,7 +183,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Map init and saved view
   const savedView = (()=>{ try { return JSON.parse(localStorage.getItem('wt_map_view')); } catch(e){ return null } })();
-  const map = L.map('map');
+  const map = L.map('map', { minZoom: 3, maxZoom: 20, zoomControl: false });
   if (savedView && Array.isArray(savedView.center) && typeof savedView.zoom === 'number') {
     map.setView(savedView.center, savedView.zoom);
   } else {
@@ -182,54 +194,30 @@ document.addEventListener('DOMContentLoaded', function () {
     localStorage.setItem('wt_map_view', JSON.stringify({ center: [c.lat, c.lng], zoom: map.getZoom() }));
   });
 
-  // Mapy.cz layers
-  const basic = L.tileLayer(
-    `https://api.mapy.com/v1/maptiles/basic/256/{z}/{x}/{y}?apikey=${API_KEY}`,
-    { attribution: '&copy; <a href="https://mapy.cz/">Seznam.cz a.s.</a>' }
-  ).addTo(map);
+  // Mapy.cz layer: aerial (orthophoto only)
   const aerial = L.tileLayer(
     `https://api.mapy.com/v1/maptiles/aerial/256/{z}/{x}/{y}?apikey=${API_KEY}`,
-    { attribution: '&copy; <a href="https://mapy.cz/">Seznam.cz a.s.</a>' }
-  );
-  const hybrid = L.tileLayer(
-    `https://api.mapy.com/v1/maptiles/hybrid/256/{z}/{x}/{y}?apikey=${API_KEY}`,
-    { attribution: '&copy; <a href="https://mapy.cz/">Seznam.cz a.s.</a>' }
-  );
+    { attribution: '&copy; <a href="https://mapy.cz/">Seznam.cz a.s.</a>', maxZoom: 20, minZoom: 3 }
+  ).addTo(map);
 
-  // FAB-driven layer panel
-  (function setupLayerPanel(){
-    const panel = document.getElementById('layerPanel');
-    const fab = document.getElementById('layersFab');
-    function showPanel(show){
-      if (!panel) return;
-      panel.classList.toggle('d-none', !show);
-      if (fab) fab.setAttribute('aria-expanded', show ? 'true' : 'false');
+  // Transparent labels+boundaries overlay (names-overlay) above orthophoto
+  // If your key doesn't allow this set, overlay tiles will fail;
+  // errorTileUrl makes failures render as transparent (base stays visible).
+  const labelsOverlay = L.tileLayer(
+    `https://api.mapy.com/v1/maptiles/names-overlay/256/{z}/{x}/{y}?apikey=${API_KEY}`,
+    {
+      attribution: '&copy; <a href="https://mapy.cz/">Seznam.cz a.s.</a>',
+      maxZoom: 20,
+      minZoom: 3,
+      zIndex: 2,
+      opacity: 1,
+      errorTileUrl: 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='
     }
-    if (fab) {
-      fab.addEventListener('click', () => {
-        const isOpen = fab.getAttribute('aria-expanded') === 'true';
-        showPanel(!isOpen);
-      });
-    }
-    document.querySelectorAll('input[name="baseLayer"]').forEach(r => r.addEventListener('change', (e) => {
-      if (!e.target.checked) return;
-      switch(e.target.value){
-        case 'aerial':
-          map.addLayer(aerial); map.removeLayer(basic); map.removeLayer(hybrid); break;
-        case 'hybrid':
-          map.addLayer(hybrid); map.removeLayer(basic); map.removeLayer(aerial); break;
-        default:
-          map.addLayer(basic); map.removeLayer(aerial); map.removeLayer(hybrid); break;
-      }
-    }));
-    // close panel on outside click
-    document.addEventListener('click', (ev) => {
-      if (!panel || panel.classList.contains('d-none')) return;
-      const target = ev.target;
-      if (panel.contains(target) || (fab && fab.contains(target))) return;
-      showPanel(false);
-    });
-  })();
+  ).addTo(map);
+
+  // No layer switching: aerial + names-overlay are always active
+  let myLocationCircle = null;
+  const shouldCenterOnUser = paramLocate || (!paramRecord && !paramProject && !savedView);
 
   // Geolocation
   if (navigator.geolocation) {
@@ -237,15 +225,43 @@ document.addEventListener('DOMContentLoaded', function () {
       pos => {
         const lat = pos.coords.latitude;
         const lon = pos.coords.longitude;
-        map.setView([lat, lon], 18);
-        L.circle([lat, lon], { radius: 5, color: 'blue', fillOpacity: 0.6 })
-          .addTo(map)
-          .bindPopup('Tvoje přibližná poloha')
-          .openPopup();
+        if (shouldCenterOnUser) map.setView([lat, lon], 18);
+        if (myLocationCircle) { try { map.removeLayer(myLocationCircle); } catch(e){} }
+        myLocationCircle = L.circle([lat, lon], {
+          radius: 5,
+          color: '#007bff',
+          fillColor: '#007bff',
+          fillOpacity: 0.7,
+          weight: 2
+        }).addTo(map);
       },
       err => { console.warn('GPS nedostupná:', err); },
       { enableHighAccuracy: true, timeout: 4000 }
     );
+  }
+
+  // Manual locate action
+  if (locateBtn) {
+    locateBtn.addEventListener('click', function() {
+      if (!navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+          map.setView([lat, lon], Math.max(map.getZoom(), 18));
+          if (myLocationCircle) { try { map.removeLayer(myLocationCircle); } catch(e){} }
+          myLocationCircle = L.circle([lat, lon], {
+            radius: 5,
+            color: '#007bff',
+            fillColor: '#007bff',
+            fillOpacity: 0.7,
+            weight: 2
+          }).addTo(map);
+        },
+        err => { console.warn('GPS nedostupn�:', err); },
+        { enableHighAccuracy: true, timeout: 4000 }
+      );
+    });
   }
 
   // Click to select point
@@ -259,8 +275,14 @@ document.addEventListener('DOMContentLoaded', function () {
     selectedLat = lat.toFixed(7);
     selectedLon = lng.toFixed(7);
     if (marker) map.removeLayer(marker);
-    marker = L.circleMarker([lat, lng], { color: '#2ecc71', fillColor: '#2ecc71', fillOpacity: 0.9, radius: 6, weight: 1 })
-      .addTo(map).bindPopup('Zvolený bod').openPopup();
+    marker = L.circleMarker([lat, lng], {
+      color: '#28a745',
+      fillColor: '#28a745',
+      fillOpacity: 0.9,
+      radius: 7,
+      weight: 2
+    }).addTo(map);
+
     if (coordsInfo) coordsInfo.innerText = `Lat: ${selectedLat}, Lon: ${selectedLon}`;
     if (saveBtn) saveBtn.disabled = false;
     if (saveFab) saveFab.disabled = false;
@@ -270,7 +292,7 @@ document.addEventListener('DOMContentLoaded', function () {
       const recordId = recordSelect ? recordSelect.value : null;
       if (!recordId) return alert('Vyber prosím úkon.');
       if (!selectedLat || !selectedLon) return alert('Nejdřív klikni do mapy.');
-      fetch('{% url 'save_coordinates' %}', {
+      fetch("{% url 'save_coordinates' %}", {
         method: 'POST',
         headers: { 'X-CSRFToken': '{{ csrf_token }}', 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({ record_id: recordId, latitude: selectedLat, longitude: selectedLon })
@@ -362,9 +384,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Deep-link handling
   (function(){
-    const params = new URLSearchParams(window.location.search);
-    const rid = params.get('record');
-    const proj = params.get('project');
+    const rid = paramRecord;
+    const proj = paramProject;
     if (proj && projectSelect) {
       projectSelect.value = proj;
       populateRecordSelect(proj);
@@ -385,6 +406,16 @@ document.addEventListener('DOMContentLoaded', function () {
       clusterLayer.eachLayer(layer => { if (layer && Number(layer.recordId) === Number(rid)) target = layer; });
       if (target) {
         clusterLayer.zoomToShowLayer(target, () => { const ll = target.getLatLng(); map.setView(ll, Math.max(map.getZoom(), 18)); target.openPopup(); });
+      }
+    } else if (proj) {
+      // Fit all markers of the current project
+      let bounds = null;
+      clusterLayer.eachLayer(layer => {
+        const ll = layer.getLatLng();
+        bounds = bounds ? bounds.extend(ll) : L.latLngBounds(ll, ll);
+      });
+      if (bounds) {
+        map.fitBounds(bounds, { padding: [50, 50], maxZoom: 17 });
       }
     }
   })();

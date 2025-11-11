@@ -14,7 +14,7 @@
         <i class="bi bi-geo-alt"></i>
       </a>
     {% else %}
-      <a href="{% url 'map_leaflet_test' %}?record={{ work_record.id }}{% if work_record.project_id %}&project={{ work_record.project_id }}{% endif %}"
+      <a href="{% url 'map_leaflet_test' %}?record={{ work_record.id }}{% if work_record.project_id %}&project={{ work_record.project_id }}{% endif %}&locate=1"
          class="btn btn-outline-success btn-icon-square" title="Přidat polohu">
         <i class="bi bi-geo"></i>
       </a>
