@@ -38,6 +38,20 @@
   .leaflet-container { background: #f3f3f3; }
   .wr-popup .wr-title { font-weight: 600; text-decoration: none; }
   .wr-popup .wr-desc { margin-top: 4px; }
+  .wr-photos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .wr-photos img {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,.6);
+    box-shadow: 0 1px 4px rgba(0,0,0,.25);
+  }
   /* offcanvas styling */
   .offcanvas-top { border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,.15); background: rgba(255,255,255,.98); }
   .offcanvas-header { border-bottom: 1px solid rgba(0,0,0,.05); }
@@ -320,7 +334,16 @@ document.addEventListener('DOMContentLoaded', function () {
             existing.project = existing.project ?? (recInfo && recInfo.project_name ? recInfo.project_name : '');
           } else {
             const baseTitle = recInfo && recInfo.title ? recInfo.title : '(bez názvu)';
-            records.push({ id: recIdNum, title: baseTitle, description: '', project: '', project_id: recInfo ? recInfo.project_id : null, lat: Number(selectedLat), lon: Number(selectedLon) });
+            records.push({
+              id: recIdNum,
+              title: baseTitle,
+              description: '',
+              project: '',
+              project_id: recInfo ? recInfo.project_id : null,
+              lat: Number(selectedLat),
+              lon: Number(selectedLon),
+              photos: [],
+            });
           }
           if (typeof updateMarkers === 'function') updateMarkers(projectSelect ? projectSelect.value : '');
           map.setView([Number(selectedLat), Number(selectedLon)], Math.max(map.getZoom(), 18));
@@ -354,7 +377,11 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // Existing records and clustering
-  let records = JSON.parse(document.getElementById('coords-data').textContent);
+  let records = JSON.parse(document.getElementById('coords-data').textContent)
+    .map(r => {
+      r.photos = Array.isArray(r.photos) ? r.photos : [];
+      return r;
+    });
   const clusterLayer = L.markerClusterGroup({ disableClusteringAtZoom: 17, spiderfyOnMaxZoom: true, chunkedLoading: true });
   map.addLayer(clusterLayer);
 
@@ -411,12 +438,14 @@ document.addEventListener('DOMContentLoaded', function () {
           m.recordId = Number(r.id);
           const titleText = (r.title && r.title.trim()) ? r.title : '(bez názvu)';
           const detailUrl = `/tracker/${r.id}/`;
+          const photosHtml = (Array.isArray(r.photos) && r.photos.length)
+            ? `<div class="wr-photos">${r.photos.map(url => `<img src="${url}" alt="Foto ${titleText}" loading="lazy">`).join('')}</div>`
+            : `<div class="text-muted small mt-2 mb-0">Bez fotodokumentace</div>`;
           const popupHtml = `
             <div class="wr-popup">
               <div><a href="${detailUrl}" class="wr-title">${titleText}</a></div>
-              ${r.project ? `<div class="text-muted"><small>${r.project}</small></div>` : ''}
               ${r.description ? `<div class="wr-desc">${r.description}</div>` : ''}
-              <div class="wr-links"><a class="keep-mapy" href="https://mapy.cz/zakladni?x=${r.lon}&y=${r.lat}&z=18" target="_blank" rel="noopener">Mapy.cz</a></div>
+              ${photosHtml}
             </div>`;
           m.bindPopup(popupHtml);
           m.bindTooltip(titleText, {

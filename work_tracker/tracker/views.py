@@ -513,6 +513,9 @@ def map_leaflet_test(request):
         WorkRecord.objects
         .filter(Q(project__in=visible_projects) | Q(project__isnull=True))
         .order_by("-id")
+        .prefetch_related(
+            Prefetch("photos", queryset=PhotoDocumentation.objects.order_by("-id"))
+        )
     )
     projects = visible_projects.order_by("name")
     projects_js = list(projects.values("id", "name"))
@@ -525,6 +528,11 @@ def map_leaflet_test(request):
             "project_id": r.project_id,
             "lat": r.latitude,
             "lon": r.longitude,
+            "photos": [
+                photo.photo.url
+                for photo in r.photos.all()[:2]
+                if getattr(photo.photo, "url", None)
+            ],
         }
         for r in records if r.latitude and r.longitude
     ]
