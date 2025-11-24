@@ -11,6 +11,7 @@ from django.http import FileResponse
 from datetime import date
 from django.conf import settings
 from django.core.files import File
+from django.core.files.base import ContentFile
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
@@ -23,6 +24,7 @@ from django.utils.dateparse import parse_date
 from .models import WorkRecord, Project
 from django.http import JsonResponse
 from .models import Project, WorkRecord, PhotoDocumentation, ProjectMembership
+from PIL import Image
 from .forms import (
     WorkRecordForm,
     PhotoDocumentationForm,
@@ -506,6 +508,36 @@ def mapy_geocode_test(request):
 
 
 """
+
+THUMB_MAX_SIZE = 256
+
+
+def get_photo_thumbnail(photo_obj, size=THUMB_MAX_SIZE):
+    """
+    Returns URL of a cached thumbnail for the given photo. Generates it on demand.
+    """
+    if not photo_obj or not photo_obj.photo:
+        return None
+
+    storage = photo_obj.photo.storage
+    thumb_rel_path = f"photos/thumbs/{photo_obj.id}_{size}.jpg"
+    if storage.exists(thumb_rel_path):
+        return storage.url(thumb_rel_path)
+
+    try:
+        photo_obj.photo.open()
+        with Image.open(photo_obj.photo) as img:
+            img = img.convert("RGB")
+            img.thumbnail((size, size))
+            buffer = io.BytesIO()
+            img.save(buffer, format="JPEG", quality=70, optimize=True)
+        buffer.seek(0)
+        storage.save(thumb_rel_path, ContentFile(buffer.getvalue()))
+        return storage.url(thumb_rel_path)
+    except Exception:
+        return photo_obj.photo.url
+
+
 @login_required
 def map_leaflet_test(request):
     visible_projects = user_projects_qs(request.user)
@@ -519,8 +551,17 @@ def map_leaflet_test(request):
     )
     projects = visible_projects.order_by("name")
     projects_js = list(projects.values("id", "name"))
-    coords = [
-        {
+    coords = []
+    for r in records:
+        if not (r.latitude and r.longitude):
+            continue
+        photos_qs = list(r.photos.all())[:2]
+        thumb_urls = []
+        for photo in photos_qs:
+            thumb_url = get_photo_thumbnail(photo)
+            if thumb_url:
+                thumb_urls.append(thumb_url)
+        coords.append({
             "id": r.id,
             "title": r.title or "(bez názvu)",
             "description": r.description or "",
@@ -528,14 +569,8 @@ def map_leaflet_test(request):
             "project_id": r.project_id,
             "lat": r.latitude,
             "lon": r.longitude,
-            "photos": [
-                photo.photo.url
-                for photo in r.photos.all()[:2]
-                if getattr(photo.photo, "url", None)
-            ],
-        }
-        for r in records if r.latitude and r.longitude
-    ]
+            "photos": thumb_urls,
+        })
 
     records_for_select = [
         {
