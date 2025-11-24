@@ -24,6 +24,7 @@ urlpatterns = [
     # testovac mapy endpoints odstranny
     path("map-leaflet/", views.map_leaflet_test, name="map_leaflet_test"),
     path("save-coordinates/", views.save_coordinates, name="save_coordinates"),
+    path("map-upload-photo/", views.map_upload_photo, name="map_upload_photo"),
     path("workrecord/<int:pk>/delete/", views.delete_work_record, name="delete_work_record"),
 
 

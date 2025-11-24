@@ -623,3 +623,41 @@ def save_coordinates(request):
     record.longitude = lon
     record.save(update_fields=["latitude", "longitude"])
     return JsonResponse({"status": "ok"})
+
+
+@login_required
+def map_upload_photo(request):
+    if request.method != "POST":
+        return JsonResponse({"status": "error", "msg": "Invalid request"}, status=405)
+
+    record_id = request.POST.get("record_id")
+    comment = request.POST.get("comment", "").strip()
+    photo_file = request.FILES.get("photo")
+
+    if not record_id or not photo_file:
+        return JsonResponse({"status": "error", "msg": "Chybí data"}, status=400)
+
+    try:
+        record = WorkRecord.objects.get(id=record_id)
+    except WorkRecord.DoesNotExist:
+        return JsonResponse({"status": "error", "msg": "Úkon nenalezen"}, status=404)
+
+    if record.project_id and not user_can_view_project(request.user, record.project_id):
+        return JsonResponse({"status": "error", "msg": "Nemáš oprávnění"}, status=403)
+
+    photo_doc = PhotoDocumentation.objects.create(
+        work_record=record,
+        photo=photo_file,
+        description=comment
+    )
+
+    thumb_url = get_photo_thumbnail(photo_doc)
+    return JsonResponse({
+        "status": "ok",
+        "photo": {
+            "id": photo_doc.id,
+            "thumb": thumb_url or (photo_doc.photo.url if photo_doc.photo else ""),
+            "full": photo_doc.photo.url if photo_doc.photo else "",
+            "description": comment,
+        }
+    })
