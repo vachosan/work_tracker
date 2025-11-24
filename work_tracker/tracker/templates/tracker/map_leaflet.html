@@ -36,11 +36,13 @@
   .wr-dot { width: 12px; height: 12px; background: #2ecc71; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.2); }
   .leaflet-control-layers { display: none !important; }
   .leaflet-container { background: #f3f3f3; }
+  .wr-popup-wrapper { position: relative; }
   .wr-popup .wr-title { font-weight: 600; text-decoration: none; }
   .wr-popup .wr-desc { margin-top: 4px; }
   .wr-photos {
     display: flex;
     flex-wrap: wrap;
+    justify-content: center;
     gap: 4px;
     margin-top: 6px;
   }
@@ -52,6 +54,29 @@
     border: 1px solid rgba(255,255,255,.6);
     box-shadow: 0 1px 4px rgba(0,0,0,.25);
   }
+  .wr-popup-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .wr-popup-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    text-decoration: none;
+    box-shadow: 0 2px 6px rgba(0,0,0,.25);
+  }
+  .wr-popup-btn img,
+  .wr-popup-btn svg,
+  .wr-popup-btn i {
+    pointer-events: none;
+  }
+  .wr-popup-btn.photo { background: #ffbf00; }
+  .wr-popup-btn.edit { background: #b5c0cc; color: #1f2a33; }
   /* offcanvas styling */
   .offcanvas-top { border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,.15); background: rgba(255,255,255,.98); }
   .offcanvas-header { border-bottom: 1px solid rgba(0,0,0,.05); }
@@ -446,6 +471,14 @@ document.addEventListener('DOMContentLoaded', function () {
               <div><a href="${detailUrl}" class="wr-title">${titleText}</a></div>
               ${r.description ? `<div class="wr-desc">${r.description}</div>` : ''}
               ${photosHtml}
+              <div class="wr-popup-actions">
+                <a class="wr-popup-btn photo" href="/tracker/${r.id}/#photos" title="Fotodokumentace">
+                  <i class="bi bi-camera-fill"></i>
+                </a>
+                <a class="wr-popup-btn edit" href="/tracker/${r.id}/edit/" title="Upravit úkon">
+                  <i class="bi bi-pencil-square"></i>
+                </a>
+              </div>
             </div>`;
           m.bindPopup(popupHtml);
           m.bindTooltip(titleText, {
