@@ -97,6 +97,50 @@
   .pv-close { top: 20px; right: 20px; }
   .pv-prev { left: 20px; top: 50%; transform: translateY(-50%); }
   .pv-next { right: 20px; top: 50%; transform: translateY(-50%); }
+
+  /* capture modal */
+  .capture-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.8);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 2100;
+    padding: 16px;
+  }
+  .capture-modal.active { display: flex; }
+  .capture-card {
+    background: #1f2227;
+    border-radius: 16px;
+    padding: 16px;
+    width: min(420px, 92vw);
+    color: #fff;
+    box-shadow: 0 10px 24px rgba(0,0,0,.5);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .capture-card img {
+    width: 100%;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.2);
+    object-fit: cover;
+    max-height: 60vh;
+  }
+  .capture-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    justify-content: space-between;
+  }
+  #captureCommentWrap.collapse {
+    display: none;
+  }
+  #captureCommentWrap.collapse.show {
+    display: block;
+  }
   .wr-popup-btn {
     width: 40px;
     height: 40px;
@@ -182,6 +226,26 @@
   <button class="pv-btn pv-next" type="button">&#8250;</button>
 </div>
 
+<!-- Hidden input for photo capture -->
+<input type="file" id="photoCaptureInput" accept="image/*" capture="environment" class="d-none">
+
+<!-- Capture modal -->
+<div id="photoCaptureModal" class="capture-modal">
+  <div class="capture-card">
+    <img id="capturePreview" src="" alt="Nová fotka">
+    <div class="capture-actions">
+      <button id="captureCommentToggle" type="button" class="btn btn-outline-light btn-sm">Přidat komentář</button>
+      <div class="btn-group">
+        <button id="captureSaveBtn" type="button" class="btn btn-warning btn-sm">Uložit fotku</button>
+        <button id="captureCancelBtn" type="button" class="btn btn-secondary btn-sm">Zrušit</button>
+      </div>
+    </div>
+    <div id="captureCommentWrap" class="collapse mt-2">
+      <textarea id="captureCommentInput" class="form-control" rows="2" placeholder="Krátký komentář"></textarea>
+    </div>
+  </div>
+</div>
+
 <!-- Less prominent locate button (bottom-left) -->
 <div id="map-locate">
   <button id="locateBtn" class="btn btn-light btn-sm rounded-circle shadow locate-btn" type="button" title="Zaměřit na mou polohu" aria-label="Zaměřit na mou polohu">
@@ -261,6 +325,14 @@ document.addEventListener('DOMContentLoaded', function () {
   const photoViewerPrev = photoViewer ? photoViewer.querySelector('.pv-prev') : null;
   const photoViewerNext = photoViewer ? photoViewer.querySelector('.pv-next') : null;
   const photoViewerClose = photoViewer ? photoViewer.querySelector('.pv-close') : null;
+  const photoCaptureInput = document.getElementById('photoCaptureInput');
+  const photoCaptureModal = document.getElementById('photoCaptureModal');
+  const capturePreview = document.getElementById('capturePreview');
+  const captureCommentToggle = document.getElementById('captureCommentToggle');
+  const captureCommentWrap = document.getElementById('captureCommentWrap');
+  const captureCommentInput = document.getElementById('captureCommentInput');
+  const captureSaveBtn = document.getElementById('captureSaveBtn');
+  const captureCancelBtn = document.getElementById('captureCancelBtn');
 
   // Deep-link params
   const urlParams = new URLSearchParams(window.location.search);
@@ -524,9 +596,9 @@ document.addEventListener('DOMContentLoaded', function () {
               ${r.description ? `<div class="wr-desc">${r.description}</div>` : ''}
               ${photosHtml}
               <div class="wr-popup-actions">
-                <a class="wr-popup-btn photo" href="/tracker/${r.id}/#photos" title="Fotodokumentace">
+                <button type="button" class="wr-popup-btn photo" data-action="capture" data-record-id="${r.id}" title="Vyfotit">
                   <i class="bi bi-camera-fill"></i>
-                </a>
+                </button>
                 <a class="wr-popup-btn edit" href="/tracker/${r.id}/edit/" title="Upravit úkon">
                   <i class="bi bi-pencil-square"></i>
                 </a>
@@ -589,6 +661,8 @@ document.addEventListener('DOMContentLoaded', function () {
   // Photo viewer handlers
   let currentAlbum = [];
   let currentPhotoIndex = 0;
+  let captureFile = null;
+  let captureRecordId = null;
 
   function showPhoto(index) {
     if (!photoViewer || !photoViewerImg || !currentAlbum.length) return;
@@ -630,15 +704,119 @@ document.addEventListener('DOMContentLoaded', function () {
       if (e.key === 'ArrowRight') showPhoto((currentPhotoIndex + 1) % currentAlbum.length);
       if (e.key === 'ArrowLeft') showPhoto((currentPhotoIndex - 1 + currentAlbum.length) % currentAlbum.length);
     });
-    document.addEventListener('click', (event) => {
-      const target = event.target.closest('.wr-photo-thumb');
-      if (!target) return;
-      event.preventDefault();
-      const recordId = target.getAttribute('data-record-id');
-      const index = Number(target.getAttribute('data-photo-index')) || 0;
-      openPhotoViewer(recordId, index);
-    }, true);
   }
+
+  function toggleCommentField() {
+    if (!captureCommentWrap) return;
+    captureCommentWrap.classList.toggle('show');
+  }
+
+  function openCaptureModal() {
+    if (!photoCaptureModal) return;
+    photoCaptureModal.classList.add('active');
+  }
+
+  function resetCaptureState() {
+    captureFile = null;
+    captureRecordId = null;
+    if (photoCaptureInput) photoCaptureInput.value = '';
+    if (captureCommentInput) captureCommentInput.value = '';
+    if (captureCommentWrap) captureCommentWrap.classList.remove('show');
+    if (capturePreview) capturePreview.src = '';
+  }
+
+  function closeCaptureModal() {
+    if (!photoCaptureModal) return;
+    photoCaptureModal.classList.remove('active');
+    resetCaptureState();
+  }
+
+  function triggerPhotoCapture(recordId) {
+    const rid = recordId || activeRecordId;
+    if (!rid) {
+      alert('Nejdřív otevři mapu z detailu úkonu.');
+      return;
+    }
+    captureRecordId = rid;
+    if (photoCaptureInput) {
+      photoCaptureInput.value = '';
+      photoCaptureInput.click();
+    }
+  }
+
+  function uploadCapturedPhoto() {
+    if (!captureFile || !captureRecordId) {
+      alert('Chybí fotka nebo úkon.');
+      return;
+    }
+    if (!captureSaveBtn) return;
+    const formData = new FormData();
+    formData.append('record_id', captureRecordId);
+    formData.append('photo', captureFile);
+    formData.append('comment', captureCommentInput ? captureCommentInput.value.trim() : '');
+    captureSaveBtn.disabled = true;
+    fetch("{% url 'map_upload_photo' %}", {
+      method: 'POST',
+      headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+      body: formData,
+    })
+    .then(resp => resp.json())
+    .then(data => {
+      if (data.status === 'ok' && data.photo) {
+        const rec = (records || []).find(r => Number(r.id) === Number(captureRecordId));
+        if (rec) {
+          if (!Array.isArray(rec.photos)) rec.photos = [];
+          rec.photos.unshift(data.photo);
+        }
+        closeCaptureModal();
+        updateMarkers(projectSelect ? projectSelect.value : '');
+      } else {
+        alert(data.msg || 'Nepodařilo se uložit fotku.');
+      }
+    })
+    .catch(() => alert('Chyba při ukládání fotky.'))
+    .finally(() => {
+      captureSaveBtn.disabled = false;
+    });
+  }
+
+  if (photoCaptureInput) {
+    photoCaptureInput.addEventListener('change', (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      captureFile = file;
+      const reader = new FileReader();
+      reader.onload = ev => {
+        if (capturePreview) capturePreview.src = ev.target.result;
+        openCaptureModal();
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  if (captureCommentToggle) {
+    captureCommentToggle.addEventListener('click', toggleCommentField);
+  }
+  if (captureCancelBtn) {
+    captureCancelBtn.addEventListener('click', closeCaptureModal);
+  }
+  if (captureSaveBtn) {
+    captureSaveBtn.addEventListener('click', uploadCapturedPhoto);
+  }
+  if (photoCaptureModal) {
+    photoCaptureModal.addEventListener('click', (e) => {
+      if (e.target === photoCaptureModal) closeCaptureModal();
+    });
+  }
+
+  document.addEventListener('click', (event) => {
+    const target = event.target.closest('.wr-photo-thumb');
+    if (!target) return;
+    event.preventDefault();
+    const recordId = target.getAttribute('data-record-id');
+    const index = Number(target.getAttribute('data-photo-index')) || 0;
+    openPhotoViewer(recordId, index);
+  }, true);
 
   // Required Mapy.cz logo
   const LogoControl = L.Control.extend({
@@ -654,6 +832,18 @@ document.addEventListener('DOMContentLoaded', function () {
     },
   });
   new LogoControl().addTo(map);
+
+  map.on('popupopen', (e) => {
+    const container = e.popup.getElement();
+    if (!container) return;
+    container.querySelectorAll('.wr-popup-btn[data-action="capture"]').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        triggerPhotoCapture(btn.getAttribute('data-record-id'));
+      });
+    });
+  });
 });
 </script>
 {% endblock %}
