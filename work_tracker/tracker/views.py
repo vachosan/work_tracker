@@ -512,7 +512,7 @@ def map_leaflet_test(request):
     records = (
         WorkRecord.objects
         .filter(Q(project__in=visible_projects) | Q(project__isnull=True))
-        .order_by("-id")[:50]
+        .order_by("-id")
     )
     projects = visible_projects.order_by("name")
     projects_js = list(projects.values("id", "name"))
