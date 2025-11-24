@@ -32,7 +32,6 @@
   /* floating action buttons */
   #map-fabs { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 1100; }
   #map-fabs .fab-btn { width: 56px; height: 56px; display: inline-flex; align-items: center; justify-content: center; font-size: 1.25rem; }
-  /* layer panel removed */
   /* marker and leaflet tweaks */
   .wr-dot { width: 12px; height: 12px; background: #2ecc71; border: 2px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,.2); }
   .leaflet-control-layers { display: none !important; }
@@ -42,6 +41,15 @@
   /* offcanvas styling */
   .offcanvas-top { border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,.15); background: rgba(255,255,255,.98); }
   .offcanvas-header { border-bottom: 1px solid rgba(0,0,0,.05); }
+  /* tooltip labels for markers */
+  .wr-label {
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(255,255,255,.95);
+    padding: 2px 6px;
+    border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.15);
+  }
 </style>
 
 <!-- Fullscreen map -->
@@ -82,8 +90,6 @@
   </button>
 </div>
 
-<!-- Layers FAB/panel removed: using only aerial ortofoto -->
-
 <!-- Controls offcanvas -->
 <div class="offcanvas offcanvas-top" tabindex="-1" id="mapControlsPanel" aria-labelledby="mapControlsLabel" style="height:auto; max-height:75vh;">
   <div class="offcanvas-header py-2">
@@ -100,15 +106,13 @@
       {% endfor %}
     </select>
 
-    <label for="recordSelect" class="form-label">Vyber úkon (strom):</label>
-    <select id="recordSelect" class="form-select mb-2">
-    {% for record in work_records %}
-      <option value="{{ record.id }}">#{{ record.id }} - {{ record.title|default:"(bez názvu)" }}{% if record.project %} · {{ record.project.name }}{% endif %}</option>
-    {% endfor %}
-    </select>
-
-    <div class="small text-muted mb-2" id="coordsInfo">Klikni na mapu pro výběr bodu.</div>
-    <button id="saveBtn" class="btn btn-success" disabled>Uložit polohu</button>
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" id="labelsCheckbox" checked>
+      <label class="form-check-label small" for="labelsCheckbox">
+        Zobrazit názvy bodů
+      </label>
+      <div class="small text-muted mt-1">Názvy se zobrazí jen při velkém přiblížení.</div>
+    </div>
   </div>
 </div>
 
@@ -131,54 +135,32 @@ document.addEventListener('DOMContentLoaded', function () {
 
   const recordsForSelect = JSON.parse(document.getElementById('records-data').textContent);
   const projectSelect = document.getElementById('projectSelect');
-  const recordSelect = document.getElementById('recordSelect');
   const backLink = document.getElementById('mapBackLink');
   const saveFab = document.getElementById('saveFab');
   const createFab = document.getElementById('createFab');
   const locateBtn = document.getElementById('locateBtn');
+  const labelsCheckbox = document.getElementById('labelsCheckbox');
 
   // Deep-link params
   const urlParams = new URLSearchParams(window.location.search);
   const paramRecord = urlParams.get('record');
   const paramProject = urlParams.get('project');
   const paramLocate = urlParams.has('locate');
-  const paramFit = urlParams.has('fit');
+
+  // currently selected work record (for saving coordinates)
+  let activeRecordId = paramRecord || null;
 
   function updateBackLink(rid) {
-    const id = rid || (recordSelect ? recordSelect.value : null);
+    const id = rid || activeRecordId;
     if (!backLink) return;
     backLink.href = id ? `/tracker/${id}/` : `{% url 'work_record_list' %}`;
   }
-
-  function populateRecordSelect(projectId) {
-    if (!recordSelect) return;
-    const prev = recordSelect.value;
-    recordSelect.innerHTML = '';
-    const filtered = recordsForSelect.filter(r => {
-      if (!projectId) return true;              // all
-      if (projectId === 'none') return !r.project_id; // no project
-      return String(r.project_id) === String(projectId);
-    });
-    filtered.forEach(r => {
-      const opt = document.createElement('option');
-      opt.value = r.id;
-      const base = (r.title && r.title.trim()) ? r.title : '(bez nazvu)';
-      opt.textContent = r.has_coords ? `${base} 📍` : base;
-      recordSelect.appendChild(opt);
-    });
-    if (prev) recordSelect.value = prev;
-    if (!recordSelect.value && filtered.length) recordSelect.value = filtered[0].id;
-    updateBackLink(recordSelect.value);
-  }
+  updateBackLink(activeRecordId);
 
   if (projectSelect) {
     projectSelect.addEventListener('change', () => {
-      populateRecordSelect(projectSelect.value);
-      if (typeof updateMarkers === 'function') updateMarkers(projectSelect.value);
+      updateMarkers(projectSelect.value);
     });
-  }
-  if (recordSelect) {
-    recordSelect.addEventListener('change', () => updateBackLink(recordSelect.value));
   }
 
   // Map init and saved view
@@ -201,8 +183,6 @@ document.addEventListener('DOMContentLoaded', function () {
   ).addTo(map);
 
   // Transparent labels+boundaries overlay (names-overlay) above orthophoto
-  // If your key doesn't allow this set, overlay tiles will fail;
-  // errorTileUrl makes failures render as transparent (base stays visible).
   const labelsOverlay = L.tileLayer(
     `https://api.mapy.com/v1/maptiles/names-overlay/256/{z}/{x}/{y}?apikey=${API_KEY}`,
     {
@@ -215,7 +195,6 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   ).addTo(map);
 
-  // No layer switching: aerial + names-overlay are always active
   let myLocationCircle = null;
   const shouldCenterOnUser = paramLocate || (!paramRecord && !paramProject && !savedView);
 
@@ -258,7 +237,7 @@ document.addEventListener('DOMContentLoaded', function () {
             weight: 2
           }).addTo(map);
         },
-        err => { console.warn('GPS nedostupn�:', err); },
+        err => { console.warn('GPS nedostupná:', err); },
         { enableHighAccuracy: true, timeout: 4000 }
       );
     });
@@ -268,8 +247,6 @@ document.addEventListener('DOMContentLoaded', function () {
   let selectedLat = null;
   let selectedLon = null;
   let marker = null;
-  const coordsInfo = document.getElementById('coordsInfo');
-  const saveBtn = document.getElementById('saveBtn');
   map.on('click', function (e) {
     const { lat, lng } = e.latlng;
     selectedLat = lat.toFixed(7);
@@ -283,14 +260,15 @@ document.addEventListener('DOMContentLoaded', function () {
       weight: 2
     }).addTo(map);
 
-    if (coordsInfo) coordsInfo.innerText = `Lat: ${selectedLat}, Lon: ${selectedLon}`;
-    if (saveBtn) saveBtn.disabled = false;
     if (saveFab) saveFab.disabled = false;
   });
 
   function handleSave() {
-      const recordId = recordSelect ? recordSelect.value : null;
-      if (!recordId) return alert('Vyber prosím úkon.');
+      const recordId = activeRecordId;
+      if (!recordId) {
+        alert('Chybí ID úkonu. Otevři mapu z detailu úkonu.');
+        return;
+      }
       if (!selectedLat || !selectedLon) return alert('Nejdřív klikni do mapy.');
       fetch("{% url 'save_coordinates' %}", {
         method: 'POST',
@@ -303,10 +281,6 @@ document.addEventListener('DOMContentLoaded', function () {
           const recIdNum = Number(recordId);
           const recInfo = recordsForSelect.find(r => Number(r.id) === recIdNum);
           if (recInfo) { recInfo.has_coords = true; }
-          if (recordSelect) {
-            const selOpt = Array.from(recordSelect.options).find(o => Number(o.value) === recIdNum);
-            if (selOpt && !/📍$/.test(selOpt.textContent)) selOpt.textContent = `${selOpt.textContent} 📍`;
-          }
           const existing = records.find(r => Number(r.id) === recIdNum);
           if (existing) {
             existing.lat = Number(selectedLat);
@@ -314,11 +288,12 @@ document.addEventListener('DOMContentLoaded', function () {
             existing.project_id = recInfo ? recInfo.project_id : existing.project_id ?? null;
             existing.project = existing.project ?? (recInfo && recInfo.project_name ? recInfo.project_name : '');
           } else {
-            const baseTitle = recInfo && recInfo.title ? recInfo.title : '(bez nazvu)';
+            const baseTitle = recInfo && recInfo.title ? recInfo.title : '(bez názvu)';
             records.push({ id: recIdNum, title: baseTitle, description: '', project: '', project_id: recInfo ? recInfo.project_id : null, lat: Number(selectedLat), lon: Number(selectedLon) });
           }
           if (typeof updateMarkers === 'function') updateMarkers(projectSelect ? projectSelect.value : '');
           map.setView([Number(selectedLat), Number(selectedLon)], Math.max(map.getZoom(), 18));
+          window.location.href = `/tracker/${recIdNum}/`;
         } else {
           alert('Chyba: ' + data.msg);
         }
@@ -326,8 +301,6 @@ document.addEventListener('DOMContentLoaded', function () {
       .catch(err => alert('Chyba při komunikaci se serverem: ' + err));
   }
 
-  // Save from offcanvas button
-  if (saveBtn) { saveBtn.addEventListener('click', handleSave); }
   // Save from floating FAB
   if (saveFab) { saveFab.addEventListener('click', handleSave); }
 
@@ -354,8 +327,32 @@ document.addEventListener('DOMContentLoaded', function () {
   const clusterLayer = L.markerClusterGroup({ disableClusteringAtZoom: 17, spiderfyOnMaxZoom: true, chunkedLoading: true });
   map.addLayer(clusterLayer);
 
+  const markers = [];
+  let labelsEnabled = labelsCheckbox ? labelsCheckbox.checked : true;
+  const LABEL_ZOOM = 19;
+
+  function refreshLabels() {
+    const show = labelsEnabled && map.getZoom() >= LABEL_ZOOM;
+    markers.forEach(markerInstance => {
+      const tooltip = markerInstance.getTooltip();
+      if (!tooltip) return;
+      if (show) markerInstance.openTooltip();
+      else markerInstance.closeTooltip();
+    });
+  }
+
+  map.on('zoomend', refreshLabels);
+
+  if (labelsCheckbox) {
+    labelsCheckbox.addEventListener('change', (e) => {
+      labelsEnabled = e.target.checked;
+      refreshLabels();
+    });
+  }
+
   function updateMarkers(projectId) {
     clusterLayer.clearLayers();
+    markers.length = 0;
     records
       .filter(r => {
         if (!projectId) return true;
@@ -366,7 +363,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (r.lat && r.lon) {
           const m = L.marker([r.lat, r.lon], { icon: wrIcon });
           m.recordId = Number(r.id);
-          const titleText = (r.title && r.title.trim()) ? r.title : '(bez nazvu)';
+          const titleText = (r.title && r.title.trim()) ? r.title : '(bez názvu)';
           const detailUrl = `/tracker/${r.id}/`;
           const popupHtml = `
             <div class="wr-popup">
@@ -376,9 +373,17 @@ document.addEventListener('DOMContentLoaded', function () {
               <div class="wr-links"><a class="keep-mapy" href="https://mapy.cz/zakladni?x=${r.lon}&y=${r.lat}&z=18" target="_blank" rel="noopener">Mapy.cz</a></div>
             </div>`;
           m.bindPopup(popupHtml);
+          m.bindTooltip(titleText, {
+            direction: 'right',
+            permanent: false,
+            className: 'wr-label',
+            offset: [12, 0]
+          });
           clusterLayer.addLayer(m);
+          markers.push(m);
         }
       });
+    refreshLabels();
   }
   updateMarkers(projectSelect ? projectSelect.value : '');
 
@@ -388,17 +393,16 @@ document.addEventListener('DOMContentLoaded', function () {
     const proj = paramProject;
     if (proj && projectSelect) {
       projectSelect.value = proj;
-      populateRecordSelect(proj);
       updateMarkers(proj);
     }
     if (rid) {
-      if (recordSelect) recordSelect.value = rid;
+      activeRecordId = rid;
+      updateBackLink(rid);
       const rec = (records || []).find(r => String(r.id) === String(rid));
-      if (rec) {
+      if (rec && projectSelect) {
         const desired = (rec.project_id === null) ? 'none' : String(rec.project_id);
-        if (projectSelect && String(projectSelect.value) !== desired) {
+        if (String(projectSelect.value) !== desired) {
           projectSelect.value = desired;
-          populateRecordSelect(desired);
           updateMarkers(desired);
         }
       }
@@ -408,7 +412,6 @@ document.addEventListener('DOMContentLoaded', function () {
         clusterLayer.zoomToShowLayer(target, () => { const ll = target.getLatLng(); map.setView(ll, Math.max(map.getZoom(), 18)); target.openPopup(); });
       }
     } else if (proj) {
-      // Fit all markers of the current project
       let bounds = null;
       clusterLayer.eachLayer(layer => {
         const ll = layer.getLatLng();
@@ -417,6 +420,9 @@ document.addEventListener('DOMContentLoaded', function () {
       if (bounds) {
         map.fitBounds(bounds, { padding: [50, 50], maxZoom: 17 });
       }
+      updateBackLink(null);
+    } else {
+      updateBackLink(null);
     }
   })();
 
@@ -434,9 +440,6 @@ document.addEventListener('DOMContentLoaded', function () {
     },
   });
   new LogoControl().addTo(map);
-
-  // initial fill
-  if (projectSelect) populateRecordSelect(projectSelect.value);
 });
 </script>
 {% endblock %}
