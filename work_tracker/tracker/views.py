@@ -555,12 +555,16 @@ def map_leaflet_test(request):
     for r in records:
         if not (r.latitude and r.longitude):
             continue
-        photos_qs = list(r.photos.all())[:2]
-        thumb_urls = []
-        for photo in photos_qs:
+        photos_data = []
+        for photo in r.photos.all():
+            if not photo.photo:
+                continue
+            full_url = photo.photo.url
             thumb_url = get_photo_thumbnail(photo)
-            if thumb_url:
-                thumb_urls.append(thumb_url)
+            photos_data.append({
+                "thumb": thumb_url or full_url,
+                "full": full_url,
+            })
         coords.append({
             "id": r.id,
             "title": r.title or "(bez názvu)",
@@ -569,7 +573,7 @@ def map_leaflet_test(request):
             "project_id": r.project_id,
             "lat": r.latitude,
             "lon": r.longitude,
-            "photos": thumb_urls,
+            "photos": photos_data,
         })
 
     records_for_select = [

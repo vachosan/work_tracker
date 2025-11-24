@@ -53,12 +53,50 @@
     border-radius: 6px;
     border: 1px solid rgba(255,255,255,.6);
     box-shadow: 0 1px 4px rgba(0,0,0,.25);
+    cursor: pointer;
   }
   .wr-popup-actions {
     display: flex;
     gap: 10px;
     margin-top: 10px;
   }
+
+  /* lightbox */
+  #photoViewer {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.92);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+  }
+  #photoViewer.active { display: flex; }
+  #photoViewer img {
+    max-width: 94vw;
+    max-height: 90vh;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.6);
+  }
+  .pv-btn {
+    position: absolute;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255,255,255,.95);
+    color: #111;
+    font-size: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0,0,0,.4);
+  }
+  .pv-btn:active { transform: scale(0.95); }
+  .pv-close { top: 20px; right: 20px; }
+  .pv-prev { left: 20px; top: 50%; transform: translateY(-50%); }
+  .pv-next { right: 20px; top: 50%; transform: translateY(-50%); }
   .wr-popup-btn {
     width: 40px;
     height: 40px;
@@ -136,6 +174,14 @@
   </button>
 </div>
 
+<!-- Photo viewer overlay -->
+<div id="photoViewer">
+  <button class="pv-btn pv-close" type="button">&times;</button>
+  <button class="pv-btn pv-prev" type="button">&#8249;</button>
+  <img src="" alt="Photo preview">
+  <button class="pv-btn pv-next" type="button">&#8250;</button>
+</div>
+
 <!-- Less prominent locate button (bottom-left) -->
 <div id="map-locate">
   <button id="locateBtn" class="btn btn-light btn-sm rounded-circle shadow locate-btn" type="button" title="Zaměřit na mou polohu" aria-label="Zaměřit na mou polohu">
@@ -210,6 +256,11 @@ document.addEventListener('DOMContentLoaded', function () {
   const locateBtn = document.getElementById('locateBtn');
   const labelsCheckbox = document.getElementById('labelsCheckbox');
   const labelSizeSelect = document.getElementById('labelSizeSelect');
+  const photoViewer = document.getElementById('photoViewer');
+  const photoViewerImg = photoViewer ? photoViewer.querySelector('img') : null;
+  const photoViewerPrev = photoViewer ? photoViewer.querySelector('.pv-prev') : null;
+  const photoViewerNext = photoViewer ? photoViewer.querySelector('.pv-next') : null;
+  const photoViewerClose = photoViewer ? photoViewer.querySelector('.pv-close') : null;
 
   // Deep-link params
   const urlParams = new URLSearchParams(window.location.search);
@@ -463,8 +514,9 @@ document.addEventListener('DOMContentLoaded', function () {
           m.recordId = Number(r.id);
           const titleText = (r.title && r.title.trim()) ? r.title : '(bez názvu)';
           const detailUrl = `/tracker/${r.id}/`;
-          const photosHtml = (Array.isArray(r.photos) && r.photos.length)
-            ? `<div class="wr-photos">${r.photos.map(url => `<img src="${url}" alt="Foto ${titleText}" loading="lazy">`).join('')}</div>`
+          const photosForDisplay = Array.isArray(r.photos) ? r.photos.slice(0, 2) : [];
+          const photosHtml = photosForDisplay.length
+            ? `<div class="wr-photos">${photosForDisplay.map((photoObj, idx) => `<img class="wr-photo-thumb" src="${photoObj.thumb}" alt="Foto ${titleText}" loading="lazy" data-full="${photoObj.full}" data-record-id="${r.id}" data-photo-index="${idx}">`).join('')}</div>`
             : `<div class="text-muted small mt-2 mb-0">Bez fotodokumentace</div>`;
           const popupHtml = `
             <div class="wr-popup">
@@ -533,6 +585,60 @@ document.addEventListener('DOMContentLoaded', function () {
       updateBackLink(null);
     }
   })();
+
+  // Photo viewer handlers
+  let currentAlbum = [];
+  let currentPhotoIndex = 0;
+
+  function showPhoto(index) {
+    if (!photoViewer || !photoViewerImg || !currentAlbum.length) return;
+    if (index < 0 || index >= currentAlbum.length) return;
+    currentPhotoIndex = index;
+    const photo = currentAlbum[currentPhotoIndex];
+    photoViewerImg.src = photo.full;
+    photoViewer.classList.add('active');
+  }
+
+  function openPhotoViewer(recordId, photoIndex) {
+    const rec = (records || []).find(r => Number(r.id) === Number(recordId));
+    if (!rec || !Array.isArray(rec.photos) || !rec.photos.length) return;
+    currentAlbum = rec.photos;
+    showPhoto(photoIndex);
+  }
+
+  function closePhotoViewer() {
+    if (!photoViewer) return;
+    photoViewer.classList.remove('active');
+  }
+
+  if (photoViewer) {
+    photoViewer.addEventListener('click', (e) => {
+      if (e.target === photoViewer) closePhotoViewer();
+    });
+    if (photoViewerClose) photoViewerClose.addEventListener('click', closePhotoViewer);
+    if (photoViewerPrev) photoViewerPrev.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showPhoto((currentPhotoIndex - 1 + currentAlbum.length) % currentAlbum.length);
+    });
+    if (photoViewerNext) photoViewerNext.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showPhoto((currentPhotoIndex + 1) % currentAlbum.length);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (!photoViewer.classList.contains('active')) return;
+      if (e.key === 'Escape') closePhotoViewer();
+      if (e.key === 'ArrowRight') showPhoto((currentPhotoIndex + 1) % currentAlbum.length);
+      if (e.key === 'ArrowLeft') showPhoto((currentPhotoIndex - 1 + currentAlbum.length) % currentAlbum.length);
+    });
+    document.addEventListener('click', (event) => {
+      const target = event.target.closest('.wr-photo-thumb');
+      if (!target) return;
+      event.preventDefault();
+      const recordId = target.getAttribute('data-record-id');
+      const index = Number(target.getAttribute('data-photo-index')) || 0;
+      openPhotoViewer(recordId, index);
+    }, true);
+  }
 
   // Required Mapy.cz logo
   const LogoControl = L.Control.extend({
