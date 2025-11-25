@@ -141,6 +141,30 @@
   #captureCommentWrap.collapse.show {
     display: block;
   }
+  #newRecordDescWrap.collapse {
+    display: none;
+  }
+  #newRecordDescWrap.collapse.show {
+    display: block;
+  }
+  .new-record-close {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: none;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,.15);
+    color: #fff;
+  }
+  .new-record-close:hover {
+    background: rgba(255,255,255,.3);
+  }
+  .new-record-close:active {
+    transform: scale(0.95);
+  }
   .wr-popup-btn {
     width: 40px;
     height: 40px;
@@ -260,6 +284,49 @@
   </button>
 </div>
 
+<!-- New work record modal -->
+<div id="newRecordModal" class="capture-modal">
+  <div class="capture-card">
+    <div class="d-flex justify-content-between align-items-center mb-1">
+      <h6 class="mb-0">Nový úkon</h6>
+      <button type="button" class="btn btn-sm btn-outline-light" id="newRecordCloseBtn">&times;</button>
+    </div>
+    <div class="vstack gap-2">
+      <input type="text" id="newRecordTitle" class="form-control form-control-sm" placeholder="Název úkonu">
+      <div class="d-flex gap-2">
+        <div class="flex-fill">
+          <label class="form-label small mb-1" for="newRecordDate">Datum</label>
+          <input type="date" id="newRecordDate" class="form-control form-control-sm">
+        </div>
+        <div class="flex-fill">
+          <label class="form-label small mb-1" for="newRecordProject">Projekt</label>
+          <select id="newRecordProject" class="form-select form-select-sm">
+            <option value="">Bez projektu</option>
+            {% for p in projects %}
+              <option value="{{ p.id }}">{{ p.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div>
+        <button class="btn btn-link btn-sm p-0" type="button" id="newRecordToggleDesc">+ Přidat popis</button>
+        <div id="newRecordDescWrap" class="collapse mt-1">
+          <textarea id="newRecordDescription" class="form-control form-control-sm" rows="2" placeholder="Popis (volitelné)"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="capture-actions mt-2">
+      <div class="small text-muted">
+        Souřadnice se převezmou z vybraného bodu v mapě.
+      </div>
+      <div class="btn-group">
+        <button id="newRecordSaveBtn" type="button" class="btn btn-warning btn-sm">Uložit úkon</button>
+        <button id="newRecordCancelBtn" type="button" class="btn btn-secondary btn-sm">Zrušit</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Controls offcanvas -->
 <div class="offcanvas offcanvas-top" tabindex="-1" id="mapControlsPanel" aria-labelledby="mapControlsLabel" style="height:auto; max-height:75vh;">
   <div class="offcanvas-header py-2">
@@ -333,6 +400,14 @@ document.addEventListener('DOMContentLoaded', function () {
   const captureCommentInput = document.getElementById('captureCommentInput');
   const captureSaveBtn = document.getElementById('captureSaveBtn');
   const captureCancelBtn = document.getElementById('captureCancelBtn');
+  const newRecordModal = document.getElementById('newRecordModal');
+  const newRecordTitleInput = document.getElementById('newRecordTitle');
+  const newRecordDescWrap = document.getElementById('newRecordDescWrap');
+  const newRecordDescriptionInput = document.getElementById('newRecordDescription');
+  const newRecordSaveBtn = document.getElementById('newRecordSaveBtn');
+  const newRecordCancelBtn = document.getElementById('newRecordCancelBtn');
+  const newRecordCloseBtn = document.getElementById('newRecordCloseBtn');
+  const newRecordToggleDesc = document.getElementById('newRecordToggleDesc');
 
   // Deep-link params
   const urlParams = new URLSearchParams(window.location.search);
@@ -657,6 +732,134 @@ document.addEventListener('DOMContentLoaded', function () {
       updateBackLink(null);
     }
   })();
+
+  // New work-record modal (create from map)
+  function resetNewRecordForm() {
+    if (newRecordTitleInput) newRecordTitleInput.value = '';
+    if (newRecordDescriptionInput) newRecordDescriptionInput.value = '';
+    if (newRecordDescWrap) newRecordDescWrap.classList.remove('show');
+  }
+
+  function openNewRecordModal() {
+    if (!newRecordModal) return;
+    resetNewRecordForm();
+    newRecordModal.classList.add('active');
+  }
+
+  function closeNewRecordModal() {
+    if (!newRecordModal) return;
+    newRecordModal.classList.remove('active');
+  }
+
+  function submitNewRecord() {
+    if (!selectedLat || !selectedLon) {
+      alert('Nejd��v klikni do mapy a vyber bod.');
+      return;
+    }
+    if (!newRecordSaveBtn) return;
+
+    const title = newRecordTitleInput ? newRecordTitleInput.value.trim() : '';
+    const description = newRecordDescriptionInput ? newRecordDescriptionInput.value.trim() : '';
+    const projectId = projectSelect ? projectSelect.value : '';
+
+    newRecordSaveBtn.disabled = true;
+    fetch("{% url 'map_create_work_record' %}", {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': '{{ csrf_token }}',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        title: title,
+        description: description,
+        date: '',
+        project_id: (projectId && projectId !== 'none') ? projectId : '',
+        latitude: selectedLat,
+        longitude: selectedLon,
+      }),
+    })
+    .then(resp => resp.json())
+    .then(data => {
+      if (data.status === 'ok' && data.record) {
+        const rec = data.record;
+        records.push({
+          id: rec.id,
+          title: rec.title || '',
+          description: rec.description || '',
+          project: rec.project || '',
+          project_id: rec.project_id,
+          lat: rec.lat,
+          lon: rec.lon,
+          photos: [],
+        });
+        recordsForSelect.push({
+          id: rec.id,
+          title: rec.title || '',
+          project_id: rec.project_id,
+          has_coords: true,
+        });
+        activeRecordId = rec.id;
+        updateBackLink(rec.id);
+        if (typeof updateMarkers === 'function') {
+          updateMarkers(projectSelect ? projectSelect.value : '');
+        }
+        if (map && typeof map.setView === 'function') {
+          map.setView([rec.lat, rec.lon], Math.max(map.getZoom(), 18));
+        }
+        closeNewRecordModal();
+
+        // Otevřít popup nového bodu (pokud existuje)
+        let target = null;
+        clusterLayer.eachLayer(layer => {
+          if (layer && Number(layer.recordId) === Number(rec.id)) target = layer;
+        });
+        if (target) {
+          clusterLayer.zoomToShowLayer(target, () => { target.openPopup(); });
+        }
+      } else {
+        alert(data.msg || 'Nepoda�ilo se ulo�it �kon.');
+      }
+    })
+    .catch(() => {
+      alert('Chyba p�i ukl�d�n� �konu.');
+    })
+    .finally(() => {
+      newRecordSaveBtn.disabled = false;
+    });
+  }
+
+  if (newRecordToggleDesc && newRecordDescWrap) {
+    newRecordToggleDesc.addEventListener('click', () => {
+      newRecordDescWrap.classList.toggle('show');
+    });
+  }
+  if (newRecordCancelBtn) {
+    newRecordCancelBtn.addEventListener('click', closeNewRecordModal);
+  }
+  if (newRecordCloseBtn) {
+    newRecordCloseBtn.addEventListener('click', closeNewRecordModal);
+  }
+  if (newRecordModal) {
+    newRecordModal.addEventListener('click', (e) => {
+      if (e.target === newRecordModal) closeNewRecordModal();
+    });
+  }
+  if (newRecordSaveBtn) {
+    newRecordSaveBtn.addEventListener('click', submitNewRecord);
+  }
+
+  // Attach create FAB handler (capture phase to override redirect)
+  if (createFab) {
+    createFab.addEventListener('click', function(e) {
+      if (!selectedLat || !selectedLon) {
+        alert('Nejd��v klikni do mapy a vyber bod.');
+        return;
+      }
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      openNewRecordModal();
+    }, true);
+  }
 
   // Photo viewer handlers
   let currentAlbum = [];
