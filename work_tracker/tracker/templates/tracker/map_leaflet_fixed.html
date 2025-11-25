@@ -147,18 +147,6 @@
   #newRecordDescWrap.collapse.show {
     display: block;
   }
-  #newRecordModal .vstack .d-flex.gap-2 {
-    display: none;
-  }
-  #newRecordCloseBtn {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    padding: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
   .wr-popup-btn {
     width: 40px;
     height: 40px;
@@ -282,10 +270,25 @@
   <div class="capture-card">
     <div class="d-flex justify-content-between align-items-center mb-1">
       <h6 class="mb-0">Nový úkon</h6>
-      <button type="button" class="btn btn-sm btn-outline-light rounded-circle px-2 py-0" id="newRecordCloseBtn" aria-label="Zavřít">&times;</button>
+      <button type="button" class="btn btn-sm btn-outline-light" id="newRecordCloseBtn">&times;</button>
     </div>
     <div class="vstack gap-2">
       <input type="text" id="newRecordTitle" class="form-control form-control-sm" placeholder="Název úkonu">
+      <div class="d-flex gap-2">
+        <div class="flex-fill">
+          <label class="form-label small mb-1" for="newRecordDate">Datum</label>
+          <input type="date" id="newRecordDate" class="form-control form-control-sm">
+        </div>
+        <div class="flex-fill">
+          <label class="form-label small mb-1" for="newRecordProject">Projekt</label>
+          <select id="newRecordProject" class="form-select form-select-sm">
+            <option value="">Bez projektu</option>
+            {% for p in projects %}
+              <option value="{{ p.id }}">{{ p.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
       <div>
         <button class="btn btn-link btn-sm p-0" type="button" id="newRecordToggleDesc">+ Přidat popis</button>
         <div id="newRecordDescWrap" class="collapse mt-1">
@@ -1028,4 +1031,3 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 {% endblock %}
-

@@ -661,3 +661,67 @@ def map_upload_photo(request):
             "description": comment,
         }
     })
+
+
+@login_required
+def map_create_work_record(request):
+    """
+    Vytvoří nový úkon přímo z mapy (AJAX, bez přesměrování).
+    """
+    if request.method != "POST":
+        return JsonResponse({"status": "error", "msg": "Invalid request"}, status=405)
+
+    title = (request.POST.get("title") or "").strip()
+    description = (request.POST.get("description") or "").strip()
+    project_id = request.POST.get("project_id") or None
+    date_str = (request.POST.get("date") or "").strip()
+    lat_str = request.POST.get("latitude")
+    lon_str = request.POST.get("longitude")
+
+    # souřadnice jsou pro mapu povinné
+    try:
+        lat = float(lat_str)
+        lon = float(lon_str)
+    except (TypeError, ValueError):
+        return JsonResponse({"status": "error", "msg": "Chybné souřadnice."}, status=400)
+
+    # projekt (volitelný)
+    project = None
+    if project_id and project_id != "none":
+        try:
+            project = Project.objects.get(pk=project_id)
+        except Project.DoesNotExist:
+            return JsonResponse({"status": "error", "msg": "Projekt nenalezen."}, status=404)
+        if not user_can_view_project(request.user, project.pk):
+            return JsonResponse({"status": "error", "msg": "Nemáš oprávnění."}, status=403)
+
+    # datum – pokud nepřijde, použijeme dnešek
+    from django.utils import timezone
+
+    if date_str:
+        parsed = parse_date(date_str)
+        record_date = parsed or timezone.localdate()
+    else:
+        record_date = timezone.localdate()
+
+    work_record = WorkRecord.objects.create(
+        title=title,
+        description=description,
+        date=record_date,
+        project=project,
+        latitude=lat,
+        longitude=lon,
+    )
+
+    return JsonResponse({
+        "status": "ok",
+        "record": {
+            "id": work_record.id,
+            "title": work_record.title or "",
+            "description": work_record.description or "",
+            "project": work_record.project.name if work_record.project else "",
+            "project_id": work_record.project_id,
+            "lat": work_record.latitude,
+            "lon": work_record.longitude,
+        },
+    })
