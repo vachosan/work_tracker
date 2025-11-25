@@ -932,9 +932,12 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     if (!captureSaveBtn) return;
     const formData = new FormData();
+    const baseComment = captureCommentInput ? captureCommentInput.value.trim() : '';
+    const todayStr = new Date().toLocaleDateString('cs-CZ');
+    const finalComment = baseComment ? `${todayStr} – ${baseComment}` : todayStr;
     formData.append('record_id', captureRecordId);
     formData.append('photo', captureFile);
-    formData.append('comment', captureCommentInput ? captureCommentInput.value.trim() : '');
+    formData.append('comment', finalComment);
     captureSaveBtn.disabled = true;
     fetch("{% url 'map_upload_photo' %}", {
       method: 'POST',
@@ -951,6 +954,14 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         closeCaptureModal();
         updateMarkers(projectSelect ? projectSelect.value : '');
+        // znovu otevřít popup pro daný úkon
+        let target = null;
+        clusterLayer.eachLayer(layer => {
+          if (layer && Number(layer.recordId) === Number(captureRecordId)) target = layer;
+        });
+        if (target) {
+          clusterLayer.zoomToShowLayer(target, () => { target.openPopup(); });
+        }
       } else {
         alert(data.msg || 'Nepodařilo se uložit fotku.');
       }
@@ -962,16 +973,25 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   if (photoCaptureInput) {
-    photoCaptureInput.addEventListener('change', (e) => {
+    photoCaptureInput.addEventListener('change', async (e) => {
       const file = e.target.files && e.target.files[0];
       if (!file) return;
-      captureFile = file;
-      const reader = new FileReader();
-      reader.onload = ev => {
-        if (capturePreview) capturePreview.src = ev.target.result;
+      try {
+        await setCompressedFileToInput(photoCaptureInput, file, capturePreview);
+        const compressed = photoCaptureInput.files && photoCaptureInput.files[0];
+        if (!compressed) return;
+        captureFile = compressed;
         openCaptureModal();
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        console.error('Compression failed', err);
+        captureFile = file;
+        const reader = new FileReader();
+        reader.onload = ev => {
+          if (capturePreview) capturePreview.src = ev.target.result;
+          openCaptureModal();
+        };
+        reader.readAsDataURL(file);
+      }
     });
   }
 
