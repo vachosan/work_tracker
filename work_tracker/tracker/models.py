@@ -1,3 +1,5 @@
+import string
+
 from django.db import models
 from django.utils import timezone
 from django.conf import settings
@@ -40,6 +42,21 @@ PERSPECTIVE_CHOICES = [
     ("b", "b – krátkodobě perspektivní"),
     ("c", "c – neperspektivní"),
 ]
+
+BASE36_ALPHABET = string.digits + string.ascii_uppercase
+
+
+def int_to_base36(n: int) -> str:
+    if n < 0:
+        raise ValueError("int_to_base36: n must be non-negative")
+    if n == 0:
+        return "0"
+    digits = []
+    base = 36
+    while n:
+        n, rem = divmod(n, base)
+        digits.append(BASE36_ALPHABET[rem])
+    return "".join(reversed(digits))
 
 
 class Project(models.Model):
@@ -92,13 +109,16 @@ class WorkRecord(models.Model):
 
     def generate_internal_code(self) -> str | None:
         """
-        Generate a short internal identifier from the primary key, e.g. '0001', '0078'.
+        Generate a short internal identifier from the primary key in base36.
 
-        Returns None if pk is not available yet.
+        pk=1   -> "1"
+        pk=35  -> "Z"
+        pk=36  -> "10"
+        pk=1234 -> "YA"
         """
         if not self.pk:
             return None
-        return f"{self.pk:04d}"
+        return int_to_base36(int(self.pk))
 
     def sync_title_from_identifiers(self):
         """

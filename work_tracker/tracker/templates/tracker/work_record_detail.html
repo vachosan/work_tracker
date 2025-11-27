@@ -7,7 +7,7 @@
     {% if wr.title %}
       <h1 class="h5 m-0 text-truncate" style="max-width: 70%;">{{ wr.title }}</h1>
     {% else %}
-      <h1 class="h5 m-0 text-truncate" style="max-width: 70%;">{{ wr.id|stringformat:"04d" }}</h1>
+      <h1 class="h5 m-0 text-truncate" style="max-width: 70%;">{{ wr.id }}</h1>
     {% endif %}
   {% endwith %}
 
@@ -78,7 +78,7 @@
         {% if work_record.title %}
           {{ work_record.title }}
         {% else %}
-          {{ work_record.id|stringformat:"04d" }}
+          {{ work_record.id }}
         {% endif %}
       </div>
       <div><strong>Číslo stromu (externí):</strong>

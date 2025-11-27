@@ -688,7 +688,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (record.title && record.title.trim()) {
       return record.title.trim();
     }
-    return String(record.id).padStart(4, "0");
+    return String(record.id);
   }
 
   function refreshLabels() {
