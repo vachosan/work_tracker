@@ -3,9 +3,13 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-  <h1 class="h5 m-0 text-truncate" style="max-width: 70%;">
-    {{ work_record.title|default:"Bez názvu" }}
-  </h1>
+  {% with wr=work_record %}
+    {% if wr.title %}
+      <h1 class="h5 m-0 text-truncate" style="max-width: 70%;">{{ wr.title }}</h1>
+    {% else %}
+      <h1 class="h5 m-0 text-truncate" style="max-width: 70%;">{{ wr.id|stringformat:"04d" }}</h1>
+    {% endif %}
+  {% endwith %}
 
   <div class="d-flex gap-2 flex-shrink-0">
     {% if work_record.latitude and work_record.longitude %}
@@ -69,6 +73,22 @@
       <p class="text-muted mb-2">Bez popisu.</p>
     {% endif %}
     <small class="text-muted">Datum: {{ work_record.date|date:"d.m.Y" }}</small>
+    <div class="mt-2 small">
+      <div><strong>Kód stromu (interní):</strong>
+        {% if work_record.title %}
+          {{ work_record.title }}
+        {% else %}
+          {{ work_record.id|stringformat:"04d" }}
+        {% endif %}
+      </div>
+      <div><strong>Číslo stromu (externí):</strong>
+        {% if work_record.external_tree_id %}
+          {{ work_record.external_tree_id }}
+        {% else %}
+          <span class="text-muted">není zadáno</span>
+        {% endif %}
+      </div>
+    </div>
   </div>
 </div>
 

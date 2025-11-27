@@ -36,9 +36,9 @@ class ProjectAdmin(admin.ModelAdmin):
 
 @admin.register(WorkRecord)
 class WorkRecordAdmin(admin.ModelAdmin):
-    list_display = ("title", "project", "date", "latitude", "longitude")
+    list_display = ("title", "external_tree_id", "project", "date", "latitude", "longitude")
     list_filter = ("project", "date", "latitude", "longitude")
-    search_fields = ("title", "description")
+    search_fields = ("title", "external_tree_id", "description")
     date_hierarchy = "date"
     autocomplete_fields = ("project",)
     inlines = [PhotoDocumentationInline, TreeAssessmentInline]

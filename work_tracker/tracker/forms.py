@@ -81,7 +81,7 @@ class WorkRecordForm(forms.ModelForm):
 
     class Meta:
         model = WorkRecord
-        fields = ['title', 'description', 'date', 'project']
+        fields = ['external_tree_id', 'description', 'date', 'project']
         widgets = {
             'date': forms.DateInput(attrs={'type': 'date'}),  # HTML5 datepicker
         }
@@ -91,6 +91,9 @@ class WorkRecordForm(forms.ModelForm):
         # ✅ Novinka: předvyplní aktuální datum při načtení formuláře
         if not self.is_bound and 'date' in self.fields:
             self.fields['date'].initial = timezone.localdate()
+        if 'external_tree_id' in self.fields:
+            self.fields['external_tree_id'].label = 'Číslo stromu'
+            self.fields['external_tree_id'].help_text = 'Číslo stromu z papírové inventarizace, cedulek nebo jiného systému.'
         # Filtrování jen na aktivní projekty
         self.fields['project'].queryset = Project.objects.filter(is_closed=False)
 

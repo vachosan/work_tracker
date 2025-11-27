@@ -625,16 +625,17 @@ document.addEventListener('DOMContentLoaded', function () {
             existing.project_id = recInfo ? recInfo.project_id : existing.project_id ?? null;
             existing.project = existing.project ?? (recInfo && recInfo.project_name ? recInfo.project_name : '');
           } else {
-            const baseTitle = recInfo && recInfo.title ? recInfo.title : '(bez názvu)';
             records.push({
               id: recIdNum,
-              title: baseTitle,
+              title: recInfo ? (recInfo.title || '') : '',
+              external_tree_id: recInfo ? (recInfo.external_tree_id || '') : '',
               description: '',
               project: '',
               project_id: recInfo ? recInfo.project_id : null,
               lat: Number(selectedLat),
               lon: Number(selectedLon),
               photos: [],
+              has_assessment: false,
             });
           }
           if (typeof updateMarkers === 'function') updateMarkers(projectSelect ? projectSelect.value : '');
@@ -683,6 +684,13 @@ document.addEventListener('DOMContentLoaded', function () {
   const LABEL_MAX_ZOOM = map.getMaxZoom();
   const LABEL_MIN_ZOOM = Math.max(LABEL_MAX_ZOOM - 1, 0);
 
+  function getRecordDisplayLabel(record) {
+    if (record.title && record.title.trim()) {
+      return record.title.trim();
+    }
+    return String(record.id).padStart(4, "0");
+  }
+
   function refreshLabels() {
     const show = labelsEnabled && map.getZoom() >= LABEL_MIN_ZOOM;
     markers.forEach(markerInstance => {
@@ -728,15 +736,15 @@ document.addEventListener('DOMContentLoaded', function () {
         if (r.lat && r.lon) {
           const m = L.marker([r.lat, r.lon], { icon: wrIcon });
           m.recordId = Number(r.id);
-          const titleText = (r.title && r.title.trim()) ? r.title : '(bez názvu)';
           const detailUrl = `/tracker/${r.id}/`;
+          const displayLabel = getRecordDisplayLabel(r);
           const photosForDisplay = Array.isArray(r.photos) ? r.photos.slice(0, 2) : [];
           const photosHtml = photosForDisplay.length
-            ? `<div class="wr-photos">${photosForDisplay.map((photoObj, idx) => `<img class="wr-photo-thumb" src="${photoObj.thumb}" alt="Foto ${titleText}" loading="lazy" data-full="${photoObj.full}" data-record-id="${r.id}" data-photo-index="${idx}">`).join('')}</div>`
+            ? `<div class="wr-photos">${photosForDisplay.map((photoObj, idx) => `<img class="wr-photo-thumb" src="${photoObj.thumb}" alt="Foto ${displayLabel}" loading="lazy" data-full="${photoObj.full}" data-record-id="${r.id}" data-photo-index="${idx}">`).join('')}</div>`
             : `<div class="text-muted small mt-2 mb-0">Bez fotodokumentace</div>`;
           let popupHtml = `
             <div class="wr-popup">
-              <div><a href="${detailUrl}" class="wr-title">${titleText}</a></div>
+              <div><a href="${detailUrl}" class="wr-title">${displayLabel}</a></div>
               ${r.description ? `<div class="wr-desc">${r.description}</div>` : ''}
               ${photosHtml}
               <div class="wr-popup-actions">
@@ -755,7 +763,7 @@ document.addEventListener('DOMContentLoaded', function () {
             popupHtml = popupHtml.replace('wr-popup-btn assess', 'wr-popup-btn assess has-assessment');
           }
           m.bindPopup(popupHtml);
-          m.bindTooltip(titleText, {
+          m.bindTooltip(displayLabel, {
             direction: 'top',
             permanent: true,
             className: 'wr-label',
@@ -860,6 +868,7 @@ document.addEventListener('DOMContentLoaded', function () {
         records.push({
           id: rec.id,
           title: rec.title || '',
+          external_tree_id: rec.external_tree_id || '',
           description: rec.description || '',
           project: rec.project || '',
           project_id: rec.project_id,
@@ -871,6 +880,7 @@ document.addEventListener('DOMContentLoaded', function () {
         recordsForSelect.push({
           id: rec.id,
           title: rec.title || '',
+          external_tree_id: rec.external_tree_id || '',
           project_id: rec.project_id,
           has_coords: true,
         });
@@ -1356,4 +1366,5 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 {% endblock %}
+
 

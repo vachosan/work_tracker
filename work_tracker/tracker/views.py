@@ -268,18 +268,30 @@ def create_work_record(request, project_id=None):
         photo_form = PhotoDocumentationForm(request.POST, request.FILES)
 
         if work_record_form.is_valid():
-            work_record = work_record_form.save()
+            work_record = work_record_form.save(commit=False)
 
-            # Set coordinates if provided (from map)
             lat_str = request.POST.get("latitude") or request.GET.get("lat")
             lon_str = request.POST.get("longitude") or request.GET.get("lon")
             try:
                 if lat_str is not None and lon_str is not None:
                     work_record.latitude = float(lat_str)
                     work_record.longitude = float(lon_str)
-                    work_record.save(update_fields=["latitude", "longitude"]) 
             except (TypeError, ValueError):
                 pass
+
+            work_record.save()
+            work_record.sync_title_from_identifiers()
+            work_record.save(
+                update_fields=[
+                    "title",
+                    "external_tree_id",
+                    "description",
+                    "date",
+                    "project",
+                    "latitude",
+                    "longitude",
+                ]
+            )
 
             # ověř přístup k projektu
             if work_record.project_id and not user_can_view_project(request.user, work_record.project_id):
@@ -379,7 +391,9 @@ def edit_work_record(request, pk):
         if 'save_work_record' in request.POST:
             work_record_form = WorkRecordForm(request.POST, instance=work_record)
             if work_record_form.is_valid():
-                work_record = work_record_form.save()
+                work_record = work_record_form.save(commit=False)
+                work_record.sync_title_from_identifiers()
+                work_record.save()
                 from django.urls import reverse
                 url = reverse('work_record_list')
                 if work_record.project_id:
@@ -584,7 +598,8 @@ def map_leaflet_test(request):
             })
         coords.append({
             "id": r.id,
-            "title": r.title or "(bez názvu)",
+            "title": r.title or "",
+            "external_tree_id": r.external_tree_id or "",
             "description": r.description or "",
             "project": r.project.name if r.project else "",
             "project_id": r.project_id,
@@ -598,6 +613,7 @@ def map_leaflet_test(request):
         {
             "id": r.id,
             "title": (r.title or ""),
+            "external_tree_id": r.external_tree_id or "",
             "project_id": r.project_id,
             "has_coords": bool(r.latitude and r.longitude),
         }
@@ -689,7 +705,7 @@ def map_create_work_record(request):
     if request.method != "POST":
         return JsonResponse({"status": "error", "msg": "Invalid request"}, status=405)
 
-    title = (request.POST.get("title") or "").strip()
+    external_tree_id = (request.POST.get("title") or "").strip()
     description = (request.POST.get("description") or "").strip()
     project_id = request.POST.get("project_id") or None
     date_str = (request.POST.get("date") or "").strip()
@@ -722,13 +738,26 @@ def map_create_work_record(request):
     else:
         record_date = timezone.localdate()
 
-    work_record = WorkRecord.objects.create(
-        title=title,
-        description=description,
-        date=record_date,
+    work_record = WorkRecord(
         project=project,
+        description=description,
+        external_tree_id=external_tree_id or None,
         latitude=lat,
         longitude=lon,
+        date=record_date,
+    )
+    work_record.save()
+    work_record.sync_title_from_identifiers()
+    work_record.save(
+        update_fields=[
+            "title",
+            "external_tree_id",
+            "description",
+            "project",
+            "latitude",
+            "longitude",
+            "date",
+        ]
     )
 
     return JsonResponse({
@@ -736,6 +765,7 @@ def map_create_work_record(request):
         "record": {
             "id": work_record.id,
             "title": work_record.title or "",
+            "external_tree_id": work_record.external_tree_id or "",
             "description": work_record.description or "",
             "project": work_record.project.name if work_record.project else "",
             "project_id": work_record.project_id,

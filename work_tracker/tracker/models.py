@@ -53,6 +53,13 @@ class Project(models.Model):
 
 class WorkRecord(models.Model):
     title = models.CharField(max_length=200, blank=True)
+    external_tree_id = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name="Číslo stromu (externí)",
+        help_text="Číslo stromu z papírové inventarizace, cedulek nebo jiného systému.",
+    )
     description = models.TextField(blank=True)
     date = models.DateField(default=timezone.now)
     created_at = models.DateTimeField(default=timezone.now)
@@ -83,8 +90,50 @@ class WorkRecord(models.Model):
     class Meta:
         ordering = ["-date", "-id"]
 
+    def generate_internal_code(self) -> str | None:
+        """
+        Generate a short internal identifier from the primary key, e.g. '0001', '0078'.
+
+        Returns None if pk is not available yet.
+        """
+        if not self.pk:
+            return None
+        return f"{self.pk:04d}"
+
+    def sync_title_from_identifiers(self):
+        """
+        Ensure `title` is always usable for display/export:
+
+        - If external_tree_id is set, title mirrors it.
+        - Else if title already has a value (legacy data), leave it unchanged.
+        - Else, derive a short internal code based on the PK.
+        """
+        if self.external_tree_id:
+            # Prefer explicit external id for all user-facing purposes
+            self.title = self.external_tree_id
+            return
+
+        # No external id; if there is already some title (old data),
+        # treat it as user-defined / legacy external code and do not overwrite it.
+        if self.title:
+            return
+
+        # No external id and no existing title -> generate internal short code
+        internal_code = self.generate_internal_code()
+        if internal_code:
+            self.title = internal_code
+
     def __str__(self):
-        return self.title or f"WorkRecord #{self.id}"
+        # Primary display: title (which mirrors external_tree_id or legacy title)
+        if self.title:
+            return self.title
+
+        # Fallback: short internal code if pk exists
+        internal_code = self.generate_internal_code()
+        if internal_code:
+            return internal_code
+
+        return "WorkRecord (unsaved)"
 
     @property
     def latest_assessment(self):
