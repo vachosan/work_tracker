@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import WorkRecord, PhotoDocumentation, Project, ProjectMembership
+from .models import WorkRecord, PhotoDocumentation, Project, ProjectMembership, TreeAssessment
 
 # ---------- Inlines ----------
 
@@ -8,6 +8,11 @@ class PhotoDocumentationInline(admin.TabularInline):
     extra = 1
     fields = ("photo", "description")
     show_change_link = True
+
+
+class TreeAssessmentInline(admin.StackedInline):
+    model = TreeAssessment
+    extra = 0
 
 class ProjectMembershipInline(admin.TabularInline):
     model = ProjectMembership
@@ -36,7 +41,7 @@ class WorkRecordAdmin(admin.ModelAdmin):
     search_fields = ("title", "description")
     date_hierarchy = "date"
     autocomplete_fields = ("project",)
-    inlines = [PhotoDocumentationInline]
+    inlines = [PhotoDocumentationInline, TreeAssessmentInline]
 
 # ---------- PhotoDocumentation ----------
 
@@ -55,3 +60,6 @@ class ProjectMembershipAdmin(admin.ModelAdmin):
     list_filter = ("role", "project")
     search_fields = ("user__username", "user__email", "project__name")
     autocomplete_fields = ("user", "project")
+
+
+admin.site.register(TreeAssessment)

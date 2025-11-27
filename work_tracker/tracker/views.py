@@ -5,26 +5,29 @@ import unicodedata
 import re
 import tempfile
 import zipstream
-from django.contrib import messages
-from django.http import StreamingHttpResponse
-from django.http import FileResponse
+import json
 from datetime import date
+
 from django.conf import settings
-from django.core.files import File
-from django.core.files.base import ContentFile
-from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
-from django.db.models import Max, F
-from django.urls import reverse
-from django.db.models import Max, F, Count, Q
-from django.db.models import Prefetch
+from django.core.files import File
+from django.core.files.base import ContentFile
 from django.core.paginator import Paginator
+from django.db.models import Max, F, Count, Q, Prefetch
+from django.http import (
+    StreamingHttpResponse,
+    FileResponse,
+    JsonResponse,
+    HttpResponseBadRequest,
+)
+from django.shortcuts import render, redirect, get_object_or_404
+from django.urls import reverse
 from django.utils.dateparse import parse_date
-from .models import WorkRecord, Project
-from django.http import JsonResponse
-from .models import Project, WorkRecord, PhotoDocumentation, ProjectMembership
+from django.views.decorators.http import require_http_methods
 from PIL import Image
+
 from .forms import (
     WorkRecordForm,
     PhotoDocumentationForm,
@@ -32,6 +35,13 @@ from .forms import (
     CustomUserCreationForm,
     ProjectEditForm,
     AddMemberForm,
+)
+from .models import (
+    Project,
+    WorkRecord,
+    PhotoDocumentation,
+    ProjectMembership,
+    TreeAssessment,
 )
 from .permissions import (
     user_projects_qs,
@@ -544,6 +554,8 @@ def map_leaflet_test(request):
     records = (
         WorkRecord.objects
         .filter(Q(project__in=visible_projects) | Q(project__isnull=True))
+        .select_related("project")
+        .select_related("assessment")
         .order_by("-id")
         .prefetch_related(
             Prefetch("photos", queryset=PhotoDocumentation.objects.order_by("-id"))
@@ -574,6 +586,7 @@ def map_leaflet_test(request):
             "lat": r.latitude,
             "lon": r.longitude,
             "photos": photos_data,
+            "has_assessment": hasattr(r, "assessment"),
         })
 
     records_for_select = [
@@ -724,4 +737,96 @@ def map_create_work_record(request):
             "lat": work_record.latitude,
             "lon": work_record.longitude,
         },
+    })
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def workrecord_assessment_api(request, pk):
+    """
+    JSON API for reading/updating TreeAssessment for a given WorkRecord.
+    GET: return current values (or nulls if assessment does not exist).
+    POST: create/update assessment from JSON payload.
+    """
+    try:
+        work_record = WorkRecord.objects.get(pk=pk)
+    except WorkRecord.DoesNotExist:
+        return JsonResponse({"error": "WorkRecord not found"}, status=404)
+
+    # Get or create assessment instance (for POST)
+    try:
+        assessment = work_record.assessment
+    except TreeAssessment.DoesNotExist:
+        assessment = None
+
+    if request.method == "GET":
+        data = {
+            "work_record_id": work_record.pk,
+            "dbh_cm": assessment.dbh_cm if assessment else None,
+            "height_m": assessment.height_m if assessment else None,
+            "physiological_age": assessment.physiological_age if assessment else None,
+            "vitality": assessment.vitality if assessment else None,
+            "health_state": assessment.health_state if assessment else None,
+            "stability": assessment.stability if assessment else None,
+            "perspective": assessment.perspective if assessment else None,
+        }
+        return JsonResponse(data)
+
+    # POST
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return HttpResponseBadRequest("Invalid JSON")
+
+    def parse_int(value, min_val, max_val):
+        if value in (None, ""):
+            return None
+        try:
+            iv = int(value)
+        except (TypeError, ValueError):
+            return None
+        if iv < min_val or iv > max_val:
+            return None
+        return iv
+
+    def parse_float(value):
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    dbh_cm = parse_float(payload.get("dbh_cm"))
+    height_m = parse_float(payload.get("height_m"))
+    physiological_age = parse_int(payload.get("physiological_age"), 1, 5)
+    vitality = parse_int(payload.get("vitality"), 1, 5)
+    health_state = parse_int(payload.get("health_state"), 1, 5)
+    stability = parse_int(payload.get("stability"), 1, 5)
+    perspective = payload.get("perspective") or None
+    if perspective not in (None, "", "a", "b", "c"):
+        perspective = None
+
+    if assessment is None:
+        assessment = TreeAssessment(work_record=work_record)
+
+    assessment.dbh_cm = dbh_cm
+    assessment.height_m = height_m
+    assessment.physiological_age = physiological_age
+    assessment.vitality = vitality
+    assessment.health_state = health_state
+    assessment.stability = stability
+    assessment.perspective = perspective
+    assessment.save()
+
+    return JsonResponse({
+        "status": "ok",
+        "work_record_id": work_record.pk,
+        "dbh_cm": assessment.dbh_cm,
+        "height_m": assessment.height_m,
+        "physiological_age": assessment.physiological_age,
+        "vitality": assessment.vitality,
+        "health_state": assessment.health_state,
+        "stability": assessment.stability,
+        "perspective": assessment.perspective,
     })

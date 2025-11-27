@@ -176,6 +176,8 @@
     pointer-events: none;
   }
   .wr-popup-btn.photo { background: #ffbf00; }
+  .wr-popup-btn.assess { background: #4e9cff; }
+  .wr-popup-btn.assess.has-assessment { background: #198754; }
   .wr-popup-btn.edit { background: #b5c0cc; color: #1f2a33; }
   /* offcanvas styling */
   .offcanvas-top { border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,.15); background: rgba(255,255,255,.98); }
@@ -261,6 +263,74 @@
     <div id="captureCommentWrap" class="collapse mt-2">
       <textarea id="captureCommentInput" class="form-control" rows="2" placeholder="Krátký komentář"></textarea>
     </div>
+  </div>
+</div>
+
+<div id="assessmentModal" class="capture-modal">
+  <div class="capture-card">
+    <div class="d-flex justify-content-between align-items-center mb-1">
+      <h6 class="mb-0">Hodnocení stromu</h6>
+      <button type="button" class="btn btn-sm btn-outline-light rounded-circle px-2 py-0" id="assessmentCloseBtn" aria-label="Zavřít">&times;</button>
+    </div>
+
+    <div class="vstack gap-2 small">
+      <input type="hidden" id="assessmentWorkRecordId" />
+
+      <div class="row g-2">
+        <div class="col-6">
+          <label for="assessmentDbh" class="form-label mb-1">Průměr kmene [cm]</label>
+          <input type="number" step="0.1" class="form-control form-control-sm" id="assessmentDbh" placeholder="např. 45">
+        </div>
+        <div class="col-6">
+          <label for="assessmentHeight" class="form-label mb-1">Výška stromu [m]</label>
+          <input type="number" step="0.1" class="form-control form-control-sm" id="assessmentHeight" placeholder="např. 18">
+        </div>
+      </div>
+
+      <div class="mb-1">
+        <label class="form-label mb-1" for="assessmentPhysAge">Fyziologické stáří (1–5)</label>
+        <input type="range" min="1" max="5" step="1" id="assessmentPhysAge" class="form-range">
+        <div class="text-end"><small>Aktuální: <span id="assessmentPhysAgeValue">–</span></small></div>
+      </div>
+
+      <div class="mb-1">
+        <label class="form-label mb-1" for="assessmentVitality">Vitalita (1–5)</label>
+        <input type="range" min="1" max="5" step="1" id="assessmentVitality" class="form-range">
+        <div class="text-end"><small>Aktuální: <span id="assessmentVitalityValue">–</span></small></div>
+      </div>
+
+      <div class="mb-1">
+        <label class="form-label mb-1" for="assessmentHealth">Zdravotní stav (1–5)</label>
+        <input type="range" min="1" max="5" step="1" id="assessmentHealth" class="form-range">
+        <div class="text-end"><small>Aktuální: <span id="assessmentHealthValue">–</span></small></div>
+      </div>
+
+      <div class="mb-2">
+        <label class="form-label mb-1" for="assessmentStability">Stabilita (1–5)</label>
+        <input type="range" min="1" max="5" step="1" id="assessmentStability" class="form-range">
+        <div class="text-end"><small>Aktuální: <span id="assessmentStabilityValue">–</span></small></div>
+      </div>
+
+      <div class="mb-2">
+        <label class="form-label mb-1" for="assessmentPerspectiveSlider">Perspektiva stromu (a–c)</label>
+        <input type="range" min="1" max="3" step="1" id="assessmentPerspectiveSlider" class="form-range">
+        <div class="text-end">
+          <small>Aktuální: <span id="assessmentPerspectiveValue">a – dlouhodobě perspektivní</span></small>
+        </div>
+      </div>
+    </div>
+
+    <div class="capture-actions mt-2">
+      <div class="small text-muted">
+        Hodnocení se ukládá k vybranému úkonu.
+      </div>
+      <div class="btn-group">
+        <button id="assessmentSaveBtn" type="button" class="btn btn-warning btn-sm">Uložit hodnocení</button>
+        <button id="assessmentCancelBtn" type="button" class="btn btn-secondary btn-sm">Zrušit</button>
+      </div>
+    </div>
+
+    <div id="assessmentMessage" class="mt-2 small"></div>
   </div>
 </div>
 
@@ -386,12 +456,33 @@ document.addEventListener('DOMContentLoaded', function () {
   const newRecordCancelBtn = document.getElementById('newRecordCancelBtn');
   const newRecordCloseBtn = document.getElementById('newRecordCloseBtn');
   const newRecordToggleDesc = document.getElementById('newRecordToggleDesc');
+  const assessmentModal = document.getElementById('assessmentModal');
+  const assessmentWorkRecordIdInput = document.getElementById('assessmentWorkRecordId');
+  const assessmentDbhInput = document.getElementById('assessmentDbh');
+  const assessmentHeightInput = document.getElementById('assessmentHeight');
+  const assessmentPhysAge = document.getElementById('assessmentPhysAge');
+  const assessmentVitality = document.getElementById('assessmentVitality');
+  const assessmentHealth = document.getElementById('assessmentHealth');
+  const assessmentStability = document.getElementById('assessmentStability');
+  const assessmentPerspectiveSlider = document.getElementById('assessmentPerspectiveSlider');
+
+  const assessmentPhysAgeValue = document.getElementById('assessmentPhysAgeValue');
+  const assessmentVitalityValue = document.getElementById('assessmentVitalityValue');
+  const assessmentHealthValue = document.getElementById('assessmentHealthValue');
+  const assessmentStabilityValue = document.getElementById('assessmentStabilityValue');
+  const assessmentPerspectiveValue = document.getElementById('assessmentPerspectiveValue');
+
+  const assessmentCloseBtn = document.getElementById('assessmentCloseBtn');
+  const assessmentCancelBtn = document.getElementById('assessmentCancelBtn');
+  const assessmentSaveBtn = document.getElementById('assessmentSaveBtn');
+  const assessmentMessage = document.getElementById('assessmentMessage');
 
   // Deep-link params
   const urlParams = new URLSearchParams(window.location.search);
   const paramRecord = urlParams.get('record');
   const paramProject = urlParams.get('project');
   const paramLocate = urlParams.has('locate');
+  const assessmentApiBase = "{% url 'workrecord_assessment_api' 0 %}".replace("0/assessment/", "");
 
   // currently selected work record (for saving coordinates)
   let activeRecordId = paramRecord || null;
@@ -643,7 +734,7 @@ document.addEventListener('DOMContentLoaded', function () {
           const photosHtml = photosForDisplay.length
             ? `<div class="wr-photos">${photosForDisplay.map((photoObj, idx) => `<img class="wr-photo-thumb" src="${photoObj.thumb}" alt="Foto ${titleText}" loading="lazy" data-full="${photoObj.full}" data-record-id="${r.id}" data-photo-index="${idx}">`).join('')}</div>`
             : `<div class="text-muted small mt-2 mb-0">Bez fotodokumentace</div>`;
-          const popupHtml = `
+          let popupHtml = `
             <div class="wr-popup">
               <div><a href="${detailUrl}" class="wr-title">${titleText}</a></div>
               ${r.description ? `<div class="wr-desc">${r.description}</div>` : ''}
@@ -652,11 +743,17 @@ document.addEventListener('DOMContentLoaded', function () {
                 <button type="button" class="wr-popup-btn photo" data-action="capture" data-record-id="${r.id}" title="Vyfotit">
                   <i class="bi bi-camera-fill"></i>
                 </button>
+                <button type="button" class="wr-popup-btn assess" data-action="assessment" data-record-id="${r.id}" title="Hodnocení stromu">
+                  <i class="bi bi-clipboard2-pulse"></i>
+                </button>
                 <a class="wr-popup-btn edit" href="/tracker/${r.id}/edit/" title="Upravit úkon">
                   <i class="bi bi-pencil-square"></i>
                 </a>
               </div>
             </div>`;
+          if (r.has_assessment) {
+            popupHtml = popupHtml.replace('wr-popup-btn assess', 'wr-popup-btn assess has-assessment');
+          }
           m.bindPopup(popupHtml);
           m.bindTooltip(titleText, {
             direction: 'top',
@@ -769,6 +866,7 @@ document.addEventListener('DOMContentLoaded', function () {
           lat: rec.lat,
           lon: rec.lon,
           photos: [],
+          has_assessment: false,
         });
         recordsForSelect.push({
           id: rec.id,
@@ -837,6 +935,138 @@ document.addEventListener('DOMContentLoaded', function () {
       e.stopImmediatePropagation();
       openNewRecordModal();
     }, true);
+  }
+
+  function showAssessmentModal() {
+    if (!assessmentModal) return;
+    assessmentModal.classList.add('active');
+  }
+
+  function hideAssessmentModal() {
+    if (!assessmentModal) return;
+    assessmentModal.classList.remove('active');
+    if (assessmentMessage) {
+      assessmentMessage.textContent = '';
+      assessmentMessage.className = 'mt-2 small';
+    }
+  }
+
+  function updateSliderLabel(inputEl, labelEl) {
+    if (!inputEl || !labelEl) return;
+    labelEl.textContent = inputEl.value || '–';
+  }
+
+  function perspectiveLetterFromSlider(val) {
+    const n = Number(val);
+    if (n === 1) return 'a';
+    if (n === 2) return 'b';
+    if (n === 3) return 'c';
+    return null;
+  }
+
+  function perspectiveLabelFromLetter(letter) {
+    if (letter === 'a') return 'a – dlouhodobě perspektivní';
+    if (letter === 'b') return 'b – krátkodobě perspektivní';
+    if (letter === 'c') return 'c – neperspektivní';
+    return '(nenastaveno)';
+  }
+
+  function perspectiveSliderValueFromLetter(letter) {
+    if (letter === 'a') return 1;
+    if (letter === 'b') return 2;
+    if (letter === 'c') return 3;
+    return 1;
+  }
+
+  [assessmentPhysAge, assessmentVitality, assessmentHealth, assessmentStability].forEach((inputEl, idx) => {
+    if (!inputEl) return;
+    const labelMap = [assessmentPhysAgeValue, assessmentVitalityValue, assessmentHealthValue, assessmentStabilityValue];
+    const labelEl = labelMap[idx];
+    inputEl.addEventListener('input', () => updateSliderLabel(inputEl, labelEl));
+  });
+
+  if (assessmentPerspectiveSlider && assessmentPerspectiveValue) {
+    assessmentPerspectiveSlider.addEventListener('input', () => {
+      const letter = perspectiveLetterFromSlider(assessmentPerspectiveSlider.value);
+      assessmentPerspectiveValue.textContent = perspectiveLabelFromLetter(letter);
+    });
+  }
+
+  function openAssessmentForRecord(recordId) {
+    if (!assessmentModal) return;
+
+    if (assessmentWorkRecordIdInput) assessmentWorkRecordIdInput.value = recordId;
+    if (assessmentDbhInput) assessmentDbhInput.value = '';
+    if (assessmentHeightInput) assessmentHeightInput.value = '';
+    if (assessmentPhysAge) assessmentPhysAge.value = 3;
+    if (assessmentVitality) assessmentVitality.value = 3;
+    if (assessmentHealth) assessmentHealth.value = 3;
+    if (assessmentStability) assessmentStability.value = 3;
+    if (assessmentPerspectiveSlider) {
+      assessmentPerspectiveSlider.value = 1;
+      if (assessmentPerspectiveValue) {
+        assessmentPerspectiveValue.textContent = perspectiveLabelFromLetter('a');
+      }
+    }
+    updateSliderLabel(assessmentPhysAge, assessmentPhysAgeValue);
+    updateSliderLabel(assessmentVitality, assessmentVitalityValue);
+    updateSliderLabel(assessmentHealth, assessmentHealthValue);
+    updateSliderLabel(assessmentStability, assessmentStabilityValue);
+    if (assessmentMessage) {
+      assessmentMessage.textContent = '';
+      assessmentMessage.className = 'mt-2 small';
+    }
+
+    showAssessmentModal();
+
+    const url = `${assessmentApiBase}${recordId}/assessment/`;
+    fetch(url, {
+      method: 'GET',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    })
+      .then(resp => {
+        if (!resp.ok) throw new Error('Failed to load assessment');
+        return resp.json();
+      })
+      .then(data => {
+        if (assessmentDbhInput && data.dbh_cm !== null && data.dbh_cm !== undefined) {
+          assessmentDbhInput.value = data.dbh_cm;
+        }
+        if (assessmentHeightInput && data.height_m !== null && data.height_m !== undefined) {
+          assessmentHeightInput.value = data.height_m;
+        }
+        if (assessmentPhysAge && data.physiological_age) {
+          assessmentPhysAge.value = data.physiological_age;
+        }
+        if (assessmentVitality && data.vitality) {
+          assessmentVitality.value = data.vitality;
+        }
+        if (assessmentHealth && data.health_state) {
+          assessmentHealth.value = data.health_state;
+        }
+        if (assessmentStability && data.stability) {
+          assessmentStability.value = data.stability;
+        }
+        if (assessmentPerspectiveSlider && assessmentPerspectiveValue && data.perspective) {
+          const letter = data.perspective;
+          assessmentPerspectiveSlider.value = perspectiveSliderValueFromLetter(letter);
+          assessmentPerspectiveValue.textContent = perspectiveLabelFromLetter(letter);
+        }
+
+        updateSliderLabel(assessmentPhysAge, assessmentPhysAgeValue);
+        updateSliderLabel(assessmentVitality, assessmentVitalityValue);
+        updateSliderLabel(assessmentHealth, assessmentHealthValue);
+        updateSliderLabel(assessmentStability, assessmentStabilityValue);
+      })
+      .catch(err => {
+        console.error(err);
+        if (assessmentMessage) {
+          assessmentMessage.textContent = 'Nepodařilo se načíst hodnocení.';
+          assessmentMessage.className = 'mt-2 small text-danger';
+        }
+      });
   }
 
   // Photo viewer handlers
@@ -1010,6 +1240,76 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  if (assessmentCancelBtn) {
+    assessmentCancelBtn.addEventListener('click', hideAssessmentModal);
+  }
+  if (assessmentCloseBtn) {
+    assessmentCloseBtn.addEventListener('click', hideAssessmentModal);
+  }
+  if (assessmentModal) {
+    assessmentModal.addEventListener('click', (e) => {
+      if (e.target === assessmentModal) hideAssessmentModal();
+    });
+  }
+
+  if (assessmentSaveBtn) {
+    assessmentSaveBtn.addEventListener('click', () => {
+      const recordId = assessmentWorkRecordIdInput ? assessmentWorkRecordIdInput.value : null;
+      if (!recordId) {
+        alert('Chybí ID úkonu.');
+        return;
+      }
+      const url = `${assessmentApiBase}${recordId}/assessment/`;
+      const payload = {
+        dbh_cm: assessmentDbhInput && assessmentDbhInput.value ? assessmentDbhInput.value : null,
+        height_m: assessmentHeightInput && assessmentHeightInput.value ? assessmentHeightInput.value : null,
+        physiological_age: assessmentPhysAge && assessmentPhysAge.value ? assessmentPhysAge.value : null,
+        vitality: assessmentVitality && assessmentVitality.value ? assessmentVitality.value : null,
+        health_state: assessmentHealth && assessmentHealth.value ? assessmentHealth.value : null,
+        stability: assessmentStability && assessmentStability.value ? assessmentStability.value : null,
+        perspective: assessmentPerspectiveSlider
+          ? perspectiveLetterFromSlider(assessmentPerspectiveSlider.value)
+          : null,
+      };
+
+      assessmentSaveBtn.disabled = true;
+      fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRFToken': '{{ csrf_token }}',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: JSON.stringify(payload),
+      })
+        .then(resp => {
+          if (!resp.ok) throw new Error('Save failed');
+          return resp.json();
+        })
+        .then(() => {
+          const recIdNum = Number(recordId);
+          const rec = (records || []).find(r => Number(r.id) === recIdNum);
+          if (rec) {
+            rec.has_assessment = true;
+          }
+          document
+            .querySelectorAll('.wr-popup-btn.assess[data-record-id="' + recordId + '"]')
+            .forEach(btn => btn.classList.add('has-assessment'));
+          hideAssessmentModal();
+        })
+        .catch(err => {
+          console.error(err);
+          if (assessmentMessage) {
+            assessmentMessage.textContent = 'Chyba při ukládání hodnocení.';
+            assessmentMessage.className = 'mt-2 small text-danger';
+          }
+        })
+        .finally(() => {
+          assessmentSaveBtn.disabled = false;
+        });
+    });
+  }
+
   document.addEventListener('click', (event) => {
     const target = event.target.closest('.wr-photo-thumb');
     if (!target) return;
@@ -1042,6 +1342,14 @@ document.addEventListener('DOMContentLoaded', function () {
         ev.preventDefault();
         ev.stopPropagation();
         triggerPhotoCapture(btn.getAttribute('data-record-id'));
+      });
+    });
+    container.querySelectorAll('.wr-popup-btn[data-action="assessment"]').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const rid = btn.getAttribute('data-record-id');
+        openAssessmentForRecord(rid);
       });
     });
   });

@@ -3,6 +3,45 @@ from django.utils import timezone
 from django.conf import settings
 
 
+PHYSIOLOGICAL_AGE_CHOICES = [
+    (1, "1 – mladý jedinec ve fázi ujímání"),
+    (2, "2 – aklimatizovaný mladý strom"),
+    (3, "3 – dospívající jedinec"),
+    (4, "4 – dospělý jedinec"),
+    (5, "5 – senescentní jedinec"),
+]
+
+VITALITY_CHOICES = [
+    (1, "1 – výborná až mírně snížená"),
+    (2, "2 – zřetelně snížená"),
+    (3, "3 – výrazně snížená"),
+    (4, "4 – zbytková"),
+    (5, "5 – suchý (mrtvý) strom"),
+]
+
+HEALTH_STATE_CHOICES = [
+    (1, "1 – výborný až dobrý"),
+    (2, "2 – zhoršený"),
+    (3, "3 – výrazně zhoršený"),
+    (4, "4 – silně narušený"),
+    (5, "5 – kritický / rozpadlý strom"),
+]
+
+STABILITY_CHOICES = [
+    (1, "1 – výborná až dobrá (nenarušená)"),
+    (2, "2 – zhoršená"),
+    (3, "3 – výrazně zhoršená"),
+    (4, "4 – silně narušená"),
+    (5, "5 – kritická"),
+]
+
+PERSPECTIVE_CHOICES = [
+    ("a", "a – dlouhodobě perspektivní"),
+    ("b", "b – krátkodobě perspektivní"),
+    ("c", "c – neperspektivní"),
+]
+
+
 class Project(models.Model):
     name = models.CharField(max_length=200, verbose_name="Název projektu")
     description = models.TextField(verbose_name="Popis projektu", blank=True)
@@ -16,7 +55,7 @@ class WorkRecord(models.Model):
     title = models.CharField(max_length=200, blank=True)
     description = models.TextField(blank=True)
     date = models.DateField(default=timezone.now)
-    created_at = models.DateTimeField(default=timezone.now)  
+    created_at = models.DateTimeField(default=timezone.now)
     project = models.ForeignKey(
         "Project",
         on_delete=models.SET_NULL,
@@ -26,8 +65,16 @@ class WorkRecord(models.Model):
         verbose_name="Projekt",
     )
 
-    latitude = models.FloatField(null=True, blank=True, help_text="Zeměpisná šířka (latitude, např. 49.684)")
-    longitude = models.FloatField(null=True, blank=True, help_text="Zeměpisná délka (longitude, např. 18.676)")
+    latitude = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Zeměpisná šířka (latitude, např. 49.684)",
+    )
+    longitude = models.FloatField(
+        null=True,
+        blank=True,
+        help_text="Zeměpisná délka (longitude, např. 18.676)",
+    )
 
     # start_time = models.DateTimeField(default=timezone.now)
     # end_time = models.DateTimeField(null=True, blank=True)
@@ -38,6 +85,72 @@ class WorkRecord(models.Model):
 
     def __str__(self):
         return self.title or f"WorkRecord #{self.id}"
+
+
+class TreeAssessment(models.Model):
+    work_record = models.OneToOneField(
+        "WorkRecord",
+        on_delete=models.CASCADE,
+        related_name="assessment",
+        verbose_name="Pracovní záznam",
+    )
+
+    physiological_age = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        choices=PHYSIOLOGICAL_AGE_CHOICES,
+        verbose_name="Fyziologické stáří",
+    )
+
+    vitality = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        choices=VITALITY_CHOICES,
+        verbose_name="Vitalita",
+    )
+
+    health_state = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        choices=HEALTH_STATE_CHOICES,
+        verbose_name="Zdravotní stav",
+    )
+
+    stability = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        choices=STABILITY_CHOICES,
+        verbose_name="Stabilita",
+    )
+
+    dbh_cm = models.FloatField(
+        null=True,
+        blank=True,
+        verbose_name="Průměr kmene (DBH) [cm]",
+        help_text="Průměr kmene v centimetrech v měřické výšce.",
+    )
+
+    height_m = models.FloatField(
+        null=True,
+        blank=True,
+        verbose_name="Výška stromu [m]",
+        help_text="Výška stromu v metrech.",
+    )
+
+    perspective = models.CharField(
+        max_length=1,
+        null=True,
+        blank=True,
+        choices=PERSPECTIVE_CHOICES,
+        verbose_name="Perspektiva stromu",
+    )
+
+    class Meta:
+        verbose_name = "Hodnocení stromu"
+        verbose_name_plural = "Hodnocení stromů"
+
+    def __str__(self):
+        return f"Hodnocení pro WorkRecord #{self.work_record_id}"
 
 
 class PhotoDocumentation(models.Model):
@@ -75,3 +188,4 @@ class ProjectMembership(models.Model):
 
     def __str__(self):
         return f"{self.user} · {self.project} · {self.role}"
+
