@@ -334,7 +334,12 @@ def delete_work_record(request, pk):
 
 @login_required
 def work_record_detail(request, pk):
-    work_record = get_object_or_404(WorkRecord, pk=pk)
+    work_record = get_object_or_404(
+        WorkRecord.objects
+        .select_related("project")
+        .prefetch_related("assessments", "photos"),
+        pk=pk,
+    )
 
     if work_record.project_id and not user_can_view_project(request.user, work_record.project_id):
         return redirect('work_record_list')
@@ -555,11 +560,11 @@ def map_leaflet_test(request):
         WorkRecord.objects
         .filter(Q(project__in=visible_projects) | Q(project__isnull=True))
         .select_related("project")
-        .select_related("assessment")
-        .order_by("-id")
         .prefetch_related(
+            "assessments",
             Prefetch("photos", queryset=PhotoDocumentation.objects.order_by("-id"))
         )
+        .order_by("-id")
     )
     projects = visible_projects.order_by("name")
     projects_js = list(projects.values("id", "name"))
@@ -586,7 +591,7 @@ def map_leaflet_test(request):
             "lat": r.latitude,
             "lon": r.longitude,
             "photos": photos_data,
-            "has_assessment": hasattr(r, "assessment"),
+            "has_assessment": r.latest_assessment is not None,
         })
 
     records_for_select = [
@@ -744,22 +749,17 @@ def map_create_work_record(request):
 @require_http_methods(["GET", "POST"])
 def workrecord_assessment_api(request, pk):
     """
-    JSON API for reading/updating TreeAssessment for a given WorkRecord.
-    GET: return current values (or nulls if assessment does not exist).
-    POST: create/update assessment from JSON payload.
+    JSON API for reading TreeAssessments tied to a WorkRecord.
+    GET: return the latest assessment values (or nulls if none exist).
+    POST: append a new assessment version from JSON payload.
     """
     try:
         work_record = WorkRecord.objects.get(pk=pk)
     except WorkRecord.DoesNotExist:
         return JsonResponse({"error": "WorkRecord not found"}, status=404)
 
-    # Get or create assessment instance (for POST)
-    try:
-        assessment = work_record.assessment
-    except TreeAssessment.DoesNotExist:
-        assessment = None
-
     if request.method == "GET":
+        assessment = work_record.latest_assessment
         data = {
             "work_record_id": work_record.pk,
             "dbh_cm": assessment.dbh_cm if assessment else None,
@@ -769,6 +769,7 @@ def workrecord_assessment_api(request, pk):
             "health_state": assessment.health_state if assessment else None,
             "stability": assessment.stability if assessment else None,
             "perspective": assessment.perspective if assessment else None,
+            "assessed_at": assessment.assessed_at.isoformat() if assessment and assessment.assessed_at else None,
         }
         return JsonResponse(data)
 
@@ -807,20 +808,21 @@ def workrecord_assessment_api(request, pk):
     if perspective not in (None, "", "a", "b", "c"):
         perspective = None
 
-    if assessment is None:
-        assessment = TreeAssessment(work_record=work_record)
-
-    assessment.dbh_cm = dbh_cm
-    assessment.height_m = height_m
-    assessment.physiological_age = physiological_age
-    assessment.vitality = vitality
-    assessment.health_state = health_state
-    assessment.stability = stability
-    assessment.perspective = perspective
-    assessment.save()
+    assessment = TreeAssessment.objects.create(
+        work_record=work_record,
+        assessed_at=date.today(),
+        dbh_cm=dbh_cm,
+        height_m=height_m,
+        physiological_age=physiological_age,
+        vitality=vitality,
+        health_state=health_state,
+        stability=stability,
+        perspective=perspective,
+    )
 
     return JsonResponse({
         "status": "ok",
+        "id": assessment.pk,
         "work_record_id": work_record.pk,
         "dbh_cm": assessment.dbh_cm,
         "height_m": assessment.height_m,
@@ -829,4 +831,5 @@ def workrecord_assessment_api(request, pk):
         "health_state": assessment.health_state,
         "stability": assessment.stability,
         "perspective": assessment.perspective,
+        "assessed_at": assessment.assessed_at.isoformat() if assessment.assessed_at else None,
     })

@@ -83,7 +83,7 @@
   </div>
   <div id="treeAssessmentCollapse" class="collapse show">
     <div class="card-body small">
-      {% with work_record.assessment as assessment %}
+      {% with work_record.latest_assessment as assessment %}
         {% if assessment %}
           <div class="table-responsive">
             <table class="table table-sm mb-0">
@@ -156,6 +156,58 @@
           <p class="text-muted mb-0">Strom zatím nebyl hodnocen.</p>
         {% endif %}
       {% endwith %}
+    </div>
+  </div>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center py-2">
+    <h2 class="h6 mb-0">Historie hodnocení</h2>
+    <button class="btn btn-sm btn-outline-secondary" type="button"
+            data-bs-toggle="collapse" data-bs-target="#treeAssessmentHistoryCollapse"
+            aria-expanded="false" aria-controls="treeAssessmentHistoryCollapse">
+      Zobrazit / skrýt
+    </button>
+  </div>
+  <div id="treeAssessmentHistoryCollapse" class="collapse">
+    <div class="card-body small">
+      {% if work_record.assessments.all %}
+        <div class="table-responsive">
+          <table class="table table-sm mb-0">
+            <thead>
+              <tr>
+                <th>Datum hodnocení</th>
+                <th>DBH [cm]</th>
+                <th>Výška [m]</th>
+                <th>Vitalita</th>
+                <th>Zdravotní stav</th>
+                <th>Stabilita</th>
+                <th>Perspektiva</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for a in work_record.assessments.all|dictsortreversed:"assessed_at" %}
+                <tr>
+                  <td>{{ a.assessed_at|date:"d.m.Y" }}</td>
+                  <td>{{ a.dbh_cm|default:"–" }}</td>
+                  <td>{{ a.height_m|default:"–" }}</td>
+                  <td>{{ a.vitality|default:"–" }}</td>
+                  <td>{{ a.health_state|default:"–" }}</td>
+                  <td>{{ a.stability|default:"–" }}</td>
+                  <td>
+                    {% if a.perspective == 'a' %}a – dlouhodobě perspektivní
+                    {% elif a.perspective == 'b' %}b – krátkodobě perspektivní
+                    {% elif a.perspective == 'c' %}c – neperspektivní
+                    {% else %}–{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="text-muted mb-0">Žádná uložená hodnocení.</p>
+      {% endif %}
     </div>
   </div>
 </div>

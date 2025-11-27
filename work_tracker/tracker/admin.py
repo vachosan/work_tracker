@@ -12,7 +12,7 @@ class PhotoDocumentationInline(admin.TabularInline):
 
 class TreeAssessmentInline(admin.StackedInline):
     model = TreeAssessment
-    extra = 0
+    extra = 1
 
 class ProjectMembershipInline(admin.TabularInline):
     model = ProjectMembership

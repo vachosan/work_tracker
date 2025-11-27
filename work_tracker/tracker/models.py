@@ -86,13 +86,40 @@ class WorkRecord(models.Model):
     def __str__(self):
         return self.title or f"WorkRecord #{self.id}"
 
+    @property
+    def latest_assessment(self):
+        """
+        Vrátí nejnovější hodnocení stromu (nebo None, pokud neexistuje).
+        Řadíme podle assessed_at a id.
+        """
+        return self.assessments.order_by("-assessed_at", "-id").first()
+
 
 class TreeAssessment(models.Model):
-    work_record = models.OneToOneField(
+    work_record = models.ForeignKey(
         "WorkRecord",
         on_delete=models.CASCADE,
-        related_name="assessment",
+        related_name="assessments",
         verbose_name="Pracovní záznam",
+    )
+
+    assessed_at = models.DateField(
+        default=timezone.now,
+        verbose_name="Datum hodnocení",
+    )
+
+    dbh_cm = models.FloatField(
+        null=True,
+        blank=True,
+        verbose_name="Průměr kmene (DBH) [cm]",
+        help_text="Průměr kmene v centimetrech v měřické výšce.",
+    )
+
+    height_m = models.FloatField(
+        null=True,
+        blank=True,
+        verbose_name="Výška stromu [m]",
+        help_text="Výška stromu v metrech.",
     )
 
     physiological_age = models.PositiveSmallIntegerField(
@@ -121,20 +148,6 @@ class TreeAssessment(models.Model):
         blank=True,
         choices=STABILITY_CHOICES,
         verbose_name="Stabilita",
-    )
-
-    dbh_cm = models.FloatField(
-        null=True,
-        blank=True,
-        verbose_name="Průměr kmene (DBH) [cm]",
-        help_text="Průměr kmene v centimetrech v měřické výšce.",
-    )
-
-    height_m = models.FloatField(
-        null=True,
-        blank=True,
-        verbose_name="Výška stromu [m]",
-        help_text="Výška stromu v metrech.",
     )
 
     perspective = models.CharField(
@@ -188,4 +201,3 @@ class ProjectMembership(models.Model):
 
     def __str__(self):
         return f"{self.user} · {self.project} · {self.role}"
-
