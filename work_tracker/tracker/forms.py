@@ -60,30 +60,29 @@ class ProjectForm(forms.ModelForm):
 # --------------------------------------
 class WorkRecordForm(forms.ModelForm):
     """Formulář pro vytvoření úkonu"""
-    # definuj pole date s hodnotou ve správném formátu
     date = forms.DateField(
         widget=forms.DateInput(
-            attrs={'type': 'date'},
-            format='%Y-%m-%d'  # <- HTML5 date input očekává ISO formát
+            attrs={'type': 'date', 'autocomplete': 'off'},
+            format='%Y-%m-%d'
         ),
         initial=format(timezone.localdate(), 'Y-m-d'),
-        input_formats=['%Y-%m-%d']  # <- povolíme správný vstupní formát
-    )
-    
-    # menší textare pro popis, aby nezabíral moc místa a datum
-    
-    
-    description = forms.CharField(
-        required=False,
-        widget=forms.Textarea(attrs={'rows': 2, 'placeholder': 'Popis (volitelné)'}),
-        label='Popis'
+        input_formats=['%Y-%m-%d']
     )
 
     class Meta:
         model = WorkRecord
-        fields = ['external_tree_id', 'description', 'date', 'project']
+        fields = ['external_tree_id', 'taxon', 'date', 'project']
         widgets = {
             'date': forms.DateInput(attrs={'type': 'date'}),  # HTML5 datepicker
+        }
+        labels = {
+            'external_tree_id': 'Číslo stromu (externí)',
+            'taxon': 'Taxon',
+            'date': 'Datum',
+            'project': 'Projekt',
+        }
+        help_texts = {
+            'taxon': 'Botanický název stromu (např. Tilia cordata)',
         }
 
     def __init__(self, *args, **kwargs):
@@ -94,6 +93,9 @@ class WorkRecordForm(forms.ModelForm):
         if 'external_tree_id' in self.fields:
             self.fields['external_tree_id'].label = 'Číslo stromu'
             self.fields['external_tree_id'].help_text = 'Číslo stromu z papírové inventarizace, cedulek nebo jiného systému.'
+        if 'taxon' in self.fields:
+            self.fields['taxon'].label = 'Taxon'
+            self.fields['taxon'].help_text = 'Botanický název stromu (např. Tilia cordata).'
         # Filtrování jen na aktivní projekty
         self.fields['project'].queryset = Project.objects.filter(is_closed=False)
 

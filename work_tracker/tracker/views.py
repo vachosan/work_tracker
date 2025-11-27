@@ -600,7 +600,7 @@ def map_leaflet_test(request):
             "id": r.id,
             "title": r.title or "",
             "external_tree_id": r.external_tree_id or "",
-            "description": r.description or "",
+            "taxon": r.taxon or "",
             "project": r.project.name if r.project else "",
             "project_id": r.project_id,
             "lat": r.latitude,
@@ -613,6 +613,7 @@ def map_leaflet_test(request):
         {
             "id": r.id,
             "title": (r.title or ""),
+            "taxon": r.taxon or "",
             "external_tree_id": r.external_tree_id or "",
             "project_id": r.project_id,
             "has_coords": bool(r.latitude and r.longitude),
@@ -627,6 +628,7 @@ def map_leaflet_test(request):
         "work_records": records,
         "records_with_coords": coords,
         "records_for_select": records_for_select,
+        "taxon_options": sorted({r.taxon for r in records if r.taxon}),
     }
     return render(request, "tracker/map_leaflet.html", context)
 
@@ -706,7 +708,7 @@ def map_create_work_record(request):
         return JsonResponse({"status": "error", "msg": "Invalid request"}, status=405)
 
     external_tree_id = (request.POST.get("title") or "").strip()
-    description = (request.POST.get("description") or "").strip()
+    taxon_value = (request.POST.get("taxon") or "").strip()
     project_id = request.POST.get("project_id") or None
     date_str = (request.POST.get("date") or "").strip()
     lat_str = request.POST.get("latitude")
@@ -740,8 +742,8 @@ def map_create_work_record(request):
 
     work_record = WorkRecord(
         project=project,
-        description=description,
         external_tree_id=external_tree_id or None,
+        taxon=taxon_value or "",
         latitude=lat,
         longitude=lon,
         date=record_date,
@@ -752,7 +754,7 @@ def map_create_work_record(request):
         update_fields=[
             "title",
             "external_tree_id",
-            "description",
+            "taxon",
             "project",
             "latitude",
             "longitude",
@@ -766,7 +768,7 @@ def map_create_work_record(request):
             "id": work_record.id,
             "title": work_record.title or "",
             "external_tree_id": work_record.external_tree_id or "",
-            "description": work_record.description or "",
+            "taxon": work_record.taxon or "",
             "project": work_record.project.name if work_record.project else "",
             "project_id": work_record.project_id,
             "lat": work_record.latitude,

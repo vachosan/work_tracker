@@ -67,11 +67,14 @@
 
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-body">
-    {% if work_record.description %}
-      <p class="mb-2">{{ work_record.description }}</p>
-    {% else %}
-      <p class="text-muted mb-2">Bez popisu.</p>
-    {% endif %}
+    <p class="mb-1">
+      <strong>Taxon:</strong>
+      {% if work_record.taxon %}
+        {{ work_record.taxon }}
+      {% else %}
+        <span class="text-muted">neuvedeno</span>
+      {% endif %}
+    </p>
     <small class="text-muted">Datum: {{ work_record.date|date:"d.m.Y" }}</small>
     <div class="mt-2 small">
       <div><strong>Kód stromu (interní):</strong>

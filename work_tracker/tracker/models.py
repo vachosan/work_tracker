@@ -77,6 +77,12 @@ class WorkRecord(models.Model):
         verbose_name="Číslo stromu (externí)",
         help_text="Číslo stromu z papírové inventarizace, cedulek nebo jiného systému.",
     )
+    taxon = models.CharField(
+        max_length=200,
+        blank=True,
+        verbose_name="Taxon",
+        help_text="Botanický název stromu.",
+    )
     description = models.TextField(blank=True)
     date = models.DateField(default=timezone.now)
     created_at = models.DateTimeField(default=timezone.now)

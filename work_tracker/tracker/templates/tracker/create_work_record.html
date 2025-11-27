@@ -19,28 +19,13 @@
       
 
       {% for field in work_record_form %}
-        {% if field.name != 'description' %}
-          <div>
-            {{ field.label_tag }}
-            {{ field }}
-            {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
-            {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
-          </div>
-        {% endif %}
-      {% endfor %}
-
-      <div class="border-top pt-2">
-        <button class="btn btn-link p-0" type="button" data-bs-toggle="collapse" data-bs-target="#descCollapse" aria-expanded="false">
-          ➕ Přidat popis úkonu
-        </button>
-        <div class="collapse mt-2" id="descCollapse">
-          {{ work_record_form.description.label_tag }}
-          {{ work_record_form.description }}
-          {% for error in work_record_form.description.errors %}
-            <div class="text-danger small">{{ error }}</div>
-          {% endfor %}
+        <div>
+          {{ field.label_tag }}
+          {{ field }}
+          {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+          {% for error in field.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}
         </div>
-      </div>
+      {% endfor %}
     </div>
   </div>
 

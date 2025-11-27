@@ -141,15 +141,6 @@
   #captureCommentWrap.collapse.show {
     display: block;
   }
-  #newRecordDescWrap.collapse {
-    display: none;
-  }
-  #newRecordDescWrap.collapse.show {
-    display: block;
-  }
-  #newRecordModal .vstack .d-flex.gap-2 {
-    display: none;
-  }
   #newRecordCloseBtn {
     width: 28px;
     height: 28px;
@@ -351,16 +342,22 @@
 <div id="newRecordModal" class="capture-modal">
   <div class="capture-card">
     <div class="d-flex justify-content-between align-items-center mb-1">
-      <h6 class="mb-0">Nový úkon</h6>
+      <h6 class="mb-0">Nový strom</h6>
       <button type="button" class="btn btn-sm btn-outline-light rounded-circle px-2 py-0" id="newRecordCloseBtn" aria-label="Zavřít">&times;</button>
     </div>
-    <div class="vstack gap-2">
-      <input type="text" id="newRecordTitle" class="form-control form-control-sm" placeholder="Název úkonu">
+    <div class="vstack gap-3">
       <div>
-        <button class="btn btn-link btn-sm p-0" type="button" id="newRecordToggleDesc">+ Přidat popis</button>
-        <div id="newRecordDescWrap" class="collapse mt-1">
-          <textarea id="newRecordDescription" class="form-control form-control-sm" rows="2" placeholder="Popis (volitelné)"></textarea>
-        </div>
+        <label class="form-label mb-1" for="newRecordTitle">Číslo stromu (externí)</label>
+        <input type="text" id="newRecordTitle" class="form-control form-control-sm" placeholder="Číslo stromu">
+      </div>
+      <div>
+        <label class="form-label mb-1" for="newRecordTaxon">Taxon</label>
+        <input type="text" id="newRecordTaxon" class="form-control form-control-sm" placeholder="Taxon" list="taxonOptions">
+        <datalist id="taxonOptions">
+          {% for taxon in taxon_options %}
+            <option value="{{ taxon }}"></option>
+          {% endfor %}
+        </datalist>
       </div>
     </div>
     <div class="capture-actions mt-2">
@@ -368,7 +365,7 @@
         Souřadnice se převezmou z vybraného bodu v mapě.
       </div>
       <div class="btn-group">
-        <button id="newRecordSaveBtn" type="button" class="btn btn-warning btn-sm">Uložit úkon</button>
+        <button id="newRecordSaveBtn" type="button" class="btn btn-warning btn-sm">Uložit strom</button>
         <button id="newRecordCancelBtn" type="button" class="btn btn-secondary btn-sm">Zrušit</button>
       </div>
     </div>
@@ -450,12 +447,10 @@ document.addEventListener('DOMContentLoaded', function () {
   const captureCancelBtn = document.getElementById('captureCancelBtn');
   const newRecordModal = document.getElementById('newRecordModal');
   const newRecordTitleInput = document.getElementById('newRecordTitle');
-  const newRecordDescWrap = document.getElementById('newRecordDescWrap');
-  const newRecordDescriptionInput = document.getElementById('newRecordDescription');
+  const newRecordTaxonInput = document.getElementById('newRecordTaxon');
   const newRecordSaveBtn = document.getElementById('newRecordSaveBtn');
   const newRecordCancelBtn = document.getElementById('newRecordCancelBtn');
   const newRecordCloseBtn = document.getElementById('newRecordCloseBtn');
-  const newRecordToggleDesc = document.getElementById('newRecordToggleDesc');
   const assessmentModal = document.getElementById('assessmentModal');
   const assessmentWorkRecordIdInput = document.getElementById('assessmentWorkRecordId');
   const assessmentDbhInput = document.getElementById('assessmentDbh');
@@ -629,7 +624,7 @@ document.addEventListener('DOMContentLoaded', function () {
               id: recIdNum,
               title: recInfo ? (recInfo.title || '') : '',
               external_tree_id: recInfo ? (recInfo.external_tree_id || '') : '',
-              description: '',
+              taxon: '',
               project: '',
               project_id: recInfo ? recInfo.project_id : null,
               lat: Number(selectedLat),
@@ -739,13 +734,16 @@ document.addEventListener('DOMContentLoaded', function () {
           const detailUrl = `/tracker/${r.id}/`;
           const displayLabel = getRecordDisplayLabel(r);
           const photosForDisplay = Array.isArray(r.photos) ? r.photos.slice(0, 2) : [];
+          const taxonHtml = (r.taxon && r.taxon.trim())
+            ? `<div class="wr-desc"><small class="text-muted">Taxon: ${r.taxon.trim()}</small></div>`
+            : '';
           const photosHtml = photosForDisplay.length
             ? `<div class="wr-photos">${photosForDisplay.map((photoObj, idx) => `<img class="wr-photo-thumb" src="${photoObj.thumb}" alt="Foto ${displayLabel}" loading="lazy" data-full="${photoObj.full}" data-record-id="${r.id}" data-photo-index="${idx}">`).join('')}</div>`
             : `<div class="text-muted small mt-2 mb-0">Bez fotodokumentace</div>`;
           let popupHtml = `
             <div class="wr-popup">
               <div><a href="${detailUrl}" class="wr-title">${displayLabel}</a></div>
-              ${r.description ? `<div class="wr-desc">${r.description}</div>` : ''}
+              ${taxonHtml}
               ${photosHtml}
               <div class="wr-popup-actions">
                 <button type="button" class="wr-popup-btn photo" data-action="capture" data-record-id="${r.id}" title="Vyfotit">
@@ -819,8 +817,7 @@ document.addEventListener('DOMContentLoaded', function () {
   // New work-record modal (create from map)
   function resetNewRecordForm() {
     if (newRecordTitleInput) newRecordTitleInput.value = '';
-    if (newRecordDescriptionInput) newRecordDescriptionInput.value = '';
-    if (newRecordDescWrap) newRecordDescWrap.classList.remove('show');
+    if (newRecordTaxonInput) newRecordTaxonInput.value = '';
   }
 
   function openNewRecordModal() {
@@ -842,7 +839,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!newRecordSaveBtn) return;
 
     const title = newRecordTitleInput ? newRecordTitleInput.value.trim() : '';
-    const description = newRecordDescriptionInput ? newRecordDescriptionInput.value.trim() : '';
+    const taxonValue = newRecordTaxonInput ? newRecordTaxonInput.value.trim() : '';
     const projectId = projectSelect ? projectSelect.value : '';
 
     newRecordSaveBtn.disabled = true;
@@ -854,7 +851,7 @@ document.addEventListener('DOMContentLoaded', function () {
       },
       body: new URLSearchParams({
         title: title,
-        description: description,
+        taxon: taxonValue,
         date: '',
         project_id: (projectId && projectId !== 'none') ? projectId : '',
         latitude: selectedLat,
@@ -869,7 +866,7 @@ document.addEventListener('DOMContentLoaded', function () {
           id: rec.id,
           title: rec.title || '',
           external_tree_id: rec.external_tree_id || '',
-          description: rec.description || '',
+          taxon: rec.taxon || '',
           project: rec.project || '',
           project_id: rec.project_id,
           lat: rec.lat,
@@ -881,6 +878,7 @@ document.addEventListener('DOMContentLoaded', function () {
           id: rec.id,
           title: rec.title || '',
           external_tree_id: rec.external_tree_id || '',
+          taxon: rec.taxon || '',
           project_id: rec.project_id,
           has_coords: true,
         });
@@ -914,11 +912,6 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
-  if (newRecordToggleDesc && newRecordDescWrap) {
-    newRecordToggleDesc.addEventListener('click', () => {
-      newRecordDescWrap.classList.toggle('show');
-    });
-  }
   if (newRecordCancelBtn) {
     newRecordCancelBtn.addEventListener('click', closeNewRecordModal);
   }
