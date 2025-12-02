@@ -68,6 +68,30 @@ class Project(models.Model):
         return self.name
 
 
+class Species(models.Model):
+    latin_name = models.CharField(max_length=255)
+    czech_name = models.CharField(max_length=255, blank=True)
+    type = models.CharField(
+        max_length=10,
+        choices=(
+            ("strom", "Strom"),
+            ("keř", "Keř"),
+        ),
+    )
+
+    class Meta:
+        ordering = ["latin_name"]
+        indexes = [
+            models.Index(fields=["latin_name"]),
+            models.Index(fields=["czech_name"]),
+        ]
+
+    def __str__(self):
+        if self.czech_name:
+            return f"{self.czech_name} ({self.latin_name})"
+        return self.latin_name
+
+
 class WorkRecord(models.Model):
     title = models.CharField(max_length=200, blank=True)
     external_tree_id = models.CharField(
@@ -83,6 +107,9 @@ class WorkRecord(models.Model):
         verbose_name="Taxon",
         help_text="Botanický název stromu.",
     )
+    taxon_czech = models.CharField(max_length=255, blank=True)
+    taxon_latin = models.CharField(max_length=255, blank=True)
+    taxon_gbif_key = models.IntegerField(null=True, blank=True)
     description = models.TextField(blank=True)
     date = models.DateField(default=timezone.now)
     created_at = models.DateTimeField(default=timezone.now)

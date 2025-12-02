@@ -9,6 +9,49 @@
   nav.navbar, footer { display: none; }
   /* map fills viewport */
   #map { position: fixed; inset: 0; z-index: 1; }
+  .taxon-autocomplete { position: relative; }
+  #taxon-suggestions {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0;
+    position: absolute;
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, .15);
+    border-radius: 0 0 12px 12px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .15);
+    max-height: 220px;
+    overflow-y: auto;
+    z-index: 1400;
+    display: none;
+  }
+  #taxon-suggestions.visible {
+    display: block;
+  }
+  #taxon-suggestions li {
+    padding: 6px 10px;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  #taxon-suggestions li:hover {
+    background: #f1f1f1;
+  }
+  /* Zviditelnění dropdownu pro taxon v dark tématu */
+  #taxon-suggestions {
+    background-color: #fff;
+  }
+
+  #taxon-suggestions .list-group-item {
+    color: #000;
+    background-color: #fff;
+  }
+
+  #taxon-suggestions .list-group-item:hover,
+  #taxon-suggestions .list-group-item:focus {
+    background-color: #e9ecef;
+    color: #000;
+  }
   /* locate button (top-left) */
   #map-locate { position: fixed; left: 12px; top: calc(56px + 8px); z-index: 1100; }
   #map-locate .locate-btn {
@@ -350,14 +393,19 @@
         <label class="form-label mb-1" for="newRecordTitle">Číslo stromu (externí)</label>
         <input type="text" id="newRecordTitle" class="form-control form-control-sm" placeholder="Číslo stromu">
       </div>
-      <div>
-        <label class="form-label mb-1" for="newRecordTaxon">Taxon</label>
-        <input type="text" id="newRecordTaxon" class="form-control form-control-sm" placeholder="Taxon" list="taxonOptions">
-        <datalist id="taxonOptions">
-          {% for taxon in taxon_options %}
-            <option value="{{ taxon }}"></option>
-          {% endfor %}
-        </datalist>
+      <div id="taxon-field-wrapper" class="taxon-autocomplete position-relative">
+        <label class="form-label mb-1" for="taxon_display">Taxon</label>
+        <input
+          type="text"
+          id="taxon_display"
+          class="form-control form-control-sm"
+          placeholder="Taxon"
+          autocomplete="off"
+        >
+        <ul id="taxon-suggestions" class="taxon-suggestions"></ul>
+        <input type="hidden" id="taxon_czech" name="taxon_czech">
+        <input type="hidden" id="taxon_latin" name="taxon_latin">
+        <input type="hidden" id="taxon_gbif_key" name="taxon_gbif_key">
       </div>
     </div>
     <div class="capture-actions mt-2">
@@ -447,7 +495,14 @@ document.addEventListener('DOMContentLoaded', function () {
   const captureCancelBtn = document.getElementById('captureCancelBtn');
   const newRecordModal = document.getElementById('newRecordModal');
   const newRecordTitleInput = document.getElementById('newRecordTitle');
-  const newRecordTaxonInput = document.getElementById('newRecordTaxon');
+  const taxonDisplayInput = document.getElementById('taxon_display');
+  const taxonSuggestionsList = document.getElementById('taxon-suggestions');
+  const taxonFieldWrapper = document.getElementById('taxon-field-wrapper');
+  const taxonCzechInput = document.getElementById('taxon_czech');
+  const taxonLatinInput = document.getElementById('taxon_latin');
+  const taxonGbifKeyInput = document.getElementById('taxon_gbif_key');
+  const taxonSuggestUrl = "{% url 'gbif_taxon_suggest' %}";
+  let taxonRequestId = 0;
   const newRecordSaveBtn = document.getElementById('newRecordSaveBtn');
   const newRecordCancelBtn = document.getElementById('newRecordCancelBtn');
   const newRecordCloseBtn = document.getElementById('newRecordCloseBtn');
@@ -471,6 +526,70 @@ document.addEventListener('DOMContentLoaded', function () {
   const assessmentCancelBtn = document.getElementById('assessmentCancelBtn');
   const assessmentSaveBtn = document.getElementById('assessmentSaveBtn');
   const assessmentMessage = document.getElementById('assessmentMessage');
+
+  function clearTaxonSelection() {
+    if (taxonCzechInput) taxonCzechInput.value = '';
+    if (taxonLatinInput) taxonLatinInput.value = '';
+    if (taxonGbifKeyInput) taxonGbifKeyInput.value = '';
+  }
+
+  function hideTaxonSuggestions() {
+    if (!taxonSuggestionsList) return;
+    taxonSuggestionsList.classList.remove('visible');
+    taxonSuggestionsList.innerHTML = '';
+  }
+
+  function clearList() {
+    hideTaxonSuggestions();
+  }
+
+  function renderTaxonSuggestions(items) {
+    if (!taxonSuggestionsList) return;
+    taxonSuggestionsList.innerHTML = '';
+    if (!items.length) {
+      hideTaxonSuggestions();
+      return;
+    }
+    items.forEach(item => {
+      const btn = document.createElement('li');
+      const label = item.display || item.scientific_name || item.vernacular_name || '';
+      btn.textContent = label;
+      btn.classList.add('list-group-item', 'list-group-item-action');
+      btn.addEventListener('click', () => {
+        if (taxonDisplayInput) {
+          taxonDisplayInput.value = label;
+        }
+        if (taxonCzechInput) {
+          taxonCzechInput.value = item.vernacular_name || '';
+        }
+        if (taxonLatinInput) {
+          taxonLatinInput.value = item.scientific_name || '';
+        }
+        if (taxonGbifKeyInput) {
+          taxonGbifKeyInput.value = item.gbif_key || '';
+        }
+        clearList();
+      });
+      taxonSuggestionsList.appendChild(btn);
+    });
+    taxonSuggestionsList.classList.add('visible');
+  }
+
+  function requestTaxonSuggestions(query) {
+    if (!taxonSuggestUrl) return;
+    const requestId = ++taxonRequestId;
+    fetch(`${taxonSuggestUrl}?q=${encodeURIComponent(query)}`)
+      .then(resp => (resp.ok ? resp.json() : Promise.resolve({ results: [] })))
+      .then(data => {
+        if (requestId !== taxonRequestId) return;
+        renderTaxonSuggestions(data.results || []);
+      })
+      .catch(() => {
+        if (requestId === taxonRequestId) {
+          hideTaxonSuggestions();
+        }
+      });
+  }
 
   // Deep-link params
   const urlParams = new URLSearchParams(window.location.search);
@@ -817,7 +936,9 @@ document.addEventListener('DOMContentLoaded', function () {
   // New work-record modal (create from map)
   function resetNewRecordForm() {
     if (newRecordTitleInput) newRecordTitleInput.value = '';
-    if (newRecordTaxonInput) newRecordTaxonInput.value = '';
+    if (taxonDisplayInput) taxonDisplayInput.value = '';
+    clearTaxonSelection();
+    hideTaxonSuggestions();
   }
 
   function openNewRecordModal() {
@@ -839,7 +960,11 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!newRecordSaveBtn) return;
 
     const title = newRecordTitleInput ? newRecordTitleInput.value.trim() : '';
-    const taxonValue = newRecordTaxonInput ? newRecordTaxonInput.value.trim() : '';
+    const displayTaxon = taxonDisplayInput ? taxonDisplayInput.value.trim() : '';
+    const latinTaxon = taxonLatinInput ? taxonLatinInput.value.trim() : '';
+    const czechTaxon = taxonCzechInput ? taxonCzechInput.value.trim() : '';
+    const gbifKeyValue = taxonGbifKeyInput ? taxonGbifKeyInput.value.trim() : '';
+    const taxonValue = latinTaxon || displayTaxon;
     const projectId = projectSelect ? projectSelect.value : '';
 
     newRecordSaveBtn.disabled = true;
@@ -852,6 +977,9 @@ document.addEventListener('DOMContentLoaded', function () {
       body: new URLSearchParams({
         title: title,
         taxon: taxonValue,
+        taxon_czech: czechTaxon,
+        taxon_latin: latinTaxon,
+        taxon_gbif_key: gbifKeyValue,
         date: '',
         project_id: (projectId && projectId !== 'none') ? projectId : '',
         latitude: selectedLat,
@@ -867,6 +995,9 @@ document.addEventListener('DOMContentLoaded', function () {
           title: rec.title || '',
           external_tree_id: rec.external_tree_id || '',
           taxon: rec.taxon || '',
+          taxon_czech: rec.taxon_czech || '',
+          taxon_latin: rec.taxon_latin || '',
+          taxon_gbif_key: rec.taxon_gbif_key,
           project: rec.project || '',
           project_id: rec.project_id,
           lat: rec.lat,
@@ -879,6 +1010,9 @@ document.addEventListener('DOMContentLoaded', function () {
           title: rec.title || '',
           external_tree_id: rec.external_tree_id || '',
           taxon: rec.taxon || '',
+          taxon_czech: rec.taxon_czech || '',
+          taxon_latin: rec.taxon_latin || '',
+          taxon_gbif_key: rec.taxon_gbif_key,
           project_id: rec.project_id,
           has_coords: true,
         });
@@ -926,6 +1060,29 @@ document.addEventListener('DOMContentLoaded', function () {
   if (newRecordSaveBtn) {
     newRecordSaveBtn.addEventListener('click', submitNewRecord);
   }
+
+  if (taxonDisplayInput) {
+    taxonDisplayInput.addEventListener('input', () => {
+      const value = taxonDisplayInput.value.trim();
+      clearTaxonSelection();
+      if (value.length < 2) {
+        hideTaxonSuggestions();
+        return;
+      }
+      requestTaxonSuggestions(value);
+    });
+    taxonDisplayInput.addEventListener('focus', () => {
+      if (taxonSuggestionsList && taxonSuggestionsList.childElementCount) {
+        taxonSuggestionsList.classList.add('visible');
+      }
+    });
+  }
+
+  document.addEventListener('click', (event) => {
+    if (taxonFieldWrapper && !taxonFieldWrapper.contains(event.target)) {
+      hideTaxonSuggestions();
+    }
+  });
 
   // Attach create FAB handler (capture phase to override redirect)
   if (createFab) {

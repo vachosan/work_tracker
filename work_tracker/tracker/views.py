@@ -6,6 +6,7 @@ import re
 import tempfile
 import zipstream
 import json
+import requests
 from datetime import date
 
 from django.conf import settings
@@ -25,7 +26,7 @@ from django.http import (
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
 from django.utils.dateparse import parse_date
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods
 from PIL import Image
 
 from .forms import (
@@ -42,6 +43,7 @@ from .models import (
     PhotoDocumentation,
     ProjectMembership,
     TreeAssessment,
+    Species,
 )
 from .permissions import (
     user_projects_qs,
@@ -628,9 +630,41 @@ def map_leaflet_test(request):
         "work_records": records,
         "records_with_coords": coords,
         "records_for_select": records_for_select,
-        "taxon_options": sorted({r.taxon for r in records if r.taxon}),
     }
     return render(request, "tracker/map_leaflet.html", context)
+
+@login_required
+@require_GET
+def gbif_taxon_suggest(request):
+    q = (request.GET.get("q") or "").strip()
+    if len(q) < 2:
+        return JsonResponse({"results": []})
+
+    qs = (
+        Species.objects
+        .filter(Q(latin_name__icontains=q) | Q(czech_name__icontains=q))
+        .order_by("latin_name")[:20]
+    )
+
+    results = []
+    for sp in qs:
+        latin = sp.latin_name
+        czech = sp.czech_name or ""
+        if czech:
+            display = f"{czech} ({latin})"
+        else:
+            display = latin
+
+        results.append(
+            {
+                "gbif_key": None,
+                "scientific_name": latin,
+                "vernacular_name": czech,
+                "display": display,
+            }
+        )
+
+    return JsonResponse({"results": results})
 
 @login_required
 def save_coordinates(request):
@@ -709,6 +743,9 @@ def map_create_work_record(request):
 
     external_tree_id = (request.POST.get("title") or "").strip()
     taxon_value = (request.POST.get("taxon") or "").strip()
+    taxon_czech_value = (request.POST.get("taxon_czech") or "").strip()
+    taxon_latin_value = (request.POST.get("taxon_latin") or "").strip()
+    gbif_key_raw = (request.POST.get("taxon_gbif_key") or "").strip()
     project_id = request.POST.get("project_id") or None
     date_str = (request.POST.get("date") or "").strip()
     lat_str = request.POST.get("latitude")
@@ -740,10 +777,20 @@ def map_create_work_record(request):
     else:
         record_date = timezone.localdate()
 
+    taxon_gbif_key = None
+    if gbif_key_raw:
+        try:
+            taxon_gbif_key = int(gbif_key_raw)
+        except ValueError:
+            taxon_gbif_key = None
+
     work_record = WorkRecord(
         project=project,
         external_tree_id=external_tree_id or None,
         taxon=taxon_value or "",
+        taxon_czech=taxon_czech_value,
+        taxon_latin=taxon_latin_value,
+        taxon_gbif_key=taxon_gbif_key,
         latitude=lat,
         longitude=lon,
         date=record_date,
@@ -755,6 +802,9 @@ def map_create_work_record(request):
             "title",
             "external_tree_id",
             "taxon",
+            "taxon_czech",
+            "taxon_latin",
+            "taxon_gbif_key",
             "project",
             "latitude",
             "longitude",
@@ -769,6 +819,9 @@ def map_create_work_record(request):
             "title": work_record.title or "",
             "external_tree_id": work_record.external_tree_id or "",
             "taxon": work_record.taxon or "",
+            "taxon_czech": work_record.taxon_czech or "",
+            "taxon_latin": work_record.taxon_latin or "",
+            "taxon_gbif_key": work_record.taxon_gbif_key,
             "project": work_record.project.name if work_record.project else "",
             "project_id": work_record.project_id,
             "lat": work_record.latitude,
