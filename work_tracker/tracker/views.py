@@ -26,6 +26,7 @@ from django.http import (
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
 from django.utils.dateparse import parse_date
+from django.utils.safestring import mark_safe
 from django.views.decorators.http import require_GET, require_http_methods
 from PIL import Image
 
@@ -36,6 +37,7 @@ from .forms import (
     CustomUserCreationForm,
     ProjectEditForm,
     AddMemberForm,
+    TreeInterventionForm,
 )
 from .models import (
     Project,
@@ -43,6 +45,7 @@ from .models import (
     PhotoDocumentation,
     ProjectMembership,
     TreeAssessment,
+    TreeIntervention,
     Species,
 )
 from .permissions import (
@@ -370,12 +373,156 @@ def work_record_detail(request, pk):
 
     photos = work_record.photos.all()
     valid_photos = [photo for photo in photos if photo.photo]
+    interventions = work_record.interventions.select_related("intervention_type").order_by(
+        "status", "urgency", "due_date", "id"
+    )
 
     return render(request, 'tracker/work_record_detail.html', {
         'work_record': work_record,
         'photo_form': photo_form,
         'photos': valid_photos,
+        'interventions': interventions,
     })
+
+
+@login_required
+def tree_intervention_create(request, tree_id):
+    tree = get_object_or_404(WorkRecord, pk=tree_id)
+    if tree.project_id and not user_can_view_project(request.user, tree.project_id):
+        return redirect('work_record_list')
+
+    form = TreeInterventionForm(request.POST or None)
+    intervention_note_data_json = mark_safe(json.dumps(form.intervention_type_note_data))
+
+    if request.method == 'POST' and form.is_valid():
+        intervention = form.save(commit=False)
+        intervention.tree = tree
+        intervention.created_by = request.user
+        intervention.save()
+        messages.success(request, "Zásah byl uložen.")
+        return redirect('work_record_detail', pk=tree.pk)
+
+    return render(request, 'tracker/tree_intervention_form.html', {
+        'form': form,
+        'tree': tree,
+        'form_title': 'Přidat zásah',
+        'intervention_note_data_json': intervention_note_data_json,
+    })
+
+
+@login_required
+def tree_intervention_update(request, pk):
+    intervention = get_object_or_404(TreeIntervention, pk=pk)
+    tree = intervention.tree
+    if tree.project_id and not user_can_view_project(request.user, tree.project_id):
+        return redirect('work_record_list')
+
+    form = TreeInterventionForm(request.POST or None, instance=intervention)
+    intervention_note_data_json = mark_safe(json.dumps(form.intervention_type_note_data))
+
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        messages.success(request, "Zásah byl aktualizován.")
+        return redirect('work_record_detail', pk=tree.pk)
+
+    return render(request, 'tracker/tree_intervention_form.html', {
+        'form': form,
+        'tree': tree,
+        'intervention': intervention,
+        'form_title': 'Upravit zásah',
+        'intervention_note_data_json': intervention_note_data_json,
+    })
+
+
+@login_required
+@require_http_methods(["POST"])
+def tree_intervention_api(request, tree_id):
+    tree = get_object_or_404(WorkRecord, pk=tree_id)
+    if tree.project_id and not user_can_view_project(request.user, tree.project_id):
+        return JsonResponse({'status': 'error', 'msg': 'Nemáte oprávnění.'}, status=403)
+
+    form = TreeInterventionForm(request.POST)
+    if not form.is_valid():
+        return JsonResponse({'status': 'error', 'errors': form.errors.get_json_data()}, status=400)
+
+    intervention = form.save(commit=False)
+    intervention.tree = tree
+    intervention.created_by = request.user
+    intervention.save()
+
+    return JsonResponse({
+        'status': 'ok',
+        'intervention': {
+            'id': intervention.pk,
+            'type': str(intervention.intervention_type),
+            'code': intervention.intervention_type.code,
+            'urgency': intervention.get_urgency_display(),
+            'status': intervention.get_status_display(),
+        },
+    })
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def tree_intervention_api(request, tree_id):
+    tree = get_object_or_404(WorkRecord, pk=tree_id)
+    if tree.project_id and not user_can_view_project(request.user, tree.project_id):
+        return JsonResponse({'status': 'error', 'msg': 'Nemáte oprávnění.'}, status=403)
+
+    def serialize_intervention(obj):
+        return {
+            'id': obj.pk,
+            'code': obj.intervention_type.code if obj.intervention_type else '',
+            'name': obj.intervention_type.name if obj.intervention_type else '',
+            'urgency': obj.get_urgency_display(),
+            'status': obj.get_status_display(),
+            'status_code': obj.status,
+            'created_at': obj.created_at.isoformat() if obj.created_at else None,
+            'handed_over_for_check_at': (
+                obj.handed_over_for_check_at.isoformat()
+                if getattr(obj, "handed_over_for_check_at", None)
+                else None
+            ),
+        }
+
+    if request.method == "GET":
+        interventions = (
+            TreeIntervention.objects
+            .filter(tree=tree)
+            .select_related("intervention_type")
+            .order_by("status", "urgency", "due_date", "id")
+        )
+        data = [serialize_intervention(obj) for obj in interventions]
+        return JsonResponse({'status': 'ok', 'interventions': data})
+
+    action = request.POST.get('action')
+    if action == "handover":
+        try:
+            intervention_id = int(request.POST.get('id') or 0)
+        except (TypeError, ValueError):
+            return JsonResponse({'status': 'error', 'msg': 'Neplatné ID zásahu.'}, status=400)
+
+        intervention = get_object_or_404(
+            TreeIntervention.objects.select_related("intervention_type"),
+            pk=intervention_id,
+            tree=tree,
+        )
+        if intervention.status not in ("approved", "in_progress"):
+            return JsonResponse({'status': 'error', 'msg': 'Tento zásah nelze předat ke kontrole.'}, status=400)
+
+        intervention.mark_handed_over_for_check()
+        return JsonResponse({'status': 'ok', 'intervention': serialize_intervention(intervention)})
+
+    form = TreeInterventionForm(request.POST)
+    if not form.is_valid():
+        return JsonResponse({'status': 'error', 'errors': form.errors.get_json_data()}, status=400)
+
+    intervention = form.save(commit=False)
+    intervention.tree = tree
+    intervention.created_by = request.user
+    intervention.save()
+
+    return JsonResponse({'status': 'ok', 'intervention': serialize_intervention(intervention)})
 
 
 @login_required
@@ -623,6 +770,9 @@ def map_leaflet_test(request):
         for r in records
     ]
 
+    intervention_form = TreeInterventionForm()
+    intervention_note_data_json = mark_safe(json.dumps(intervention_form.intervention_type_note_data))
+
     context = {
         "mapy_key": settings.MAPY_API_KEY,
         "projects": projects,
@@ -630,6 +780,8 @@ def map_leaflet_test(request):
         "work_records": records,
         "records_with_coords": coords,
         "records_for_select": records_for_select,
+        "intervention_form": intervention_form,
+        "intervention_note_data_json": intervention_note_data_json,
     }
     return render(request, "tracker/map_leaflet.html", context)
 

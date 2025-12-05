@@ -1,5 +1,13 @@
 from django.contrib import admin
-from .models import WorkRecord, PhotoDocumentation, Project, ProjectMembership, TreeAssessment
+from .models import (
+    WorkRecord,
+    PhotoDocumentation,
+    Project,
+    ProjectMembership,
+    TreeAssessment,
+    InterventionType,
+    TreeIntervention,
+)
 
 # ---------- Inlines ----------
 
@@ -60,6 +68,25 @@ class ProjectMembershipAdmin(admin.ModelAdmin):
     list_filter = ("role", "project")
     search_fields = ("user__username", "user__email", "project__name")
     autocomplete_fields = ("user", "project")
+
+
+@admin.register(InterventionType)
+class InterventionTypeAdmin(admin.ModelAdmin):
+    list_display = ("name", "is_active", "order")
+    list_filter = ("is_active",)
+    ordering = ("order", "name")
+
+
+@admin.register(TreeIntervention)
+class TreeInterventionAdmin(admin.ModelAdmin):
+    list_display = ("tree", "intervention_type", "urgency_label", "status", "due_date")
+    list_filter = ("status", "urgency", "intervention_type")
+    search_fields = ("tree__title", "tree__external_tree_id", "description")
+
+    def urgency_label(self, obj):
+        return obj.get_urgency_display()
+
+    urgency_label.short_description = "Naléhavost"
 
 
 admin.site.register(TreeAssessment)

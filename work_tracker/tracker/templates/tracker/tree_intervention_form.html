@@ -1,0 +1,75 @@
+{% extends 'tracker/base.html' %}
+{% block title %}{{ form_title }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h1 class="h5 m-0">{{ form_title }}</h1>
+    <p class="small text-muted mb-0">
+      Strom: {{ tree.title|default:tree.id }}{% if tree.project %} &middot; Projekt: {{ tree.project.name }}{% endif %}
+    </p>
+  </div>
+  <a href="{% url 'work_record_detail' tree.pk %}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left"></i> Zpět na strom
+  </a>
+</div>
+
+<form method="post" class="vstack gap-3">
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+    <div class="text-danger small">{{ form.non_field_errors }}</div>
+  {% endif %}
+  <input type="hidden" name="tree_id" value="{{ tree.pk }}">
+
+  <div class="card border-0 shadow-sm">
+    <div class="card-body vstack gap-3">
+      {% for field in form %}
+        <div>
+          {{ field.label_tag }}
+          {{ field }}
+          {% if field.name == 'intervention_type' %}
+            <div id="interventionNoteHint" class="form-text text-muted"></div>
+          {% endif %}
+          {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+          {% for error in field.errors %}
+            <div class="text-danger small">{{ error }}</div>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+<div class="d-flex gap-2 flex-wrap">
+  <button type="submit" class="btn btn-primary">
+    <i class="bi bi-save"></i> Uložit zásah
+  </button>
+  <a href="{% url 'work_record_detail' tree.pk %}" class="btn btn-outline-secondary">
+    Zrušit
+  </a>
+</div>
+</form>
+<script>
+  (function() {
+    const hintData = {{ intervention_note_data_json|default:"{}" | safe }};
+    const select = document.getElementById('id_intervention_type');
+    const hint = document.getElementById('interventionNoteHint');
+
+    function refreshHint() {
+      if (!select || !hint) return;
+      const data = hintData[select.value];
+      if (data && data.note_required && data.note_hint) {
+        hint.textContent = data.note_hint;
+      } else if (data && data.note_required) {
+        hint.textContent = 'Vyžaduje doplnění poznámky.';
+      } else {
+        hint.textContent = '';
+      }
+    }
+
+    if (select) {
+      select.addEventListener('change', refreshHint);
+    }
+    refreshHint();
+  })();
+</script>
+{% endblock %}

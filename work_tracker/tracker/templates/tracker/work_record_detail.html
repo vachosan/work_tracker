@@ -235,6 +235,123 @@
   </div>
 </div>
 
+<div id="intervence" class="card border-0 shadow-sm mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center py-2">
+    <div>
+      <h2 class="h6 mb-0">Zásahy</h2>
+      <small class="text-muted">Seznam navržených zásahů, které můžete upravit nebo potvrdit.</small>
+    </div>
+    <a class="btn btn-sm btn-outline-primary" href="{% url 'tree_intervention_create' work_record.pk %}">
+      <i class="bi bi-tools"></i> Přidat zásah
+    </a>
+  </div>
+  <div class="card-body small">
+    {% if interventions %}
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr>
+              <th>Kód</th>
+              <th>Název</th>
+              <th>Naléhavost</th>
+              <th>Stav</th>
+              <th>Termín</th>
+              <th>Popis</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for intervention in interventions %}
+              <tr>
+                <td>{{ intervention.intervention_type.code }}</td>
+                <td>{{ intervention.intervention_type.name }}</td>
+                <td>{{ intervention.get_urgency_display }}</td>
+                <td>{{ intervention.get_status_display }}</td>
+                <td>
+                  {% if intervention.due_date %}
+                    {{ intervention.due_date|date:"d.m.Y" }}
+                  {% else %}
+                    <span class="text-muted">nezadáno</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {{ intervention.description|default:"-" }}
+                  <br>
+                  <a href="{% url 'tree_intervention_update' intervention.pk %}" class="small">Upravit</a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="text-muted mb-0">Zatím nejsou naplánované žádné zásahy.</p>
+    {% endif %}
+  </div>
+</div>
+
+<div id="intervence_new" class="card border-0 shadow-sm mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center py-2">
+    <div>
+      <h2 class="h6 mb-0">Zásahy</h2>
+      <small class="text-muted">Seznam navržených zásahů, které můžete upravit nebo potvrdit.</small>
+    </div>
+    <a class="btn btn-sm btn-outline-primary" href="{% url 'tree_intervention_create' work_record.pk %}">
+      <i class="bi bi-tools"></i> Přidat zásah
+    </a>
+  </div>
+  <div class="card-body small">
+    {% if interventions %}
+      <div class="table-responsive">
+        <table class="table table-sm mb-0">
+          <thead>
+            <tr>
+              <th>Kód</th>
+              <th>Název</th>
+              <th>Naléhavost</th>
+              <th>Stav</th>
+              <th>Vytvořeno / předáno ke kontrole</th>
+              <th>Popis</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for intervention in interventions %}
+              <tr>
+                <td>{{ intervention.intervention_type.code }}</td>
+                <td>{{ intervention.intervention_type.name }}</td>
+                <td>{{ intervention.get_urgency_display }}</td>
+                <td>{{ intervention.get_status_display }}</td>
+                <td>
+                  {% if intervention.handed_over_for_check_at %}
+                    <span class="text-muted">Předáno ke kontrole: {{ intervention.handed_over_for_check_at|date:"d.m.Y H:i" }}</span>
+                  {% else %}
+                    <span class="text-muted">Vytvořeno: {{ intervention.created_at|date:"d.m.Y H:i" }}</span>
+                  {% endif %}
+                </td>
+                <td>
+                  {{ intervention.description|default:"-" }}
+                  <br>
+                  <a href="{% url 'tree_intervention_update' intervention.pk %}" class="small">Upravit</a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="text-muted mb-0">Zat¡m nejsou napl novan‚ § dn‚ z sahy.</p>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    var oldCard = document.getElementById('intervence');
+    if (oldCard) {
+      oldCard.style.display = 'none';
+    }
+  });
+</script>
+
 <h2 class="h5 mb-3">Fotodokumentace</h2>
 {% if photos %}
   <div class="row g-3 mb-4">

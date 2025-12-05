@@ -212,6 +212,7 @@
   .wr-popup-btn.photo { background: #ffbf00; }
   .wr-popup-btn.assess { background: #4e9cff; }
   .wr-popup-btn.assess.has-assessment { background: #198754; }
+  .wr-popup-btn.intervention { background: #6f42c1; }
   .wr-popup-btn.edit { background: #b5c0cc; color: #1f2a33; }
   /* offcanvas styling */
   .offcanvas-top { border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; box-shadow: 0 6px 18px rgba(0,0,0,.15); background: rgba(255,255,255,.98); }
@@ -365,6 +366,59 @@
     </div>
 
     <div id="assessmentMessage" class="mt-2 small"></div>
+  </div>
+</div>
+
+<div id="interventionModal" class="capture-modal" data-api-template="{% url 'tree_intervention_api' 0 %}">
+  <div class="capture-card">
+    <div class="d-flex justify-content-between align-items-center mb-1">
+      <h6 class="mb-0">Zásah na stromě</h6>
+      <button type="button" class="btn btn-sm btn-outline-light rounded-circle px-2 py-0" id="interventionCloseBtn" aria-label="Zavřít">&times;</button>
+    </div>
+
+    <form id="interventionForm" method="post" action="{% url 'tree_intervention_api' 0 %}" class="vstack gap-2">
+      {% csrf_token %}
+      <input type="hidden" name="tree_id" id="interventionTreeId" value="">
+
+      <div class="row g-2">
+        <div class="col-12">
+          {{ intervention_form.intervention_type.label_tag }}
+          {{ intervention_form.intervention_type }}
+          <div id="interventionNoteHintModal" class="form-text text-muted"></div>
+        </div>
+        <div class="col-12">
+          {{ intervention_form.description.label_tag }}
+          {{ intervention_form.description }}
+        </div>
+        <div class="col-6">
+          {{ intervention_form.urgency.label_tag }}
+          {{ intervention_form.urgency }}
+        </div>
+        <div class="col-6">
+          {{ intervention_form.status.label_tag }}
+          {{ intervention_form.status }}
+        </div>
+        <div class="col-6">
+          {{ intervention_form.due_date.label_tag }}
+          {{ intervention_form.due_date }}
+        </div>
+        <div class="col-6">
+          {{ intervention_form.assigned_to.label_tag }}
+          {{ intervention_form.assigned_to }}
+        </div>
+      </div>
+
+      <div id="interventionFormErrors" class="text-danger small"></div>
+
+      <div class="d-flex justify-content-end gap-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="interventionCancelBtn">
+          Zrušit
+        </button>
+        <button type="submit" class="btn btn-primary btn-sm" id="interventionSaveBtn">
+          Uložit zásah
+        </button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -526,6 +580,33 @@ document.addEventListener('DOMContentLoaded', function () {
   const assessmentCancelBtn = document.getElementById('assessmentCancelBtn');
   const assessmentSaveBtn = document.getElementById('assessmentSaveBtn');
   const assessmentMessage = document.getElementById('assessmentMessage');
+  const interventionModal = document.getElementById('interventionModal');
+  const interventionForm = document.getElementById('interventionForm');
+  const interventionTreeIdInput = document.getElementById('interventionTreeId');
+  const interventionNoteHintModal = document.getElementById('interventionNoteHintModal');
+  const interventionFormErrors = document.getElementById('interventionFormErrors');
+  const interventionCloseBtn = document.getElementById('interventionCloseBtn');
+  const interventionCancelBtn = document.getElementById('interventionCancelBtn');
+  const interventionSaveBtn = document.getElementById('interventionSaveBtn');
+  const interventionTypeSelect = document.getElementById('id_intervention_type');
+  const interventionApiTemplate = interventionModal ? interventionModal.dataset.apiTemplate || '' : '';
+  const interventionNoteData = {{ intervention_note_data_json|default:"{}" | safe }};
+  let interventionListContainer = document.getElementById('intervention-list');
+
+  if (interventionModal && interventionForm && !interventionListContainer) {
+    interventionListContainer = document.createElement('div');
+    interventionListContainer.id = 'intervention-list';
+    interventionListContainer.className = 'mb-2 small';
+    interventionForm.parentNode.insertBefore(interventionListContainer, interventionForm);
+  }
+
+  const interventionDueDateInput = document.getElementById('id_due_date');
+  if (interventionDueDateInput && interventionModal) {
+    const dueWrapper = interventionDueDateInput.closest('.col-6') || interventionDueDateInput.parentElement;
+    if (dueWrapper) {
+      dueWrapper.classList.add('d-none');
+    }
+  }
 
   function clearTaxonSelection() {
     if (taxonCzechInput) taxonCzechInput.value = '';
@@ -871,6 +952,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 <button type="button" class="wr-popup-btn assess" data-action="assessment" data-record-id="${r.id}" title="Hodnocení stromu">
                   <i class="bi bi-clipboard2-pulse"></i>
                 </button>
+                <button type="button" class="wr-popup-btn intervention" data-action="intervention" data-record-id="${r.id}" title="Zásahy">
+                  <i class="bi bi-tools"></i>
+                </button>
                 <a class="wr-popup-btn edit" href="/tracker/${r.id}/edit/" title="Upravit úkon">
                   <i class="bi bi-pencil-square"></i>
                 </a>
@@ -1035,11 +1119,11 @@ document.addEventListener('DOMContentLoaded', function () {
           clusterLayer.zoomToShowLayer(target, () => { target.openPopup(); });
         }
       } else {
-        alert(data.msg || 'Nepoda�ilo se ulo�it �kon.');
+        alert(data.msg || 'Nepodařilo se uložit úkon.');
       }
     })
     .catch(() => {
-      alert('Chyba p�i ukl�d�n� �konu.');
+      alert('Chyba při ukládání úkonu.');
     })
     .finally(() => {
       newRecordSaveBtn.disabled = false;
@@ -1136,6 +1220,229 @@ document.addEventListener('DOMContentLoaded', function () {
     if (letter === 'b') return 2;
     if (letter === 'c') return 3;
     return 1;
+  }
+
+  function showInterventionModal() {
+    if (!interventionModal) return;
+    interventionModal.classList.add('active');
+  }
+
+  function hideInterventionModal() {
+    if (!interventionModal) return;
+    interventionModal.classList.remove('active');
+    setInterventionMessage('', true);
+  }
+
+  function updateInterventionNoteHint() {
+    if (!interventionNoteHintModal || !interventionTypeSelect) return;
+    const data = interventionNoteData?.[interventionTypeSelect.value];
+    if (data && data.note_required) {
+      interventionNoteHintModal.textContent = data.note_hint || 'Vyžaduje doplnění poznámky.';
+    } else {
+      interventionNoteHintModal.textContent = '';
+    }
+  }
+
+  function buildInterventionApiUrl(recordId) {
+    if (!interventionApiTemplate) return interventionForm ? interventionForm.action : '';
+    return interventionApiTemplate.replace('/0/', `/${recordId}/`);
+  }
+
+  function renderInterventionList(items) {
+    if (!interventionListContainer) return;
+    if (!items || !items.length) {
+      interventionListContainer.innerHTML = '<p class="text-muted mb-1">Zatím nejsou zadány žádné zásahy.</p>';
+      return;
+    }
+    let html = '';
+    html += '<div class="mb-1"><strong>Existující zásahy</strong></div>';
+    html += '<div><table class="table table-sm mb-1"><thead><tr>';
+    html += '<th>Kód</th><th>Název</th><th>Stav</th><th>Vytvořeno</th><th></th>';
+    html += '</tr></thead><tbody>';
+    items.forEach(item => {
+      const created = item.created_at || '';
+      const handed = item.handed_over_for_check_at || null;
+      let label = '';
+      if (handed) {
+        label = 'Předáno ke kontrole';
+      } else if (created) {
+        label = 'Vytvořeno';
+      }
+      html += '<tr>';
+      html += `<td>${item.code || ''}</td>`;
+      html += `<td>${item.name || ''}</td>`;
+      html += `<td>${item.status || ''}</td>`;
+      html += '<td>';
+      if (label || created || handed) {
+        const ts = handed || created;
+        html += '<div class="small text-muted">';
+        if (label) {
+          html += `${label}: `;
+        }
+        html += ts ? new Date(ts).toLocaleString('cs-CZ') : '-';
+        html += '</div>';
+      } else {
+        html += '<span class="text-muted">-</span>';
+      }
+      html += '</td>';
+      html += '<td class="text-end">';
+      if (item.status_code === 'approved' || item.status_code === 'in_progress') {
+        html += `<button type="button" class="btn btn-outline-secondary btn-sm" data-action="handover" data-intervention-id="${item.id}" title="Předat ke kontrole"><i class="bi bi-send-check"></i></button>`;
+      }
+      html += '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    interventionListContainer.innerHTML = html;
+  }
+
+  function loadInterventionsForRecord(recordId) {
+    if (!interventionModal || !interventionForm || !recordId) return;
+    if (!interventionListContainer) return;
+    const url = buildInterventionApiUrl(recordId);
+    if (!url) return;
+    interventionListContainer.innerHTML = '<p class="text-muted mb-1">Načítám zásahy…</p>';
+    fetch(url, {
+      method: 'GET',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    })
+      .then(resp => (resp.ok ? resp.json() : Promise.reject()))
+      .then(body => {
+        if (!body || body.status !== 'ok') return;
+        renderInterventionList(body.interventions || []);
+      })
+      .catch(() => {
+        interventionListContainer.innerHTML = '<p class="text-danger mb-1">Nepodařilo se načíst zásahy.</p>';
+      });
+  }
+
+  function handoverIntervention(recordId, interventionId, buttonEl) {
+    const url = buildInterventionApiUrl(recordId);
+    if (!url) return;
+    const payload = new URLSearchParams();
+    payload.set('action', 'handover');
+    payload.set('id', String(interventionId));
+    if (buttonEl) {
+      buttonEl.disabled = true;
+    }
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-CSRFToken': '{{ csrf_token }}',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: payload.toString(),
+    })
+      .then(resp => resp.json().then(body => ({ status: resp.status, body })))
+      .then(({ status, body }) => {
+        if (status >= 400 || !body || body.status !== 'ok') {
+          throw body;
+        }
+        if (recordId) {
+          loadInterventionsForRecord(recordId);
+        }
+      })
+      .catch(() => {
+        setInterventionMessage('Nepodařilo se předat zásah ke kontrole.', true);
+      })
+      .finally(() => {
+        if (buttonEl) {
+          buttonEl.disabled = false;
+        }
+      });
+  }
+
+  function setInterventionMessage(text, isError = true) {
+    if (!interventionFormErrors) return;
+    interventionFormErrors.textContent = text;
+    interventionFormErrors.className = isError
+      ? 'mt-2 text-danger small'
+      : 'mt-2 text-success small';
+  }
+
+  function formatInterventionErrors(errors) {
+    const parts = [];
+    for (const key in errors) {
+      const items = errors[key] || [];
+      items.forEach(item => {
+        if (item.message) {
+          parts.push(item.message);
+        }
+      });
+    }
+    return parts.join(' ');
+  }
+
+  function openInterventionModal(recordId) {
+    if (!interventionModal || !interventionForm) return;
+    interventionForm.reset();
+    if (interventionTreeIdInput) {
+      interventionTreeIdInput.value = recordId;
+    }
+    const actionUrl = buildInterventionApiUrl(recordId);
+    if (actionUrl) {
+      interventionForm.action = actionUrl;
+    }
+    updateInterventionNoteHint();
+    setInterventionMessage('', true);
+    if (recordId) {
+      loadInterventionsForRecord(recordId);
+    }
+    showInterventionModal();
+  }
+
+  function submitInterventionForm(event) {
+    if (event) {
+      event.preventDefault();
+    }
+    if (!interventionForm) return;
+    const action = interventionForm.action;
+    const payload = new FormData(interventionForm);
+    if (interventionTreeIdInput) {
+      payload.set('tree_id', interventionTreeIdInput.value);
+    }
+    if (interventionSaveBtn) {
+      interventionSaveBtn.disabled = true;
+    }
+    fetch(action, {
+      method: 'POST',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      body: payload,
+    })
+      .then(resp => resp.json().then(body => ({ status: resp.status, body })))
+      .then(({ status, body }) => {
+        if (status >= 400 || body.status !== 'ok') {
+          throw body;
+        }
+        const recordId = interventionTreeIdInput ? interventionTreeIdInput.value : null;
+        if (interventionForm) {
+          interventionForm.reset();
+          if (interventionTreeIdInput && recordId) {
+            interventionTreeIdInput.value = recordId;
+          }
+        }
+        setInterventionMessage('Zásah byl uložen.', false);
+        if (recordId) {
+          loadInterventionsForRecord(recordId);
+        }
+      })
+      .catch(err => {
+        if (err && err.errors) {
+          setInterventionMessage(formatInterventionErrors(err.errors), true);
+        } else if (err && err.msg) {
+          setInterventionMessage(err.msg, true);
+        } else {
+          setInterventionMessage('Nepodařilo se uložit zásah.', true);
+        }
+      })
+      .finally(() => {
+        if (interventionSaveBtn) {
+          interventionSaveBtn.disabled = false;
+        }
+      });
   }
 
   [assessmentPhysAge, assessmentVitality, assessmentHealth, assessmentStability].forEach((inputEl, idx) => {
@@ -1412,6 +1719,35 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  if (interventionCancelBtn) {
+    interventionCancelBtn.addEventListener('click', hideInterventionModal);
+  }
+  if (interventionCloseBtn) {
+    interventionCloseBtn.addEventListener('click', hideInterventionModal);
+  }
+  if (interventionModal) {
+    interventionModal.addEventListener('click', (e) => {
+      if (e.target === interventionModal) hideInterventionModal();
+    });
+  }
+  if (interventionForm) {
+    interventionForm.addEventListener('submit', submitInterventionForm);
+    if (interventionTypeSelect) {
+      interventionTypeSelect.addEventListener('change', updateInterventionNoteHint);
+    }
+  }
+  if (interventionListContainer) {
+    interventionListContainer.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-action="handover"]');
+      if (!btn) return;
+      e.preventDefault();
+      const recordId = interventionTreeIdInput ? interventionTreeIdInput.value : null;
+      const interventionId = btn.getAttribute('data-intervention-id');
+      if (!recordId || !interventionId) return;
+      handoverIntervention(recordId, interventionId, btn);
+    });
+  }
+
   if (assessmentSaveBtn) {
     assessmentSaveBtn.addEventListener('click', () => {
       const recordId = assessmentWorkRecordIdInput ? assessmentWorkRecordIdInput.value : null;
@@ -1510,6 +1846,14 @@ document.addEventListener('DOMContentLoaded', function () {
         ev.stopPropagation();
         const rid = btn.getAttribute('data-record-id');
         openAssessmentForRecord(rid);
+      });
+    });
+    container.querySelectorAll('.wr-popup-btn[data-action="intervention"]').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const rid = btn.getAttribute('data-record-id');
+        openInterventionModal(rid);
       });
     });
   });

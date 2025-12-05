@@ -4,7 +4,14 @@ from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import get_user_model  # místo přímého importu User (viz níže)
 from django.utils.dateformat import format
 
-from .models import WorkRecord, PhotoDocumentation, Project, ProjectMembership
+from .models import (
+    WorkRecord,
+    PhotoDocumentation,
+    Project,
+    ProjectMembership,
+    TreeIntervention,
+    InterventionType,
+)
 
 # z get_user_model() načteme správný uživatelský model (můžeš mít vlastní User)
 User = get_user_model()
@@ -116,8 +123,73 @@ class PhotoDocumentationForm(forms.ModelForm):
         }
 
     def clean_photo(self):
-        """Fotka je nepovinná – pokud není vybraná, vrátí None"""
+        """Fotka je nepovinná - pokud není vybraná, vrátí None"""
         photo = self.cleaned_data.get('photo')
         if not photo:
             return None
         return photo
+
+
+class InterventionTypeChoiceField(forms.ModelChoiceField):
+    """Výběr typu zásahu se zobrazením kódu a názvu."""
+
+    def label_from_instance(self, obj):
+        code = obj.code or ""
+        name = obj.name or ""
+        if code and name:
+            return f"{code} – {name}"
+        return name or code or str(obj)
+
+
+class TreeInterventionForm(forms.ModelForm):
+    """Formulář pro zásahy"""
+    intervention_type = InterventionTypeChoiceField(
+        queryset=InterventionType.objects.none(),
+        label="Typ zásahu",
+        empty_label="Vyberte typ zásahu",
+    )
+    due_date = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={'type': 'date'}),
+        label="Termín zásahu",
+    )
+
+    class Meta:
+        model = TreeIntervention
+        fields = [
+            'intervention_type',
+            'description',
+            'urgency',
+            'status',
+            'due_date',
+            'assigned_to',
+        ]
+        widgets = {
+            'description': forms.Textarea(attrs={'rows': 4, 'placeholder': 'Popis zásahu (volitelný)'}),
+        }
+        labels = {
+            'description': 'Popis zásahu / poznámka',
+            'urgency': 'Naléhavost',
+            'status': 'Stav zásahu',
+            'assigned_to': 'Zodpovědný',
+        }
+        help_texts = {
+            'assigned_to': 'Volitelně vyber osobu, která bude zásah řešit.',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        queryset = InterventionType.objects.filter(is_active=True).order_by('order', 'name')
+        self.fields['intervention_type'].queryset = queryset
+        self.fields['assigned_to'].queryset = User.objects.filter(is_active=True).order_by('username')
+
+    @property
+    def intervention_type_note_data(self):
+        data = {}
+        queryset = self.fields['intervention_type'].queryset
+        for item in queryset:
+            data[str(item.pk)] = {
+                "note_required": bool(item.note_required),
+                "note_hint": item.note_hint or "",
+            }
+        return data

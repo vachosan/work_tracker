@@ -4,6 +4,7 @@ from django.db import models
 from django.utils import timezone
 from django.conf import settings
 
+# models module for ArboMap tracker app
 
 PHYSIOLOGICAL_AGE_CHOICES = [
     (1, "1 – mladý jedinec ve fázi ujímání"),
@@ -303,3 +304,132 @@ class ProjectMembership(models.Model):
 
     def __str__(self):
         return f"{self.user} · {self.project} · {self.role}"
+
+
+INTERVENTION_STATUS_CHOICES = [
+    ("draft", "Návrh"),
+    ("pending_approval", "Ke schválení"),
+    ("approved", "Schváleno"),
+    ("in_progress", "Probíhá"),
+    ("pending_check", "Ke kontrole"),
+    ("completed", "Dokončeno"),
+    ("rework_required", "Reklamace"),
+]
+
+URGENCY_CHOICES = [
+    (0, "0 – okamžitě, riziko z prodlení"),
+    (1, "1 – první etapa prací"),
+    (2, "2 – druhá etapa prací"),
+    (3, "3 – třetí etapa prací"),
+]
+
+
+class InterventionType(models.Model):
+    code = models.CharField(
+        max_length=20,
+        unique=True,
+        verbose_name="Kód technologie",
+        default="legacy",
+    )
+    name = models.CharField(max_length=255, verbose_name="Název technologie")
+    category = models.CharField(max_length=100, blank=True, verbose_name="Kategorie")
+    description = models.TextField(blank=True, verbose_name="Popis")
+    note_required = models.BooleanField(default=False, verbose_name="Vyžaduje doplnění poznámky")
+    note_hint = models.TextField(blank=True, verbose_name="Pokyny k doplnění")
+    is_active = models.BooleanField(default=True, verbose_name="Aktivní")
+    order = models.PositiveIntegerField(default=0, verbose_name="Pořadí")
+
+    class Meta:
+        verbose_name = "Typ zásahu"
+        verbose_name_plural = "Typy zásahů"
+        ordering = ["order", "name"]
+
+    def __str__(self):
+        if self.code:
+            return f"{self.code} – {self.name}"
+        return self.name
+
+
+class TreeIntervention(models.Model):
+    def mark_approved(self):
+        self.status = "approved"
+        if getattr(self, "approved_at", None) is None:
+            self.approved_at = timezone.now()
+        self.save()
+
+    def mark_handed_over_for_check(self):
+        self.status = "pending_check"
+        if getattr(self, "handed_over_for_check_at", None) is None:
+            self.handed_over_for_check_at = timezone.now()
+        self.save()
+
+    approved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Schváleno dne",
+    )
+    handed_over_for_check_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Předáno ke kontrole dne",
+    )
+    tree = models.ForeignKey(
+        "WorkRecord",
+        related_name="interventions",
+        on_delete=models.CASCADE,
+        verbose_name="Strom",
+    )
+    intervention_type = models.ForeignKey(
+        "InterventionType",
+        on_delete=models.PROTECT,
+        verbose_name="Typ zásahu",
+    )
+    description = models.TextField(blank=True, verbose_name="Popis zásahu")
+    urgency = models.IntegerField(
+        choices=URGENCY_CHOICES,
+        default=2,
+        verbose_name="Naléhavost",
+    )
+    status = models.CharField(
+        max_length=32,
+        choices=INTERVENTION_STATUS_CHOICES,
+        default="draft",
+        verbose_name="Stav zásahu",
+    )
+    due_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name="Termín zásahu",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="created_interventions",
+        verbose_name="Navrhl",
+    )
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="assigned_interventions",
+        verbose_name="Zodpovědný",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Vytvořeno")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Aktualizováno")
+
+    class Meta:
+        verbose_name = "Zásah na stromě"
+        verbose_name_plural = "Zásahy na stromě"
+        ordering = ["status", "urgency", "due_date", "id"]
+
+    def __str__(self):
+        status = self.get_status_display() if self.status else ""
+        parts = [str(self.tree)]
+        if self.intervention_type:
+            parts.append(str(self.intervention_type))
+        if status:
+            parts.append(status)
+        return " · ".join(parts)
