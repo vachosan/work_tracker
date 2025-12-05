@@ -85,12 +85,14 @@ def project_detail(request, pk):
     if not user_can_view_project(request.user, project.pk):
         return redirect('work_record_list')
 
-    qs = WorkRecord.objects.filter(project=project).order_by('-created_at')
+    qs = WorkRecord.objects.filter(project=project)
 
     # filtry (GET)
     q = request.GET.get('q', '').strip()
     df = parse_date(request.GET.get('date_from') or '')
     dt = parse_date(request.GET.get('date_to') or '')
+    has_assessment = request.GET.get('has_assessment', '').strip()
+    has_open_interventions = request.GET.get('has_open_interventions', '').strip()
 
     if q:
         qs = qs.filter(Q(title__icontains=q) | Q(description__icontains=q))
@@ -99,23 +101,89 @@ def project_detail(request, pk):
     if dt:
         qs = qs.filter(date__lte=dt)
 
+    # filtr podle hodnocení
+    if has_assessment == "yes":
+        qs = qs.filter(assessments__isnull=False).distinct()
+    elif has_assessment == "no":
+        qs = qs.filter(assessments__isnull=True)
+
+    # filtr podle zásahů
+    if has_open_interventions == "open":
+        qs = qs.filter(
+            interventions__status__in=[
+                "draft",
+                "pending_approval",
+                "approved",
+                "in_progress",
+                "pending_check",
+                "rework_required",
+            ]
+        ).distinct()
+    elif has_open_interventions == "none":
+        qs = qs.filter(interventions__isnull=True)
+
+    # přednačtení souvisejících dat pro souhrny
+    latest_assessments_qs = TreeAssessment.objects.order_by("-assessed_at", "-id")
+    interventions_qs = TreeIntervention.objects.order_by("urgency", "due_date", "id")
+
+    qs = (
+        qs.select_related("project")
+        .prefetch_related(
+            Prefetch("assessments", queryset=latest_assessments_qs, to_attr="prefetched_assessments"),
+            Prefetch("interventions", queryset=interventions_qs, to_attr="prefetched_interventions"),
+        )
+        .order_by("-created_at")
+    )
+
     # stránkování
     paginator = Paginator(qs, 20)  # 20 na stránku
-    page_obj = paginator.get_page(request.GET.get('page'))
+    page_obj = paginator.get_page(request.GET.get("page"))
 
-    # flag pro tlačítka
+    # dopočítání souhrnů pro řádky
+    for wr in page_obj.object_list:
+        # latest_assessment je @property na WorkRecord, nepřepisujeme ho zde.
+        interventions = list(getattr(wr, "prefetched_interventions", []))
+        wr.intervention_count = len(interventions)
+        wr.open_intervention_count = sum(1 for i in interventions if i.status != "completed")
+        wr.max_urgency = max((i.urgency for i in interventions), default=None) if interventions else None
+
+        # podrobnější přehled stavů zásahů
+        wr.interventions_proposed = 0
+        wr.interventions_approved = 0
+        wr.interventions_handover = 0
+        wr.interventions_completed = 0
+
+        for iv in interventions:
+            if iv.status in ["draft", "pending_approval"]:
+                wr.interventions_proposed += 1
+            elif iv.status == "approved":
+                wr.interventions_approved += 1
+            elif iv.status == "pending_check":
+                wr.interventions_handover += 1
+            elif iv.status == "completed":
+                wr.interventions_completed += 1
+
+    # flagy pro šablonu (tlačítka)
     is_foreman = ProjectMembership.objects.filter(
         user=request.user, project=project, role=ProjectMembership.Role.FOREMAN
     ).exists()
+    is_member = ProjectMembership.objects.filter(user=request.user, project=project).exists()
 
-    return render(request, 'tracker/project_detail.html', {
-        'project': project,
-        'page_obj': page_obj,
-        'q': q,
-        'date_from': request.GET.get('date_from', ''),
-        'date_to': request.GET.get('date_to', ''),
-        'is_foreman': is_foreman,
-    })
+    return render(
+        request,
+        "tracker/project_detail.html",
+        {
+            "project": project,
+            "page_obj": page_obj,
+            "q": q,
+            "date_from": request.GET.get("date_from", ""),
+            "date_to": request.GET.get("date_to", ""),
+            "has_assessment": has_assessment,
+            "has_open_interventions": has_open_interventions,
+            "is_foreman": is_foreman,
+            "is_member": is_member,
+        },
+    )
 
 @login_required
 def edit_project(request, pk):
@@ -688,6 +756,50 @@ def mapy_geocode_test(request):
 """
 
 THUMB_MAX_SIZE = 256
+
+
+@login_required
+def bulk_approve_interventions(request, pk):
+    project = get_object_or_404(Project, pk=pk)
+
+    if not user_can_view_project(request.user, project.pk):
+        return redirect('work_record_list')
+
+    if request.method != "POST":
+        return redirect("project_detail", pk=pk)
+
+    selected_ids = request.POST.getlist("selected_records")
+    if not selected_ids:
+        messages.warning(request, "Vyberte prosím alespoň jeden strom / úkon.")
+        return redirect("project_detail", pk=pk)
+
+    work_records = WorkRecord.objects.filter(project=project, id__in=selected_ids)
+    interventions_qs = TreeIntervention.objects.filter(
+        tree__in=work_records,
+        status__in=["draft", "pending_approval"],
+    )
+    interventions = list(interventions_qs)
+
+    if not interventions:
+        messages.info(request, "Nebyl nalezen žádný navržený zásah ke schválení.")
+        return redirect("project_detail", pk=pk)
+
+    for intervention in interventions:
+        if hasattr(intervention, "mark_approved"):
+            intervention.mark_approved()
+        else:
+            from django.utils import timezone
+
+            intervention.status = "approved"
+            if getattr(intervention, "approved_at", None) is None:
+                intervention.approved_at = timezone.now()
+            intervention.save()
+
+    messages.success(
+        request,
+        f"Schváleno {len(interventions)} navržených zásahů.",
+    )
+    return redirect("project_detail", pk=pk)
 
 
 def get_photo_thumbnail(photo_obj, size=THUMB_MAX_SIZE):

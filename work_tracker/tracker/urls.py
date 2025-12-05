@@ -24,6 +24,7 @@ urlpatterns = [
     path('projects/closed/', views.closed_projects_list, name='closed_projects_list'),
     path('project/<int:pk>/', views.project_detail, name='project_detail'),
     path('project/<int:pk>/export_zip/', views.export_selected_zip, name='export_selected_zip'),
+    path('project/<int:pk>/bulk-approve-interventions/', views.bulk_approve_interventions, name='bulk_approve_interventions'),
     # testovac mapy endpoints odstranny
     path("map-leaflet/", views.map_leaflet_test, name="map_leaflet_test"),
     path("api/gbif-taxons/", views.gbif_taxon_suggest, name="gbif_taxon_suggest"),
