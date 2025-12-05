@@ -108,19 +108,23 @@ def project_detail(request, pk):
         qs = qs.filter(assessments__isnull=True)
 
     # filtr podle zásahů
-    if has_open_interventions == "open":
-        qs = qs.filter(
-            interventions__status__in=[
-                "draft",
-                "pending_approval",
-                "approved",
-                "in_progress",
-                "pending_check",
-                "rework_required",
-            ]
-        ).distinct()
-    elif has_open_interventions == "none":
+    if has_open_interventions == "none":
+        # úkony bez jakéhokoli zásahu
         qs = qs.filter(interventions__isnull=True)
+    elif has_open_interventions == "proposed":
+        # alespoň jeden zásah ve stavu draft/pending_approval
+        qs = qs.filter(
+            interventions__status__in=["draft", "pending_approval"]
+        ).distinct()
+    elif has_open_interventions == "approved":
+        # alespoň jeden zásah ve stavu approved
+        qs = qs.filter(interventions__status="approved").distinct()
+    elif has_open_interventions == "handover":
+        # alespoň jeden zásah ve stavu pending_check
+        qs = qs.filter(interventions__status="pending_check").distinct()
+    elif has_open_interventions == "completed":
+        # alespoň jeden zásah ve stavu completed
+        qs = qs.filter(interventions__status="completed").distinct()
 
     # přednačtení souvisejících dat pro souhrny
     latest_assessments_qs = TreeAssessment.objects.order_by("-assessed_at", "-id")
@@ -1182,3 +1186,84 @@ def workrecord_assessment_api(request, pk):
         "perspective": assessment.perspective,
         "assessed_at": assessment.assessed_at.isoformat() if assessment.assessed_at else None,
     })
+
+
+@login_required
+def bulk_handover_interventions(request, pk):
+    project = get_object_or_404(Project, pk=pk)
+
+    if not user_can_view_project(request.user, project.pk):
+        return redirect('work_record_list')
+
+    if request.method != "POST":
+        return redirect("project_detail", pk=pk)
+
+    selected_ids = request.POST.getlist("selected_records")
+    if not selected_ids:
+        messages.warning(request, "Vyberte prosím alespoň jeden strom / úkon.")
+        return redirect("project_detail", pk=pk)
+
+    work_records = WorkRecord.objects.filter(project=project, id__in=selected_ids)
+    interventions_qs = TreeIntervention.objects.filter(
+        tree__in=work_records,
+        status__in=["approved", "in_progress"],
+    )
+    interventions = list(interventions_qs)
+
+    if not interventions:
+        messages.info(request, "Nebyl nalezen žádný zásah vhodný k předání ke kontrole.")
+        return redirect("project_detail", pk=pk)
+
+    for intervention in interventions:
+        if hasattr(intervention, "mark_handed_over_for_check"):
+            intervention.mark_handed_over_for_check()
+        else:
+            from django.utils import timezone
+
+            intervention.status = "pending_check"
+            if getattr(intervention, "handed_over_for_check_at", None) is None:
+                intervention.handed_over_for_check_at = timezone.now()
+            intervention.save()
+
+    messages.success(
+        request,
+        f"Předáno ke kontrole {len(interventions)} zásahů.",
+    )
+    return redirect("project_detail", pk=pk)
+
+
+@login_required
+def bulk_complete_interventions(request, pk):
+    project = get_object_or_404(Project, pk=pk)
+
+    if not user_can_view_project(request.user, project.pk):
+        return redirect('work_record_list')
+
+    if request.method != "POST":
+        return redirect("project_detail", pk=pk)
+
+    selected_ids = request.POST.getlist("selected_records")
+    if not selected_ids:
+        messages.warning(request, "Vyberte prosím alespoň jeden strom / úkon.")
+        return redirect("project_detail", pk=pk)
+
+    work_records = WorkRecord.objects.filter(project=project, id__in=selected_ids)
+    interventions_qs = TreeIntervention.objects.filter(
+        tree__in=work_records,
+        status__in=["pending_check", "approved", "in_progress"],
+    )
+    interventions = list(interventions_qs)
+
+    if not interventions:
+        messages.info(request, "Nebyl nalezen žádný zásah k označení jako dokončený.")
+        return redirect("project_detail", pk=pk)
+
+    for intervention in interventions:
+        intervention.status = "completed"
+        intervention.save()
+
+    messages.success(
+        request,
+        f"Označeno {len(interventions)} zásahů jako dokončené.",
+    )
+    return redirect("project_detail", pk=pk)

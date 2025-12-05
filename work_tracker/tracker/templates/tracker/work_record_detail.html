@@ -23,10 +23,17 @@
         <i class="bi bi-geo"></i>
       </a>
     {% endif %}
-    <a href="{% url 'work_record_list' %}#project-{{ work_record.project_id }}"
-       class="btn btn-outline-secondary btn-icon-square" title="Zpět na projekt">
-      <i class="bi bi-arrow-left"></i>
-    </a>
+    {% if work_record.project %}
+      <a href="{% url 'project_detail' work_record.project.pk %}"
+         class="btn btn-outline-secondary btn-icon-square" title="Zpět na projekt">
+        <i class="bi bi-arrow-left"></i>
+      </a>
+    {% else %}
+      <a href="{% url 'work_record_list' %}"
+         class="btn btn-outline-secondary btn-icon-square" title="Zpět na seznam">
+        <i class="bi bi-arrow-left"></i>
+      </a>
+    {% endif %}
 
     <a href="{% url 'edit_work_record' work_record.pk %}"
        class="btn btn-outline-primary btn-icon-square" title="Upravit úkon">

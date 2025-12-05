@@ -70,8 +70,21 @@
         <div class="col-6 col-md-2">
           <select name="has_open_interventions" class="form-select">
             <option value="">Zásahy – všechny</option>
-            <option value="open" {% if has_open_interventions == 'open' %}selected{% endif %}>S otevřenými zásahy</option>
-            <option value="none" {% if has_open_interventions == 'none' %}selected{% endif %}>Bez zásahů</option>
+            <option value="none" {% if has_open_interventions == 'none' %}selected{% endif %}>
+              Bez zásahů
+            </option>
+            <option value="proposed" {% if has_open_interventions == 'proposed' %}selected{% endif %}>
+              S navrženými zásahy
+            </option>
+            <option value="approved" {% if has_open_interventions == 'approved' %}selected{% endif %}>
+              Se schválenými zásahy
+            </option>
+            <option value="handover" {% if has_open_interventions == 'handover' %}selected{% endif %}>
+              S předanými ke kontrole
+            </option>
+            <option value="completed" {% if has_open_interventions == 'completed' %}selected{% endif %}>
+              Jen s dokončenými zásahy
+            </option>
           </select>
         </div>
         <div class="col-12 col-md-2 d-grid">
@@ -111,6 +124,20 @@
               class="btn btn-outline-success btn-sm"
               formaction="{% url 'bulk_approve_interventions' project.pk %}">
         <i class="bi bi-check2-circle"></i> Schválit navržené zásahy
+      </button>
+      <button type="submit"
+              name="bulk_handover_interventions"
+              value="1"
+              class="btn btn-outline-warning btn-sm"
+              formaction="{% url 'bulk_handover_interventions' project.pk %}">
+        <i class="bi bi-send-check"></i> Předat zásahy ke kontrole
+      </button>
+      <button type="submit"
+              name="bulk_complete_interventions"
+              value="1"
+              class="btn btn-outline-info btn-sm"
+              formaction="{% url 'bulk_complete_interventions' project.pk %}">
+        <i class="bi bi-clipboard-check"></i> Označit zásahy jako dokončené
       </button>
     </div>
   </div>
@@ -171,20 +198,31 @@
 
               {% if wr.intervention_count > 0 %}
                 <div class="small mt-1">
-                  <span class="text-muted">
+                  <div class="text-muted mb-1">
                     Zásahy: {{ wr.intervention_count }} celkem
-                    · navrženo: {{ wr.interventions_proposed }}
-                    · schváleno: {{ wr.interventions_approved }}
-                    · předáno ke kontrole: {{ wr.interventions_handover }}
-                    · dokončeno: {{ wr.interventions_completed }}
-                  </span>
-                  {% if wr.max_urgency is not None %}
-                    {% if wr.max_urgency == 0 or wr.max_urgency == 1 %}
-                      <span class="badge bg-danger ms-1">Vysoká naléhavost</span>
-                    {% else %}
-                      <span class="badge bg-secondary ms-1">Střední / nízká naléhavost</span>
+                  </div>
+                  <div class="d-flex flex-wrap gap-1">
+                    {% if wr.interventions_proposed > 0 %}
+                      <span class="badge bg-secondary">Navrženo: {{ wr.interventions_proposed }}</span>
                     {% endif %}
-                  {% endif %}
+                    {% if wr.interventions_approved > 0 %}
+                      <span class="badge bg-primary">Schváleno: {{ wr.interventions_approved }}</span>
+                    {% endif %}
+                    {% if wr.interventions_handover > 0 %}
+                      <span class="badge bg-warning text-dark">Ke kontrole: {{ wr.interventions_handover }}</span>
+                    {% endif %}
+                    {% if wr.interventions_completed > 0 %}
+                      <span class="badge bg-success">Dokončeno: {{ wr.interventions_completed }}</span>
+                    {% endif %}
+
+                    {% if wr.max_urgency is not None %}
+                      {% if wr.max_urgency == 0 or wr.max_urgency == 1 %}
+                        <span class="badge bg-danger ms-1">Vysoká naléhavost</span>
+                      {% else %}
+                        <span class="badge bg-secondary ms-1">Střední / nízká naléhavost</span>
+                      {% endif %}
+                    {% endif %}
+                  </div>
                 </div>
               {% else %}
                 <div class="small mt-1 text-muted">
