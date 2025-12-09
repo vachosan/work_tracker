@@ -281,6 +281,16 @@ class PhotoDocumentation(models.Model):
     def __str__(self):
         return self.description or f"Photo #{self.id}"
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if not self.photo:
+            return
+        try:
+            from .views import get_photo_thumbnail
+        except Exception:
+            return
+        get_photo_thumbnail(self)
+
 
 class ProjectMembership(models.Model):
     class Role(models.TextChoices):

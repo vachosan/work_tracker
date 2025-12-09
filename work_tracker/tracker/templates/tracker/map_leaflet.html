@@ -678,6 +678,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const paramProject = urlParams.get('project');
   const paramLocate = urlParams.has('locate');
   const assessmentApiBase = "{% url 'workrecord_assessment_api' 0 %}".replace("0/assessment/", "");
+  const workRecordDetailApiBase = "{% url 'workrecord_detail_api' 0 %}".replace(/0\/?$/, "");
 
   // currently selected work record (for saving coordinates)
   let activeRecordId = paramRecord || null;
@@ -831,6 +832,7 @@ document.addEventListener('DOMContentLoaded', function () {
               lon: Number(selectedLon),
               photos: [],
               has_assessment: false,
+              has_photos: false,
             });
           }
           if (typeof updateMarkers === 'function') updateMarkers(projectSelect ? projectSelect.value : '');
@@ -865,11 +867,18 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   // Existing records and clustering
-  let records = JSON.parse(document.getElementById('coords-data').textContent)
-    .map(r => {
-      r.photos = Array.isArray(r.photos) ? r.photos : [];
-      return r;
-    });
+  let records = JSON.parse(document.getElementById('coords-data').textContent);
+  const detailLoadingRecords = new Set();
+
+  function detailApiUrlFor(recordId) {
+    return `${workRecordDetailApiBase}${recordId}/`;
+  }
+
+  function findRecordById(recordId) {
+    const idNum = Number(recordId);
+    if (Number.isNaN(idNum)) return null;
+    return records.find(r => Number(r.id) === idNum) || null;
+  }
   const clusterLayer = L.markerClusterGroup({ disableClusteringAtZoom: 17, spiderfyOnMaxZoom: true, chunkedLoading: true });
   map.addLayer(clusterLayer);
 
@@ -884,6 +893,53 @@ document.addEventListener('DOMContentLoaded', function () {
       return record.title.trim();
     }
     return String(record.id);
+  }
+
+  function buildPopupHtml(record, state = {}) {
+    const detailUrl = `/tracker/${record.id}/`;
+    const displayLabel = getRecordDisplayLabel(record);
+    const taxonHtml = (record.taxon && record.taxon.trim())
+      ? `<div class="wr-desc"><small class="text-muted">Taxon: ${record.taxon.trim()}</small></div>`
+      : '';
+    let photosHtml = '';
+    if (state.loading) {
+      photosHtml = `<div class="text-muted small mt-2 mb-0">${state.loading}</div>`;
+    } else if (state.errorMessage) {
+      photosHtml = `<div class="text-danger small mt-2 mb-0">${state.errorMessage}</div>`;
+    } else if (Array.isArray(record.photos) && record.photos.length) {
+      const photosForDisplay = record.photos.slice(0, 2);
+      photosHtml = `<div class="wr-photos">${photosForDisplay.map((photoObj, idx) =>
+        `<img class="wr-photo-thumb" src="${photoObj.thumb}" alt="Foto ${displayLabel}" loading="lazy" data-full="${photoObj.full}" data-record-id="${record.id}" data-photo-index="${idx}">`
+      ).join('')}</div>`;
+    } else if (record.has_photos) {
+      photosHtml = '<div class="text-muted small mt-2 mb-0">Fotky se načtou po kliknutí na bod.</div>';
+    } else {
+      photosHtml = '<div class="text-muted small mt-2 mb-0">Bez fotodokumentace</div>';
+    }
+    let popupHtml = `
+      <div class="wr-popup">
+        <div><a href="${detailUrl}" class="wr-title">${displayLabel}</a></div>
+        ${taxonHtml}
+        ${photosHtml}
+        <div class="wr-popup-actions">
+          <button type="button" class="wr-popup-btn photo" data-action="capture" data-record-id="${record.id}" title="Vyfotit">
+            <i class="bi bi-camera-fill"></i>
+          </button>
+          <button type="button" class="wr-popup-btn assess" data-action="assessment" data-record-id="${record.id}" title="Hodnocení stromu">
+            <i class="bi bi-clipboard2-pulse"></i>
+          </button>
+          <button type="button" class="wr-popup-btn intervention" data-action="intervention" data-record-id="${record.id}" title="Zásahy">
+            <i class="bi bi-tools"></i>
+          </button>
+          <a class="wr-popup-btn edit" href="/tracker/${record.id}/edit/" title="Upravit úkon">
+            <i class="bi bi-pencil-square"></i>
+          </a>
+        </div>
+      </div>`;
+    if (record.has_assessment) {
+      popupHtml = popupHtml.replace('wr-popup-btn assess', 'wr-popup-btn assess has-assessment');
+    }
+    return popupHtml;
   }
 
   function refreshLabels() {
@@ -928,43 +984,11 @@ document.addEventListener('DOMContentLoaded', function () {
         return String(r.project_id) === String(projectId);
       })
       .forEach(r => {
-        if (r.lat && r.lon) {
-          const m = L.marker([r.lat, r.lon], { icon: wrIcon });
+        if (r.lat !== null && r.lat !== undefined && r.lon !== null && r.lon !== undefined) {
+          const m = L.marker([Number(r.lat), Number(r.lon)], { icon: wrIcon });
           m.recordId = Number(r.id);
-          const detailUrl = `/tracker/${r.id}/`;
-          const displayLabel = getRecordDisplayLabel(r);
-          const photosForDisplay = Array.isArray(r.photos) ? r.photos.slice(0, 2) : [];
-          const taxonHtml = (r.taxon && r.taxon.trim())
-            ? `<div class="wr-desc"><small class="text-muted">Taxon: ${r.taxon.trim()}</small></div>`
-            : '';
-          const photosHtml = photosForDisplay.length
-            ? `<div class="wr-photos">${photosForDisplay.map((photoObj, idx) => `<img class="wr-photo-thumb" src="${photoObj.thumb}" alt="Foto ${displayLabel}" loading="lazy" data-full="${photoObj.full}" data-record-id="${r.id}" data-photo-index="${idx}">`).join('')}</div>`
-            : `<div class="text-muted small mt-2 mb-0">Bez fotodokumentace</div>`;
-          let popupHtml = `
-            <div class="wr-popup">
-              <div><a href="${detailUrl}" class="wr-title">${displayLabel}</a></div>
-              ${taxonHtml}
-              ${photosHtml}
-              <div class="wr-popup-actions">
-                <button type="button" class="wr-popup-btn photo" data-action="capture" data-record-id="${r.id}" title="Vyfotit">
-                  <i class="bi bi-camera-fill"></i>
-                </button>
-                <button type="button" class="wr-popup-btn assess" data-action="assessment" data-record-id="${r.id}" title="Hodnocení stromu">
-                  <i class="bi bi-clipboard2-pulse"></i>
-                </button>
-                <button type="button" class="wr-popup-btn intervention" data-action="intervention" data-record-id="${r.id}" title="Zásahy">
-                  <i class="bi bi-tools"></i>
-                </button>
-                <a class="wr-popup-btn edit" href="/tracker/${r.id}/edit/" title="Upravit úkon">
-                  <i class="bi bi-pencil-square"></i>
-                </a>
-              </div>
-            </div>`;
-          if (r.has_assessment) {
-            popupHtml = popupHtml.replace('wr-popup-btn assess', 'wr-popup-btn assess has-assessment');
-          }
-          m.bindPopup(popupHtml);
-          m.bindTooltip(displayLabel, {
+          m.bindPopup(buildPopupHtml(r));
+          m.bindTooltip(getRecordDisplayLabel(r), {
             direction: 'top',
             permanent: true,
             className: 'wr-label',
@@ -977,6 +1001,79 @@ document.addEventListener('DOMContentLoaded', function () {
     refreshLabels();
   }
   updateMarkers(projectSelect ? projectSelect.value : '');
+
+  function attachPopupActionHandlers(container) {
+    if (!container) return;
+    container.querySelectorAll('.wr-popup-btn[data-action="capture"]').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        triggerPhotoCapture(btn.getAttribute('data-record-id'));
+      });
+    });
+    container.querySelectorAll('.wr-popup-btn[data-action="assessment"]').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openAssessmentForRecord(btn.getAttribute('data-record-id'));
+      });
+    });
+    container.querySelectorAll('.wr-popup-btn[data-action="intervention"]').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openInterventionModal(btn.getAttribute('data-record-id'));
+      });
+    });
+  }
+
+  function refreshMarkerPopup(marker, stateOverrides = null) {
+    if (!marker || !marker.getPopup()) return;
+    const record = findRecordById(marker.recordId);
+    if (!record) return;
+    const state = stateOverrides || {};
+    marker.getPopup().setContent(buildPopupHtml(record, state));
+    const container = marker.getPopup().getElement();
+    if (container) {
+      attachPopupActionHandlers(container);
+    }
+  }
+
+  function ensureRecordDetails(record, marker) {
+    if (!record) return;
+    const recordId = Number(record.id);
+    if (Array.isArray(record.photos)) {
+      refreshMarkerPopup(marker);
+      return;
+    }
+    if (detailLoadingRecords.has(recordId)) {
+      return;
+    }
+    detailLoadingRecords.add(recordId);
+    refreshMarkerPopup(marker, { loading: 'Načítám fotky…' });
+    fetch(detailApiUrlFor(recordId), {
+      method: 'GET',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    })
+      .then(resp => resp.json().then(body => ({ status: resp.status, body })))
+      .then(({ status, body }) => {
+        if (status >= 400 || !body || body.status !== 'ok' || !body.record) {
+          const msg = body && body.msg ? body.msg : 'Nepodařilo se načíst detaily.';
+          throw new Error(msg);
+        }
+        const detail = body.record;
+        record.photos = Array.isArray(detail.photos) ? detail.photos : [];
+        record.has_photos = !!detail.has_photos;
+        record.has_assessment = !!detail.has_assessment;
+        refreshMarkerPopup(marker);
+      })
+      .catch(err => {
+        refreshMarkerPopup(marker, { errorMessage: err && err.message ? err.message : 'Nepodařilo se načíst detaily.' });
+      })
+      .finally(() => {
+        detailLoadingRecords.delete(recordId);
+      });
+  }
 
   // Deep-link handling
   (function(){
@@ -1088,6 +1185,7 @@ document.addEventListener('DOMContentLoaded', function () {
           lon: rec.lon,
           photos: [],
           has_assessment: false,
+          has_photos: false,
         });
         recordsForSelect.push({
           id: rec.id,
@@ -1648,6 +1746,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (rec) {
           if (!Array.isArray(rec.photos)) rec.photos = [];
           rec.photos.unshift(data.photo);
+          rec.has_photos = true;
         }
         closeCaptureModal();
         updateMarkers(projectSelect ? projectSelect.value : '');
@@ -1831,31 +1930,14 @@ document.addEventListener('DOMContentLoaded', function () {
   new LogoControl().addTo(map);
 
   map.on('popupopen', (e) => {
-    const container = e.popup.getElement();
-    if (!container) return;
-    container.querySelectorAll('.wr-popup-btn[data-action="capture"]').forEach(btn => {
-      btn.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        triggerPhotoCapture(btn.getAttribute('data-record-id'));
-      });
-    });
-    container.querySelectorAll('.wr-popup-btn[data-action="assessment"]').forEach(btn => {
-      btn.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        const rid = btn.getAttribute('data-record-id');
-        openAssessmentForRecord(rid);
-      });
-    });
-    container.querySelectorAll('.wr-popup-btn[data-action="intervention"]').forEach(btn => {
-      btn.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        const rid = btn.getAttribute('data-record-id');
-        openInterventionModal(rid);
-      });
-    });
+    if (!e || !e.popup) return;
+    attachPopupActionHandlers(e.popup.getElement());
+    const marker = e.popup._source;
+    if (!marker || typeof marker.recordId === 'undefined') return;
+    const record = findRecordById(marker.recordId);
+    if (record) {
+      ensureRecordDetails(record, marker);
+    }
   });
 });
 </script>

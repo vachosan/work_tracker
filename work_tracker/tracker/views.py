@@ -16,7 +16,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.files import File
 from django.core.files.base import ContentFile
 from django.core.paginator import Paginator
-from django.db.models import Max, F, Count, Q, Prefetch
+from django.db.models import Max, F, Count, Q, Prefetch, Exists, OuterRef
 from django.http import (
     StreamingHttpResponse,
     FileResponse,
@@ -684,12 +684,14 @@ def export_selected_zip(request, pk):
     if not user_can_view_project(request.user, project.pk):
         return redirect('work_record_list')
 
-    # vybrané nebo všechny úkony
-    if "export_all" in request.POST:
+    export_all_requested = bool(request.POST.get("export_all"))
+
+    if export_all_requested:
         work_records = WorkRecord.objects.filter(project=project)
     else:
         selected_ids = request.POST.getlist("selected_records")
         if not selected_ids:
+            messages.warning(request, "Vyberte prosím alespoň jeden záznam pro export.")
             return redirect("project_detail", pk=pk)
         work_records = WorkRecord.objects.filter(id__in=selected_ids, project=project)
 
@@ -699,6 +701,18 @@ def export_selected_zip(request, pk):
         name = re.sub(r'[^a-zA-Z0-9_-]+', '_', name)
         return name.strip('_') or 'ukon'
 
+    def file_chunks(file_obj):
+        if hasattr(file_obj, "chunks"):
+            for chunk in file_obj.chunks():
+                if chunk:
+                    yield chunk
+        else:
+            while True:
+                chunk = file_obj.read(64 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+
     # vytvoření streamovacího ZIP objektu
     z = zipstream.ZipFile(mode='w', compression=zipfile.ZIP_DEFLATED)
 
@@ -707,18 +721,38 @@ def export_selected_zip(request, pk):
         photos = PhotoDocumentation.objects.filter(work_record=record)
 
         for photo in photos:
-            if photo.photo and os.path.exists(photo.photo.path):
-                base_filename = os.path.basename(photo.photo.name)
-                ext = os.path.splitext(base_filename)[1] or ".jpg"
+            if not photo.photo:
+                continue
 
-                if photo.description:
-                    safe_name = slugify_folder(photo.description)
-                    filename = f"{safe_name}{ext}"
-                else:
-                    filename = base_filename
+            base_filename = os.path.basename(photo.photo.name)
+            ext = os.path.splitext(base_filename)[1] or ".jpg"
 
-                arcname = os.path.join(folder, filename)
-                z.write(photo.photo.path, arcname)
+            if photo.description:
+                safe_name = slugify_folder(photo.description)
+                filename = f"{safe_name}{ext}"
+            else:
+                filename = base_filename
+
+            arcname = os.path.join(folder, filename)
+            storage = photo.photo.storage
+            name = photo.photo.name
+            local_path = None
+            try:
+                local_path = storage.path(name)
+            except (NotImplementedError, AttributeError):
+                local_path = None
+
+            if local_path and os.path.exists(local_path):
+                z.write(local_path, arcname)
+                continue
+
+            try:
+                file_handle = storage.open(name, "rb")
+            except Exception:
+                continue
+
+            with file_handle as f:
+                z.write_iter(arcname, file_chunks(f))
 
     # příprava odpovědi
     today_str = date.today().strftime("%Y-%m-%d")
@@ -835,32 +869,27 @@ def get_photo_thumbnail(photo_obj, size=THUMB_MAX_SIZE):
 @login_required
 def map_leaflet_test(request):
     visible_projects = user_projects_qs(request.user)
-    records = (
+    base_records = (
         WorkRecord.objects
         .filter(Q(project__in=visible_projects) | Q(project__isnull=True))
         .select_related("project")
-        .prefetch_related(
-            "assessments",
-            Prefetch("photos", queryset=PhotoDocumentation.objects.order_by("-id"))
+    )
+    records = list(base_records.order_by("-id"))
+    coords_qs = (
+        base_records
+        .filter(latitude__isnull=False, longitude__isnull=False)
+        .annotate(
+            photo_count=Count("photos", distinct=True),
+            has_any_assessment=Exists(
+                TreeAssessment.objects.filter(work_record=OuterRef("pk"))
+            ),
         )
         .order_by("-id")
     )
     projects = visible_projects.order_by("name")
     projects_js = list(projects.values("id", "name"))
     coords = []
-    for r in records:
-        if not (r.latitude and r.longitude):
-            continue
-        photos_data = []
-        for photo in r.photos.all():
-            if not photo.photo:
-                continue
-            full_url = photo.photo.url
-            thumb_url = get_photo_thumbnail(photo)
-            photos_data.append({
-                "thumb": thumb_url or full_url,
-                "full": full_url,
-            })
+    for r in coords_qs:
         coords.append({
             "id": r.id,
             "title": r.title or "",
@@ -870,8 +899,8 @@ def map_leaflet_test(request):
             "project_id": r.project_id,
             "lat": r.latitude,
             "lon": r.longitude,
-            "photos": photos_data,
-            "has_assessment": r.latest_assessment is not None,
+            "has_assessment": bool(getattr(r, "has_any_assessment", False)),
+            "has_photos": bool(getattr(r, "photo_count", 0)),
         })
 
     records_for_select = [
@@ -881,7 +910,7 @@ def map_leaflet_test(request):
             "taxon": r.taxon or "",
             "external_tree_id": r.external_tree_id or "",
             "project_id": r.project_id,
-            "has_coords": bool(r.latitude and r.longitude),
+            "has_coords": (r.latitude is not None and r.longitude is not None),
         }
         for r in records
     ]
@@ -900,6 +929,57 @@ def map_leaflet_test(request):
         "intervention_note_data_json": intervention_note_data_json,
     }
     return render(request, "tracker/map_leaflet.html", context)
+
+
+@login_required
+@require_GET
+def workrecord_detail_api(request, pk):
+    work_record = (
+        WorkRecord.objects
+        .filter(pk=pk)
+        .select_related("project")
+        .prefetch_related(
+            Prefetch("photos", queryset=PhotoDocumentation.objects.order_by("-id"))
+        )
+        .first()
+    )
+    if not work_record:
+        return JsonResponse({"status": "error", "msg": "WorkRecord nenalezen"}, status=404)
+
+    if work_record.project_id and not user_can_view_project(request.user, work_record.project_id):
+        return JsonResponse({"status": "error", "msg": "Nemáte oprávnění."}, status=403)
+
+    photos = []
+    for photo in work_record.photos.all():
+        if not photo.photo:
+            continue
+        full_url = photo.photo.url
+        thumb_url = get_photo_thumbnail(photo)
+        photos.append({
+            "id": photo.id,
+            "thumb": thumb_url or full_url,
+            "full": full_url,
+            "description": photo.description or "",
+        })
+
+    has_assessment = work_record.assessments.exists()
+
+    return JsonResponse({
+        "status": "ok",
+        "record": {
+            "id": work_record.id,
+            "title": work_record.title or "",
+            "external_tree_id": work_record.external_tree_id or "",
+            "taxon": work_record.taxon or "",
+            "project": work_record.project.name if work_record.project else "",
+            "project_id": work_record.project_id,
+            "lat": work_record.latitude,
+            "lon": work_record.longitude,
+            "has_assessment": has_assessment,
+            "has_photos": bool(photos),
+            "photos": photos,
+        },
+    })
 
 @login_required
 @require_GET

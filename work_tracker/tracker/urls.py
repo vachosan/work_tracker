@@ -38,8 +38,12 @@ urlpatterns = [
         views.workrecord_assessment_api,
         name="workrecord_assessment_api",
     ),
+    path(
+        "api/work-records/<int:pk>/",
+        views.workrecord_detail_api,
+        name="workrecord_detail_api",
+    ),
     path("workrecord/<int:pk>/delete/", views.delete_work_record, name="delete_work_record"),
 
 
 ]
-

@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "storages",
     "tracker",
 ]
 
@@ -111,9 +112,24 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]  # může klidně dočasně neexistovat
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
-# Media
-MEDIA_URL = "/media/"
-MEDIA_ROOT = os.path.join(BASE_DIR, "media")
+# === S3 storage pro media (fotky) ===
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME", "arbomap-media")
+AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME", "eu-west-1")
+AWS_S3_SIGNATURE_VERSION = "s3v4"
+
+# doporučené nastavení s django-storages – nepoužívat ACL
+AWS_DEFAULT_ACL = None
+
+# bucket je veřejný → NECHCI podepisované URL
+AWS_QUERYSTRING_AUTH = False
+
+# MEDIA_URL bude ukazovat na S3 bucket včetně regionu
+MEDIA_URL = f"https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com/"
+
+# všechny FileField / ImageField půjdou do S3
+DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
 
 # Defaults
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
