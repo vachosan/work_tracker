@@ -105,19 +105,29 @@
   }
 
   /* tree detail panel */
-  #tree-panel {
+  #bottom-panel {
     position: fixed;
+    bottom: 0;
     left: 0;
     right: 0;
-    bottom: 0;
+    max-height: 60%;
+    background: #fff;
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.15);
+    overflow: hidden;
+    transform: translateY(100%);
+    transition: transform 0.25s ease-in-out;
+    z-index: 9999;
+  }
+  #bottom-panel.open {
+    transform: translateY(0);
+  }
+  #tree-panel {
+    border-top: 1px solid rgba(0, 0, 0, .12);
     max-height: 60vh;
     width: 100%;
     background: #fff;
-    border-top: 1px solid rgba(0, 0, 0, .12);
-    box-shadow: 0 -8px 30px rgba(0, 0, 0, .18);
     overflow-y: auto;
     padding: 16px;
-    z-index: 1500;
   }
   .tree-panel-inner {
     display: flex;
@@ -162,7 +172,7 @@
     display: none;
     align-items: center;
     justify-content: center;
-    z-index: 2000;
+    z-index: 12000;
   }
   #photoViewer.active { display: flex; }
   #photoViewer img {
@@ -199,7 +209,7 @@
     display: none;
     align-items: center;
     justify-content: center;
-    z-index: 2100;
+    z-index: 12500;
     padding: 16px;
   }
   .capture-modal.active { display: flex; }
@@ -323,7 +333,9 @@
   </button>
 </div>
 
-<div id="tree-panel" class="tree-panel d-none"></div>
+<div id="bottom-panel">
+  <div id="tree-panel" class="tree-panel"></div>
+</div>
 
 <!-- Photo viewer overlay -->
 <div id="photoViewer">
@@ -607,8 +619,18 @@ document.addEventListener('DOMContentLoaded', function () {
   const taxonCzechInput = document.getElementById('taxon_czech');
   const taxonLatinInput = document.getElementById('taxon_latin');
   const taxonGbifKeyInput = document.getElementById('taxon_gbif_key');
+  const bottomPanel = document.getElementById('bottom-panel');
   const treePanel = document.getElementById('tree-panel');
   let activeTreePanelRecordId = null;
+
+  function openBottomPanel() {
+    if (bottomPanel) bottomPanel.classList.add('open');
+  }
+
+  function closeBottomPanel() {
+    if (bottomPanel) bottomPanel.classList.remove('open');
+  }
+
   if (treePanel) {
     treePanel.addEventListener('click', (event) => {
       if (event.target.closest('.tree-panel-close')) {
@@ -771,6 +793,21 @@ document.addEventListener('DOMContentLoaded', function () {
     localStorage.setItem('wt_map_view', JSON.stringify({ center: [c.lat, c.lng], zoom: map.getZoom() }));
   });
 
+  let isDragging = false;
+  let isZooming = false;
+  map.on('dragstart', () => { isDragging = true; });
+  map.on('dragend', () => {
+    setTimeout(() => {
+      isDragging = false;
+    }, 0);
+  });
+  map.on('zoomstart', () => { isZooming = true; });
+  map.on('zoomend', () => {
+    setTimeout(() => {
+      isZooming = false;
+    }, 0);
+  });
+
   // Mapy.cz layer: aerial (orthophoto only)
   const aerial = L.tileLayer(
     `https://api.mapy.com/v1/maptiles/aerial/256/{z}/{x}/{y}?apikey=${API_KEY}`,
@@ -843,6 +880,9 @@ document.addEventListener('DOMContentLoaded', function () {
   let selectedLon = null;
   let marker = null;
   map.on('click', function (e) {
+    if (!isDragging && !isZooming) {
+      closeTreePanel();
+    }
     const { lat, lng } = e.latlng;
     selectedLat = lat.toFixed(7);
     selectedLon = lng.toFixed(7);
@@ -1020,7 +1060,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (activeTreePanelRecordId !== Number(record.id)) return;
     const state = stateOverrides || {};
     treePanel.innerHTML = renderTreeDetailHtml(record, state);
-    treePanel.classList.remove('d-none');
+    openBottomPanel();
     attachPopupActionHandlers(treePanel);
   }
 
@@ -1028,14 +1068,15 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!treePanel || !record) return;
     activeTreePanelRecordId = Number(record.id);
     treePanel.innerHTML = renderTreeDetailHtml(record, state);
-    treePanel.classList.remove('d-none');
+    openBottomPanel();
     attachPopupActionHandlers(treePanel);
     ensureRecordDetails(record);
   }
 
   function closeTreePanel() {
     if (!treePanel) return;
-    treePanel.classList.add('d-none');
+    treePanel.innerHTML = '';
+    closeBottomPanel();
     activeTreePanelRecordId = null;
   }
 
@@ -1839,6 +1880,7 @@ document.addEventListener('DOMContentLoaded', function () {
           if (!Array.isArray(rec.photos)) rec.photos = [];
           rec.photos.unshift(data.photo);
           rec.has_photos = true;
+          refreshTreePanel(rec);
         }
         closeCaptureModal();
         updateMarkers(projectSelect ? projectSelect.value : '');
@@ -2024,5 +2066,3 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 </script>
 {% endblock %}
-
-
