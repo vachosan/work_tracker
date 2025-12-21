@@ -866,8 +866,7 @@ def get_photo_thumbnail(photo_obj, size=THUMB_MAX_SIZE):
         return photo_obj.photo.url
 
 
-@login_required
-def map_leaflet_test(request):
+def _build_map_mapui_context(request):
     visible_projects = user_projects_qs(request.user)
     base_records = (
         WorkRecord.objects
@@ -916,9 +915,11 @@ def map_leaflet_test(request):
     ]
 
     intervention_form = TreeInterventionForm()
-    intervention_note_data_json = mark_safe(json.dumps(intervention_form.intervention_type_note_data))
+    intervention_note_data_json = mark_safe(
+        json.dumps(intervention_form.intervention_type_note_data)
+    )
 
-    context = {
+    return {
         "mapy_key": settings.MAPY_API_KEY,
         "projects": projects,
         "projects_js": projects_js,
@@ -928,6 +929,11 @@ def map_leaflet_test(request):
         "intervention_form": intervention_form,
         "intervention_note_data_json": intervention_note_data_json,
     }
+
+
+@login_required
+def map_leaflet_test(request):
+    context = _build_map_mapui_context(request)
     return render(request, "tracker/map_leaflet.html", context)
 
 
@@ -993,9 +999,7 @@ def workrecords_geojson(request):
 @login_required
 def map_gl_pilot(request):
     """Temporary pilot page to verify MapLibre GL rendering."""
-    context = {
-        "mapy_key": settings.MAPY_API_KEY,
-    }
+    context = _build_map_mapui_context(request)
     return render(request, "tracker/map_gl_pilot.html", context)
 
 

@@ -1,6 +1,8 @@
 {% extends "tracker/base.html" %}
+{% load static %}
 {% block title %}MapLibre Pilot{% endblock %}
 {% block content %}
+<link rel="stylesheet" href="{% static 'css/map_ui.css' %}">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css">
 <style>
   html, body { height: 100%; overflow: hidden; }
@@ -36,9 +38,21 @@
 <div id="map"></div>
 <div id="wr-label-overlay"></div>
 
+{% include "tracker/partials/map_ui.html" %}
+
 <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
 <script>
-  document.addEventListener('DOMContentLoaded', () => {
+  window.workTrackerMapUiConfig = {
+    workRecordDetailApiBase: "{% url 'workrecord_detail_api' 0 %}".replace(/0\/?$/, ""),
+    assessmentApiBase: "{% url 'workrecord_assessment_api' 0 %}".replace("0/assessment/", ""),
+    mapUploadPhotoUrl: "{% url 'map_upload_photo' %}",
+    csrfToken: "{{ csrf_token }}",
+    interventionNoteData: {{ intervention_note_data_json|default:"{}" | safe }},
+  };
+</script>
+<script src="{% static 'js/map_ui.js' %}"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
     if (!window.maplibregl) {
       console.error('MapLibre GL JS is not available.');
       return;
@@ -46,10 +60,245 @@
 
     const API_KEY = "{{ mapy_key|default:'' }}";
     const WORKRECORDS_GEOJSON_URL = "{% url 'workrecords_geojson' %}";
+    const MAP_CREATE_RECORD_URL = "{% url 'map_create_work_record' %}";
+    const CSRF_TOKEN = "{{ csrf_token }}";
+    const taxonSuggestUrl = "{% url 'gbif_taxon_suggest' %}";
     const LABEL_MIN_ZOOM = 17;
     const LABEL_LIMIT = 200;
     const labelOverlay = document.getElementById('wr-label-overlay');
     let workrecordFeatures = [];
+    let workrecordFeatureCollection = null;
+    let selectedLat = null;
+    let selectedLon = null;
+    let newRecordCoords = null;
+
+    const newRecordModal = document.getElementById('newRecordModal');
+    const newRecordTitleInput = document.getElementById('newRecordTitle');
+    const newRecordSaveBtn = document.getElementById('newRecordSaveBtn');
+    const newRecordCancelBtn = document.getElementById('newRecordCancelBtn');
+    const newRecordCloseBtn = document.getElementById('newRecordCloseBtn');
+    const createFab = document.getElementById('createFab');
+    const projectSelect = document.getElementById('projectSelect');
+    const taxonDisplayInput = document.getElementById('taxon_display');
+    const taxonCzechInput = document.getElementById('taxon_czech');
+    const taxonLatinInput = document.getElementById('taxon_latin');
+    const taxonGbifKeyInput = document.getElementById('taxon_gbif_key');
+    const taxonSuggestionsList = document.getElementById('taxon-suggestions');
+    const taxonFieldWrapper = document.getElementById('taxon-field-wrapper');
+
+    function hideTaxonSuggestions() {
+      if (!taxonSuggestionsList) return;
+      taxonSuggestionsList.classList.remove('visible');
+      taxonSuggestionsList.innerHTML = '';
+    }
+
+    function renderTaxonSuggestions(items) {
+      if (!taxonSuggestionsList) return;
+      taxonSuggestionsList.innerHTML = '';
+      if (!items.length) {
+        hideTaxonSuggestions();
+        return;
+      }
+      items.forEach(item => {
+        const li = document.createElement('li');
+        const label = item.display || item.scientific_name || item.vernacular_name || '';
+        li.textContent = label;
+        li.className = 'list-group-item list-group-item-action';
+        li.addEventListener('click', () => {
+          if (taxonDisplayInput) taxonDisplayInput.value = label;
+          if (taxonCzechInput) taxonCzechInput.value = item.vernacular_name || '';
+          if (taxonLatinInput) taxonLatinInput.value = item.scientific_name || '';
+          if (taxonGbifKeyInput) taxonGbifKeyInput.value = item.gbif_key || '';
+          hideTaxonSuggestions();
+        });
+        taxonSuggestionsList.appendChild(li);
+      });
+      taxonSuggestionsList.classList.add('visible');
+    }
+
+    function requestTaxonSuggestions(query) {
+      if (!taxonSuggestUrl || !query || query.length < 2) {
+        hideTaxonSuggestions();
+        return;
+      }
+      fetch(`${taxonSuggestUrl}?q=${encodeURIComponent(query)}`)
+        .then(resp => resp.ok ? resp.json() : Promise.resolve({ results: [] }))
+        .then(data => {
+          renderTaxonSuggestions((data && data.results) || []);
+        })
+        .catch(() => hideTaxonSuggestions());
+    }
+
+    if (taxonDisplayInput) {
+      taxonDisplayInput.addEventListener('input', () => {
+        const value = taxonDisplayInput.value.trim();
+        if (value.length < 2) {
+          hideTaxonSuggestions();
+          return;
+        }
+        requestTaxonSuggestions(value);
+      });
+      taxonDisplayInput.addEventListener('focus', () => {
+        if (taxonSuggestionsList && taxonSuggestionsList.childElementCount) {
+          taxonSuggestionsList.classList.add('visible');
+        }
+      });
+    }
+
+    document.addEventListener('click', (event) => {
+      if (taxonFieldWrapper && !taxonFieldWrapper.contains(event.target)) {
+        hideTaxonSuggestions();
+      }
+    });
+
+    function resetNewRecordForm() {
+      if (newRecordTitleInput) newRecordTitleInput.value = '';
+      if (taxonDisplayInput) taxonDisplayInput.value = '';
+      if (taxonCzechInput) taxonCzechInput.value = '';
+      if (taxonLatinInput) taxonLatinInput.value = '';
+      if (taxonGbifKeyInput) taxonGbifKeyInput.value = '';
+      hideTaxonSuggestions();
+    }
+
+    function openNewRecordModal() {
+      if (!newRecordModal) return;
+      newRecordModal.classList.add('active');
+    }
+
+    function closeNewRecordModal() {
+      if (!newRecordModal) return;
+      newRecordModal.classList.remove('active');
+      hideTaxonSuggestions();
+    }
+
+    if (newRecordCancelBtn) {
+      newRecordCancelBtn.addEventListener('click', closeNewRecordModal);
+    }
+    if (newRecordCloseBtn) {
+      newRecordCloseBtn.addEventListener('click', closeNewRecordModal);
+    }
+    if (newRecordModal) {
+      newRecordModal.addEventListener('click', (e) => {
+        if (e.target === newRecordModal) {
+          closeNewRecordModal();
+        }
+      });
+    }
+
+    function updateNewRecordMarker(lngLat) {
+      newRecordCoords = [lngLat.lng, lngLat.lat];
+      const source = map.getSource('new-record-point');
+      if (!source) return;
+      source.setData({
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: newRecordCoords },
+            properties: {},
+          },
+        ],
+      });
+    }
+
+    function clearNewRecordMarker() {
+      const source = map.getSource('new-record-point');
+      if (source) {
+        source.setData({ type: 'FeatureCollection', features: [] });
+      }
+      newRecordCoords = null;
+    }
+
+    function submitNewRecord() {
+      if (!newRecordSaveBtn) return;
+      if (selectedLat === null || selectedLon === null) {
+        alert('Nejdřív klikni do mapy a vyber bod.');
+        return;
+      }
+      const title = newRecordTitleInput ? newRecordTitleInput.value.trim() : '';
+      const displayTaxon = taxonDisplayInput ? taxonDisplayInput.value.trim() : '';
+      const latinTaxon = taxonLatinInput ? taxonLatinInput.value.trim() : '';
+      const czechTaxon = taxonCzechInput ? taxonCzechInput.value.trim() : '';
+      const gbifKeyValue = taxonGbifKeyInput ? taxonGbifKeyInput.value.trim() : '';
+      const projectId = projectSelect ? projectSelect.value : '';
+      const taxonValue = latinTaxon || displayTaxon;
+
+      newRecordSaveBtn.disabled = true;
+      const payload = new URLSearchParams({
+        title: title,
+        taxon: taxonValue,
+        taxon_czech: czechTaxon,
+        taxon_latin: latinTaxon,
+        taxon_gbif_key: gbifKeyValue,
+        date: '',
+        project_id: projectId && projectId !== 'none' ? projectId : '',
+        latitude: selectedLat,
+        longitude: selectedLon,
+      });
+
+      fetch(MAP_CREATE_RECORD_URL, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': CSRF_TOKEN,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: payload.toString(),
+      })
+        .then(resp => resp.json())
+        .then(data => {
+          if (data.status === 'ok' && data.record) {
+            resetNewRecordForm();
+            closeNewRecordModal();
+            clearNewRecordMarker();
+            selectedLat = null;
+            selectedLon = null;
+            const rec = data.record;
+            const label = rec.external_tree_id || rec.title || `WR ${rec.id}`;
+            const feature = {
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: [rec.lon, rec.lat] },
+              properties: { id: rec.id, label },
+            };
+            workrecordFeatures.push({ id: rec.id, label, coordinates: [rec.lon, rec.lat] });
+            if (!workrecordFeatureCollection) {
+              workrecordFeatureCollection = { type: 'FeatureCollection', features: [] };
+            }
+            workrecordFeatureCollection.features.push(feature);
+            const src = map.getSource('workrecords');
+            if (src && typeof src.setData === 'function') {
+              src.setData(workrecordFeatureCollection);
+            }
+            renderLabelOverlay();
+            if (window.openWorkRecordPanel) {
+              window.openWorkRecordPanel(data.record.id);
+            }
+          } else {
+            alert(data.msg || 'Nepodařilo se uložit strom.');
+          }
+        })
+        .catch(() => {
+          alert('Chyba při ukládání stromu.');
+        })
+        .finally(() => {
+          newRecordSaveBtn.disabled = false;
+        });
+    }
+
+    if (newRecordSaveBtn) {
+      newRecordSaveBtn.addEventListener('click', submitNewRecord);
+    }
+
+    if (createFab) {
+      createFab.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!newRecordCoords) {
+          alert('Nejdřív vyber místo kliknutím do mapy.');
+          return;
+        }
+        openNewRecordModal();
+      });
+    }
     const sanitizeUrl = (value) => {
       if (typeof value !== 'string') return value;
       const [base] = value.split('?');
@@ -184,6 +433,8 @@
 
     map.on('load', () => {
       console.log('Map loaded');
+      const coarsePointer = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+      const HIT_TOLERANCE = coarsePointer ? 12 : 6;
 
       fetch(WORKRECORDS_GEOJSON_URL)
         .then(resp => resp.json())
@@ -203,6 +454,7 @@
               };
             })
             .filter(Boolean);
+          workrecordFeatureCollection = fc;
           renderLabelOverlay();
         })
         .catch(err => console.error('GeoJSON debug error', err));
@@ -261,9 +513,36 @@
         },
       });
 
-      map.on('click', 'workrecord-clusters', (event) => {
-        const features = map.queryRenderedFeatures(event.point, { layers: ['workrecord-clusters'] });
-        const feature = features && features[0];
+      map.addLayer({
+        id: 'workrecord-hitarea',
+        type: 'circle',
+        source: 'workrecords',
+        filter: ['!', ['has', 'point_count']],
+        paint: {
+          'circle-color': '#000000',
+          'circle-opacity': 0,
+          'circle-radius': 16,
+        },
+      });
+
+      map.addSource('new-record-point', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+
+      map.addLayer({
+        id: 'new-record-point',
+        type: 'circle',
+        source: 'new-record-point',
+        paint: {
+          'circle-color': '#10b981',
+          'circle-radius': 7,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#fff',
+        },
+      });
+
+      const expandCluster = (feature) => {
         if (!feature) return;
         const rawClusterId = feature.properties && feature.properties.cluster_id;
         const clusterId = rawClusterId !== undefined ? Number(rawClusterId) : null;
@@ -281,6 +560,13 @@
             zoom,
           });
         });
+      };
+
+      map.on('click', 'workrecord-clusters', (event) => {
+        const features = map.queryRenderedFeatures(event.point, { layers: ['workrecord-clusters'] });
+        const feature = features && features[0];
+        if (!feature) return;
+        expandCluster(feature);
       });
 
       const handleWorkRecordClick = (event, layers) => {
@@ -289,13 +575,17 @@
         const feature = features && features[0];
         if (!feature) return;
         const recordId = feature.properties && feature.properties.id;
-        if (recordId) {
-          alert(`WorkRecord ${recordId}`);
+        const label = feature.properties && feature.properties.label;
+        if (recordId && window.openWorkRecordPanel) {
+          window.openWorkRecordPanel(recordId, { label });
         }
       };
 
       map.on('click', 'workrecord-unclustered', (event) => {
         handleWorkRecordClick(event, ['workrecord-unclustered']);
+      });
+      map.on('click', 'workrecord-hitarea', (event) => {
+        handleWorkRecordClick(event, ['workrecord-hitarea']);
       });
 
       const setPointer = () => { map.getCanvas().style.cursor = 'pointer'; };
@@ -304,6 +594,39 @@
       map.on('mouseleave', 'workrecord-clusters', resetPointer);
       map.on('mouseenter', 'workrecord-unclustered', setPointer);
       map.on('mouseleave', 'workrecord-unclustered', resetPointer);
+      map.on('mouseenter', 'workrecord-hitarea', setPointer);
+      map.on('mouseleave', 'workrecord-hitarea', resetPointer);
+      map.on('click', (event) => {
+        const bbox = [
+          [event.point.x - HIT_TOLERANCE, event.point.y - HIT_TOLERANCE],
+          [event.point.x + HIT_TOLERANCE, event.point.y + HIT_TOLERANCE],
+        ];
+        const unclustered = map.queryRenderedFeatures(bbox, { layers: ['workrecord-hitarea', 'workrecord-unclustered'] });
+        if (unclustered && unclustered.length) {
+          const recordId = unclustered[0].properties && unclustered[0].properties.id;
+          const label = unclustered[0].properties && unclustered[0].properties.label;
+          if (recordId && window.openWorkRecordPanel) {
+            window.openWorkRecordPanel(recordId, { label });
+          }
+          return;
+        }
+        const clusters = map.queryRenderedFeatures(bbox, { layers: ['workrecord-clusters'] });
+        if (clusters && clusters.length) {
+          expandCluster(clusters[0]);
+          return;
+        }
+        const lngLat = event.lngLat;
+        if (!lngLat) return;
+        if (window.closeWorkRecordPanel) {
+          window.closeWorkRecordPanel();
+        }
+        selectedLat = lngLat.lat.toFixed(7);
+        selectedLon = lngLat.lng.toFixed(7);
+        window.selectedLat = selectedLat;
+        window.selectedLon = selectedLon;
+        updateNewRecordMarker(lngLat);
+        resetNewRecordForm();
+      });
     });
     map.on('error', (e) => {
       const err = sanitizeErrorValue(e?.error || e);

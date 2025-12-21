@@ -1,0 +1,260 @@
+<!-- Top bar overlay -->
+<div id="map-topbar">
+  <a id="mapBackLink" href="{% url 'work_record_list' %}" class="btn btn-light btn-sm rounded-pill shadow-sm">
+    <i class="bi bi-arrow-left"></i> Zpět
+  </a>
+  <div class="fw-semibold small text-dark">Mapa</div>
+  <button class="btn btn-light btn-sm rounded-pill shadow-sm" type="button" data-bs-toggle="offcanvas" data-bs-target="#mapControlsPanel" aria-controls="mapControlsPanel" title="Nastavení">
+    <i class="bi bi-sliders"></i>
+  </button>
+</div>
+
+<!-- Floating action buttons (bottom-right) -->
+<div id="map-fabs" class="d-flex flex-column align-items-end gap-2">
+  <button id="saveFab" class="btn btn-success rounded-circle shadow fab-btn" type="button" title="Uložit polohu" aria-label="Uložit polohu" disabled>
+    <i class="bi bi-check-lg"></i>
+  </button>
+  <button id="createFab" class="btn btn-primary rounded-circle shadow fab-btn" type="button" title="Přidat záznam" aria-label="Přidat záznam">
+    <i class="bi bi-plus-lg"></i>
+  </button>
+</div>
+
+<div id="bottom-panel">
+  <div id="tree-panel" class="tree-panel"></div>
+</div>
+
+<!-- Photo viewer overlay -->
+<div id="photoViewer">
+  <button class="pv-btn pv-close" type="button">&times;</button>
+  <button class="pv-btn pv-prev" type="button">&#8249;</button>
+  <img src="" alt="Photo preview">
+  <button class="pv-btn pv-next" type="button">&#8250;</button>
+</div>
+
+<!-- Hidden input for photo capture -->
+<input type="file" id="photoCaptureInput" accept="image/*" capture="environment" class="d-none">
+
+<!-- Capture modal -->
+<div id="photoCaptureModal" class="capture-modal">
+  <div class="capture-card">
+    <img id="capturePreview" src="" alt="Nová fotka">
+    <div class="capture-actions">
+      <button id="captureCommentToggle" type="button" class="btn btn-outline-light btn-sm">Přidat komentář</button>
+      <div class="btn-group">
+        <button id="captureSaveBtn" type="button" class="btn btn-warning btn-sm">Uložit fotku</button>
+        <button id="captureCancelBtn" type="button" class="btn btn-secondary btn-sm">Zrušit</button>
+      </div>
+    </div>
+    <div id="captureCommentWrap" class="collapse mt-2">
+      <textarea id="captureCommentInput" class="form-control" rows="2" placeholder="Krátký komentář"></textarea>
+    </div>
+  </div>
+</div>
+
+<div id="assessmentModal" class="capture-modal">
+  <div class="capture-card">
+    <div class="d-flex justify-content-between align-items-center mb-1">
+      <h6 class="mb-0">Hodnocení stromu</h6>
+      <button type="button" class="btn btn-sm btn-outline-light rounded-circle px-2 py-0" id="assessmentCloseBtn" aria-label="Zavřít">&times;</button>
+    </div>
+
+    <div class="vstack gap-2 small">
+      <input type="hidden" id="assessmentWorkRecordId" />
+
+      <div class="row g-2">
+        <div class="col-6">
+          <label for="assessmentDbh" class="form-label mb-1">Průměr kmene [cm]</label>
+          <input type="number" step="0.1" class="form-control form-control-sm" id="assessmentDbh" placeholder="např. 45">
+        </div>
+        <div class="col-6">
+          <label for="assessmentHeight" class="form-label mb-1">Výška stromu [m]</label>
+          <input type="number" step="0.1" class="form-control form-control-sm" id="assessmentHeight" placeholder="např. 18">
+        </div>
+      </div>
+
+      <div class="mb-1">
+        <label class="form-label mb-1" for="assessmentPhysAge">Fyziologické stáří (1–5)</label>
+        <input type="range" min="1" max="5" step="1" id="assessmentPhysAge" class="form-range">
+        <div class="text-end"><small>Aktuální: <span id="assessmentPhysAgeValue">–</span></small></div>
+      </div>
+
+      <div class="mb-1">
+        <label class="form-label mb-1" for="assessmentVitality">Vitalita (1–5)</label>
+        <input type="range" min="1" max="5" step="1" id="assessmentVitality" class="form-range">
+        <div class="text-end"><small>Aktuální: <span id="assessmentVitalityValue">–</span></small></div>
+      </div>
+
+      <div class="mb-1">
+        <label class="form-label mb-1" for="assessmentHealth">Zdravotní stav (1–5)</label>
+        <input type="range" min="1" max="5" step="1" id="assessmentHealth" class="form-range">
+        <div class="text-end"><small>Aktuální: <span id="assessmentHealthValue">–</span></small></div>
+      </div>
+
+      <div class="mb-2">
+        <label class="form-label mb-1" for="assessmentStability">Stabilita (1–5)</label>
+        <input type="range" min="1" max="5" step="1" id="assessmentStability" class="form-range">
+        <div class="text-end"><small>Aktuální: <span id="assessmentStabilityValue">–</span></small></div>
+      </div>
+
+      <div class="mb-2">
+        <label class="form-label mb-1" for="assessmentPerspectiveSlider">Perspektiva stromu (a–c)</label>
+        <input type="range" min="1" max="3" step="1" id="assessmentPerspectiveSlider" class="form-range">
+        <div class="text-end">
+          <small>Aktuální: <span id="assessmentPerspectiveValue">a – dlouhodobě perspektivní</span></small>
+        </div>
+      </div>
+    </div>
+
+    <div class="capture-actions mt-2">
+      <div class="small text-muted">
+        Hodnocení se ukládá k vybranému úkonu.
+      </div>
+      <div class="btn-group">
+        <button id="assessmentSaveBtn" type="button" class="btn btn-warning btn-sm">Uložit hodnocení</button>
+        <button id="assessmentCancelBtn" type="button" class="btn btn-secondary btn-sm">Zrušit</button>
+      </div>
+    </div>
+
+    <div id="assessmentMessage" class="mt-2 small"></div>
+  </div>
+</div>
+
+<div id="interventionModal" class="capture-modal" data-api-template="{% url 'tree_intervention_api' 0 %}">
+  <div class="capture-card">
+    <div class="d-flex justify-content-between align-items-center mb-1">
+      <h6 class="mb-0">Zásah na stromě</h6>
+      <button type="button" class="btn btn-sm btn-outline-light rounded-circle px-2 py-0" id="interventionCloseBtn" aria-label="Zavřít">&times;</button>
+    </div>
+
+    <form id="interventionForm" method="post" action="{% url 'tree_intervention_api' 0 %}" class="vstack gap-2">
+      {% csrf_token %}
+      <input type="hidden" name="tree_id" id="interventionTreeId" value="">
+
+      <div class="row g-2">
+        <div class="col-12">
+          {{ intervention_form.intervention_type.label_tag }}
+          {{ intervention_form.intervention_type }}
+          <div id="interventionNoteHintModal" class="form-text text-muted"></div>
+        </div>
+        <div class="col-12">
+          {{ intervention_form.description.label_tag }}
+          {{ intervention_form.description }}
+        </div>
+        <div class="col-6">
+          {{ intervention_form.urgency.label_tag }}
+          {{ intervention_form.urgency }}
+        </div>
+        <div class="col-6">
+          {{ intervention_form.status.label_tag }}
+          {{ intervention_form.status }}
+        </div>
+        <div class="col-6">
+          {{ intervention_form.due_date.label_tag }}
+          {{ intervention_form.due_date }}
+        </div>
+        <div class="col-6">
+          {{ intervention_form.assigned_to.label_tag }}
+          {{ intervention_form.assigned_to }}
+        </div>
+      </div>
+
+      <div id="interventionFormErrors" class="text-danger small"></div>
+
+      <div class="d-flex justify-content-end gap-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="interventionCancelBtn">
+          Zrušit
+        </button>
+        <button type="submit" class="btn btn-primary btn-sm" id="interventionSaveBtn">
+          Uložit zásah
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Less prominent locate button (bottom-left) -->
+<div id="map-locate">
+  <button id="locateBtn" class="btn btn-light btn-sm rounded-circle shadow locate-btn" type="button" title="Zaměřit na mou polohu" aria-label="Zaměřit na mou polohu">
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="2" opacity="0.95" />
+      <line x1="12" y1="2" x2="12" y2="6" stroke="currentColor" stroke-width="2" opacity="0.95" />
+      <line x1="12" y1="18" x2="12" y2="22" stroke="currentColor" stroke-width="2" opacity="0.95" />
+      <line x1="2" y1="12" x2="6" y2="12" stroke="currentColor" stroke-width="2" opacity="0.95" />
+      <line x1="18" y1="12" x2="22" y2="12" stroke="currentColor" stroke-width="2" opacity="0.95" />
+      <circle cx="12" cy="12" r="1.8" fill="currentColor" opacity="0.95" />
+    </svg>
+  </button>
+</div>
+
+<div id="newRecordModal" class="capture-modal">
+  <div class="capture-card">
+    <div class="d-flex justify-content-between align-items-center mb-1">
+      <h6 class="mb-0">Nový strom</h6>
+      <button type="button" class="btn btn-sm btn-outline-light rounded-circle px-2 py-0" id="newRecordCloseBtn" aria-label="Zavřít">&times;</button>
+    </div>
+    <div class="vstack gap-3">
+      <div>
+        <label class="form-label mb-1" for="newRecordTitle">Číslo stromu (externí)</label>
+        <input type="text" id="newRecordTitle" class="form-control form-control-sm" placeholder="Číslo stromu">
+      </div>
+      <div id="taxon-field-wrapper" class="taxon-autocomplete position-relative">
+        <label class="form-label mb-1" for="taxon_display">Taxon</label>
+        <input
+          type="text"
+          id="taxon_display"
+          class="form-control form-control-sm"
+          placeholder="Taxon"
+          autocomplete="off"
+        >
+        <ul id="taxon-suggestions" class="taxon-suggestions"></ul>
+        <input type="hidden" id="taxon_czech" name="taxon_czech">
+        <input type="hidden" id="taxon_latin" name="taxon_latin">
+        <input type="hidden" id="taxon_gbif_key" name="taxon_gbif_key">
+      </div>
+    </div>
+    <div class="capture-actions mt-2">
+      <div class="small text-muted">
+        Souřadnice se převezmou z vybraného bodu v mapě.
+      </div>
+      <div class="btn-group">
+        <button id="newRecordSaveBtn" type="button" class="btn btn-warning btn-sm">Uložit strom</button>
+        <button id="newRecordCancelBtn" type="button" class="btn btn-secondary btn-sm">Zrušit</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Controls offcanvas -->
+<div class="offcanvas offcanvas-top" tabindex="-1" id="mapControlsPanel" aria-labelledby="mapControlsLabel" style="height:auto; max-height:75vh;">
+  <div class="offcanvas-header py-2">
+    <h6 class="offcanvas-title" id="mapControlsLabel">Nastavení a uložení</h6>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Zavřít"></button>
+  </div>
+  <div class="offcanvas-body">
+    <label for="projectSelect" class="form-label">Vyber projekt:</label>
+    <select id="projectSelect" class="form-select mb-3">
+      <option value="">Všechny projekty</option>
+      <option value="none">Bez projektu</option>
+      {% for p in projects %}
+        <option value="{{ p.id }}">{{ p.name }}</option>
+      {% endfor %}
+    </select>
+
+    <div class="d-flex flex-column gap-2">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="labelsCheckbox" checked>
+        <label class="form-check-label small" for="labelsCheckbox">
+          Zobrazit názvy bodů
+        </label>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <label class="form-label small mb-0" for="labelSizeSelect">Velikost popisku:</label>
+        <select id="labelSizeSelect" class="form-select form-select-sm" style="max-width: 140px;">
+          <option value="small" selected>Menší</option>
+          <option value="large">Větší</option>
+        </select>
+      </div>
+      <div class="small text-muted">Popisky se zobrazí jen při maximálním přiblížení.</div>
+    </div>
+  </div>
+</div>
