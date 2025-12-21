@@ -932,6 +932,62 @@ def map_leaflet_test(request):
 
 
 @login_required
+def workrecords_geojson(request):
+    """
+    GeoJSON feed with coordinates of WorkRecords (pilot usage for MapLibre map).
+    """
+    qs = WorkRecord.objects.filter(
+        latitude__isnull=False,
+        longitude__isnull=False,
+    ).values("id", "latitude", "longitude")
+
+    bbox_param = request.GET.get("bbox")
+    if bbox_param:
+        try:
+            min_lon, min_lat, max_lon, max_lat = [float(part) for part in bbox_param.split(",")]
+        except (TypeError, ValueError):
+            return JsonResponse({"error": "Invalid bbox parameter"}, status=400)
+        if min_lon > max_lon:
+            min_lon, max_lon = max_lon, min_lon
+        if min_lat > max_lat:
+            min_lat, max_lat = max_lat, min_lat
+        qs = qs.filter(
+            longitude__gte=min_lon,
+            longitude__lte=max_lon,
+            latitude__gte=min_lat,
+            latitude__lte=max_lat,
+        )
+
+    features = [
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [item["longitude"], item["latitude"]],
+            },
+            "properties": {"id": item["id"]},
+        }
+        for item in qs
+    ]
+    return JsonResponse(
+        {
+            "type": "FeatureCollection",
+            "features": features,
+        },
+        safe=False,
+    )
+
+
+@login_required
+def map_gl_pilot(request):
+    """Temporary pilot page to verify MapLibre GL rendering."""
+    context = {
+        "mapy_key": settings.MAPY_API_KEY,
+    }
+    return render(request, "tracker/map_gl_pilot.html", context)
+
+
+@login_required
 @require_GET
 def workrecord_detail_api(request, pk):
     work_record = (

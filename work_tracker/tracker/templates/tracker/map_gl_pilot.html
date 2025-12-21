@@ -1,0 +1,206 @@
+{% extends "tracker/base.html" %}
+{% block title %}MapLibre Pilot{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css">
+<style>
+  html, body { height: 100%; overflow: hidden; }
+  body { margin: 0; background: #000; }
+  nav.navbar,
+  footer { display: none !important; }
+  main.container { padding: 0 !important; max-width: none; }
+  #map {
+    position: fixed;
+    inset: 0;
+  }
+</style>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    if (!window.maplibregl) {
+      console.error('MapLibre GL JS is not available.');
+      return;
+    }
+
+    const API_KEY = "{{ mapy_key|default:'' }}";
+    const WORKRECORDS_GEOJSON_URL = "{% url 'workrecords_geojson' %}";
+    const sanitizeUrl = (value) => {
+      if (typeof value !== 'string') return value;
+      const [base] = value.split('?');
+      return base;
+    };
+    const sanitizeErrorValue = (value) => {
+      if (!value) return value;
+      if (typeof value === 'string') {
+        return value.replace(/([?&])apikey=[^&]+/gi, '$1apikey=***');
+      }
+      if (typeof value === 'object') {
+        const clone = Array.isArray(value) ? [...value] : { ...value };
+        if (clone.url) clone.url = sanitizeUrl(clone.url);
+        if (clone.resource && typeof clone.resource === 'object' && clone.resource.url) {
+          clone.resource = { ...clone.resource, url: sanitizeUrl(clone.resource.url) };
+        }
+        return clone;
+      }
+      return value;
+    };
+
+    const aerialTiles = `https://api.mapy.com/v1/maptiles/aerial/256/{z}/{x}/{y}?apikey=${API_KEY}`;
+    const namesTiles = `https://api.mapy.com/v1/maptiles/names-overlay/256/{z}/{x}/{y}?apikey=${API_KEY}`;
+
+    if (!API_KEY) {
+      console.error('MapLibre error', 'Missing Mapy.com API key.');
+    }
+    console.log('Mapy tiles configured', {
+      aerial: sanitizeUrl(aerialTiles),
+      names: sanitizeUrl(namesTiles),
+    });
+
+    const style = {
+      version: 8,
+      sources: {
+        'mapy-aerial': {
+          type: 'raster',
+          tiles: [aerialTiles],
+          tileSize: 256,
+          minzoom: 3,
+          maxzoom: 20,
+          attribution: '© <a href="https://mapy.cz/">Seznam.cz a.s.</a>',
+        },
+        'mapy-names': {
+          type: 'raster',
+          tiles: [namesTiles],
+          tileSize: 256,
+          minzoom: 3,
+          maxzoom: 20,
+          attribution: '© <a href="https://mapy.cz/">Seznam.cz a.s.</a>',
+        },
+      },
+      layers: [
+        {
+          id: 'background',
+          type: 'background',
+          paint: { 'background-color': '#dde6f1' },
+        },
+        {
+          id: 'mapy-aerial',
+          type: 'raster',
+          source: 'mapy-aerial',
+        },
+        {
+          id: 'mapy-names',
+          type: 'raster',
+          source: 'mapy-names',
+          paint: { 'raster-opacity': 1 },
+        },
+      ],
+    };
+
+    const map = new maplibregl.Map({
+      container: 'map',
+      style,
+      center: [17.2509, 49.5938], // Olomouc
+      zoom: 13,
+    });
+
+    map.on('load', () => {
+      console.log('Map loaded');
+
+      map.addSource('workrecords', {
+        type: 'geojson',
+        data: WORKRECORDS_GEOJSON_URL,
+        cluster: true,
+        clusterRadius: 50,
+        clusterMaxZoom: 18,
+      });
+
+      map.addLayer({
+        id: 'workrecord-clusters',
+        type: 'circle',
+        source: 'workrecords',
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': '#1f6feb',
+          'circle-radius': [
+            'step',
+            ['get', 'point_count'],
+            15,
+            10, 20,
+            30, 25,
+          ],
+          'circle-opacity': 0.85,
+        },
+      });
+
+      map.addLayer({
+        id: 'workrecord-cluster-count',
+        type: 'symbol',
+        source: 'workrecords',
+        filter: ['has', 'point_count'],
+        layout: {
+          'text-field': ['get', 'point_count_abbreviated'],
+          'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+          'text-size': 12,
+        },
+        paint: {
+          'text-color': '#fff',
+        },
+      });
+
+      map.addLayer({
+        id: 'workrecord-unclustered',
+        type: 'circle',
+        source: 'workrecords',
+        filter: ['!', ['has', 'point_count']],
+        paint: {
+          'circle-color': '#f97316',
+          'circle-radius': 5,
+          'circle-stroke-width': 1,
+          'circle-stroke-color': '#fff',
+        },
+      });
+
+      map.on('click', 'workrecord-clusters', (event) => {
+        const feature = event.features && event.features[0];
+        if (!feature) return;
+        const clusterId = feature.properties && feature.properties.cluster_id;
+        if (clusterId === undefined || clusterId === null) return;
+        const source = map.getSource('workrecords');
+        if (!source || typeof source.getClusterExpansionZoom !== 'function') return;
+        source.getClusterExpansionZoom(clusterId, (error, zoom) => {
+          if (error) {
+            console.error('MapLibre error', sanitizeErrorValue(error));
+            return;
+          }
+          map.easeTo({
+            center: feature.geometry.coordinates,
+            zoom,
+          });
+        });
+      });
+
+      map.on('click', 'workrecord-unclustered', (event) => {
+        const feature = event.features && event.features[0];
+        if (!feature) return;
+        const recordId = feature.properties && feature.properties.id;
+        console.log('WorkRecord click', recordId);
+      });
+
+      const setPointer = () => { map.getCanvas().style.cursor = 'pointer'; };
+      const resetPointer = () => { map.getCanvas().style.cursor = ''; };
+      map.on('mouseenter', 'workrecord-clusters', setPointer);
+      map.on('mouseleave', 'workrecord-clusters', resetPointer);
+      map.on('mouseenter', 'workrecord-unclustered', setPointer);
+      map.on('mouseleave', 'workrecord-unclustered', resetPointer);
+    });
+    map.on('error', (e) => {
+      const err = sanitizeErrorValue(e?.error || e);
+      console.error('MapLibre error', err);
+    });
+
+    map.addControl(new maplibregl.NavigationControl(), 'top-right');
+  });
+</script>
+{% endblock %}

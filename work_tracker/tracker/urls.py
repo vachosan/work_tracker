@@ -29,6 +29,8 @@ urlpatterns = [
     path('project/<int:pk>/bulk-complete-interventions/', views.bulk_complete_interventions, name='bulk_complete_interventions'),
     # testovac mapy endpoints odstranny
     path("map-leaflet/", views.map_leaflet_test, name="map_leaflet_test"),
+    path("map-gl-pilot/", views.map_gl_pilot, name="map_gl_pilot"),
+    path("api/workrecords.geojson", views.workrecords_geojson, name="workrecords_geojson"),
     path("api/gbif-taxons/", views.gbif_taxon_suggest, name="gbif_taxon_suggest"),
     path("save-coordinates/", views.save_coordinates, name="save_coordinates"),
     path("map-upload-photo/", views.map_upload_photo, name="map_upload_photo"),
