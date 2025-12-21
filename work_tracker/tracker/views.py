@@ -939,7 +939,7 @@ def workrecords_geojson(request):
     qs = WorkRecord.objects.filter(
         latitude__isnull=False,
         longitude__isnull=False,
-    ).values("id", "latitude", "longitude")
+    ).only("id", "latitude", "longitude", "external_tree_id", "title")
 
     bbox_param = request.GET.get("bbox")
     if bbox_param:
@@ -958,17 +958,29 @@ def workrecords_geojson(request):
             latitude__lte=max_lat,
         )
 
-    features = [
-        {
-            "type": "Feature",
-            "geometry": {
-                "type": "Point",
-                "coordinates": [item["longitude"], item["latitude"]],
-            },
-            "properties": {"id": item["id"]},
-        }
-        for item in qs
-    ]
+    features = []
+    for wr in qs:
+        if wr.external_tree_id:
+            label = wr.external_tree_id
+        elif wr.title:
+            label = wr.title
+        else:
+            label = wr.generate_internal_code() or f"WR {wr.id}"
+
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [wr.longitude, wr.latitude],
+                },
+                "properties": {
+                    "id": wr.id,
+                    "label": label,
+                },
+            }
+        )
+
     return JsonResponse(
         {
             "type": "FeatureCollection",

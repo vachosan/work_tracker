@@ -11,10 +11,30 @@
   #map {
     position: fixed;
     inset: 0;
+    z-index: 1;
+  }
+  #wr-label-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  .wr-label {
+    position: absolute;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #111;
+    text-shadow:
+      0 0 4px rgba(255, 255, 255, 0.95),
+      0 0 8px rgba(255, 255, 255, 0.75);
+    white-space: nowrap;
+    will-change: transform;
   }
 </style>
 
 <div id="map"></div>
+<div id="wr-label-overlay"></div>
 
 <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
 <script>
@@ -26,6 +46,10 @@
 
     const API_KEY = "{{ mapy_key|default:'' }}";
     const WORKRECORDS_GEOJSON_URL = "{% url 'workrecords_geojson' %}";
+    const LABEL_MIN_ZOOM = 17;
+    const LABEL_LIMIT = 200;
+    const labelOverlay = document.getElementById('wr-label-overlay');
+    let workrecordFeatures = [];
     const sanitizeUrl = (value) => {
       if (typeof value !== 'string') return value;
       const [base] = value.split('?');
@@ -105,15 +129,90 @@
       zoom: 13,
     });
 
+    const clearLabelOverlay = () => {
+      if (!labelOverlay) return;
+      if (typeof labelOverlay.replaceChildren === 'function') {
+        labelOverlay.replaceChildren();
+      } else {
+        labelOverlay.innerHTML = '';
+      }
+    };
+
+    const renderLabelOverlay = () => {
+      if (!labelOverlay || !workrecordFeatures.length) {
+        clearLabelOverlay();
+        return;
+      }
+      const zoom = map.getZoom();
+      if (Number.isFinite(zoom) && zoom < LABEL_MIN_ZOOM) {
+        clearLabelOverlay();
+        return;
+      }
+      const bounds = map.getBounds();
+      const fragment = document.createDocumentFragment();
+      let rendered = 0;
+      for (const feature of workrecordFeatures) {
+        if (!feature) continue;
+        const coords = feature.coordinates;
+        if (!Array.isArray(coords) || coords.length < 2) continue;
+        const [lng, lat] = coords;
+        if (!bounds || typeof bounds.contains !== 'function' || !bounds.contains([lng, lat])) {
+          continue;
+        }
+        const labelText = feature.label || (feature.id ? `WR ${feature.id}` : '');
+        if (!labelText) continue;
+        const point = map.project([lng, lat]);
+        const el = document.createElement('div');
+        el.className = 'wr-label';
+        el.textContent = labelText;
+        el.style.transform = `translate(${point.x}px, ${point.y}px) translate(-50%, -130%)`;
+        fragment.appendChild(el);
+        rendered += 1;
+        if (rendered >= LABEL_LIMIT) break;
+      }
+      if (typeof labelOverlay.replaceChildren === 'function') {
+        labelOverlay.replaceChildren(fragment);
+      } else {
+        labelOverlay.innerHTML = '';
+        labelOverlay.appendChild(fragment);
+      }
+    };
+
+    map.on('move', renderLabelOverlay);
+    map.on('zoom', renderLabelOverlay);
+    map.on('rotate', renderLabelOverlay);
+
     map.on('load', () => {
       console.log('Map loaded');
+
+      fetch(WORKRECORDS_GEOJSON_URL)
+        .then(resp => resp.json())
+        .then(fc => {
+          const features = Array.isArray(fc && fc.features) ? fc.features : [];
+          console.log('GeoJSON features:', features.length);
+          console.log('Sample labels:', features.slice(0, 3).map(f => f && f.properties ? f.properties.label : null));
+          workrecordFeatures = features
+            .map(feature => {
+              if (!feature || !feature.geometry || !feature.properties) return null;
+              const coords = feature.geometry.coordinates;
+              if (!Array.isArray(coords) || coords.length < 2) return null;
+              return {
+                id: feature.properties.id,
+                label: feature.properties.label,
+                coordinates: coords,
+              };
+            })
+            .filter(Boolean);
+          renderLabelOverlay();
+        })
+        .catch(err => console.error('GeoJSON debug error', err));
 
       map.addSource('workrecords', {
         type: 'geojson',
         data: WORKRECORDS_GEOJSON_URL,
         cluster: true,
-        clusterRadius: 50,
-        clusterMaxZoom: 18,
+        clusterRadius: 25,
+        clusterMaxZoom: 15,
       });
 
       map.addLayer({
@@ -163,9 +262,11 @@
       });
 
       map.on('click', 'workrecord-clusters', (event) => {
-        const feature = event.features && event.features[0];
+        const features = map.queryRenderedFeatures(event.point, { layers: ['workrecord-clusters'] });
+        const feature = features && features[0];
         if (!feature) return;
-        const clusterId = feature.properties && feature.properties.cluster_id;
+        const rawClusterId = feature.properties && feature.properties.cluster_id;
+        const clusterId = rawClusterId !== undefined ? Number(rawClusterId) : null;
         if (clusterId === undefined || clusterId === null) return;
         const source = map.getSource('workrecords');
         if (!source || typeof source.getClusterExpansionZoom !== 'function') return;
@@ -174,6 +275,7 @@
             console.error('MapLibre error', sanitizeErrorValue(error));
             return;
           }
+          console.log('cluster click', clusterId, zoom);
           map.easeTo({
             center: feature.geometry.coordinates,
             zoom,
@@ -181,11 +283,19 @@
         });
       });
 
-      map.on('click', 'workrecord-unclustered', (event) => {
-        const feature = event.features && event.features[0];
+      const handleWorkRecordClick = (event, layers) => {
+        const layerIds = Array.isArray(layers) ? layers : ['workrecord-unclustered'];
+        const features = map.queryRenderedFeatures(event.point, { layers: layerIds });
+        const feature = features && features[0];
         if (!feature) return;
         const recordId = feature.properties && feature.properties.id;
-        console.log('WorkRecord click', recordId);
+        if (recordId) {
+          alert(`WorkRecord ${recordId}`);
+        }
+      };
+
+      map.on('click', 'workrecord-unclustered', (event) => {
+        handleWorkRecordClick(event, ['workrecord-unclustered']);
       });
 
       const setPointer = () => { map.getCanvas().style.cursor = 'pointer'; };
