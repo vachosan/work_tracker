@@ -41,6 +41,7 @@
 {% include "tracker/partials/map_ui.html" %}
 
 <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/pmtiles@3.0.6/dist/pmtiles.js"></script>
 <script>
   window.workTrackerMapUiConfig = {
     workRecordDetailApiBase: "{% url 'workrecord_detail_api' 0 %}".replace(/0\/?$/, ""),
@@ -320,35 +321,26 @@
       return value;
     };
 
-    const aerialTiles = `https://api.mapy.com/v1/maptiles/aerial/256/{z}/{x}/{y}?apikey=${API_KEY}`;
-    const namesTiles = `https://api.mapy.com/v1/maptiles/names-overlay/256/{z}/{x}/{y}?apikey=${API_KEY}`;
-
-    if (!API_KEY) {
-      console.error('MapLibre error', 'Missing Mapy.com API key.');
-    }
-    console.log('Mapy tiles configured', {
-      aerial: sanitizeUrl(aerialTiles),
-      names: sanitizeUrl(namesTiles),
-    });
+    const cuzkOrthoTiles = 'https://ags.cuzk.gov.cz/arcgis1/rest/services/ORTOFOTO_WM/MapServer/tile/{z}/{y}/{x}';
 
     const style = {
       version: 8,
+      // Glyph coverage is provided by OpenMapTiles' hosted fonts endpoint
+      glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
       sources: {
-        'mapy-aerial': {
+        'cuzk-ortho': {
           type: 'raster',
-          tiles: [aerialTiles],
+          tiles: [cuzkOrthoTiles],
           tileSize: 256,
-          minzoom: 3,
+          minzoom: 6,
           maxzoom: 20,
-          attribution: '© <a href="https://mapy.cz/">Seznam.cz a.s.</a>',
+          attribution: '&copy; CUZK',
         },
-        'mapy-names': {
-          type: 'raster',
-          tiles: [namesTiles],
-          tileSize: 256,
-          minzoom: 3,
-          maxzoom: 20,
-          attribution: '© <a href="https://mapy.cz/">Seznam.cz a.s.</a>',
+        'cz-labels': {
+          type: 'vector',
+          url: 'pmtiles:///tiles/cz.pmtiles',
+          maxzoom: 14,
+          attribution: '© OpenMapTiles © OpenStreetMap contributors',
         },
       },
       layers: [
@@ -358,19 +350,16 @@
           paint: { 'background-color': '#dde6f1' },
         },
         {
-          id: 'mapy-aerial',
+          id: 'cuzk-ortho',
           type: 'raster',
-          source: 'mapy-aerial',
-        },
-        {
-          id: 'mapy-names',
-          type: 'raster',
-          source: 'mapy-names',
-          paint: { 'raster-opacity': 1 },
+          source: 'cuzk-ortho',
         },
       ],
     };
 
+    const streetNamesCheckbox = document.getElementById('streetNamesCheckbox');
+    const protocol = new pmtiles.Protocol();
+    maplibregl.addProtocol('pmtiles', protocol.tile);
     const map = new maplibregl.Map({
       container: 'map',
       style,
@@ -385,6 +374,11 @@
       } else {
         labelOverlay.innerHTML = '';
       }
+    };
+
+    const setLayerVisibility = (layerId, visible) => {
+      if (!map.getLayer(layerId)) return;
+      map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
     };
 
     const renderLabelOverlay = () => {
@@ -431,10 +425,144 @@
     map.on('zoom', renderLabelOverlay);
     map.on('rotate', renderLabelOverlay);
 
-    map.on('load', () => {
+      map.on('load', () => {
+        const pm = new window.pmtiles.PMTiles('/tiles/cz.pmtiles');
+        pm.getMetadata()
+          .then(md => {
+            console.log('PMTiles metadata', md);
+            console.log('PMTiles vector_layers', md && md.vector_layers ? md.vector_layers.map(v => v.id) : md);
+          })
+          .catch(err => console.warn('PMTiles metadata failed', err));
+        const warnMultiFontLayers = () => {
+          const layers = map.getStyle() && map.getStyle().layers;
+          if (!Array.isArray(layers)) return;
+          for (const layer of layers) {
+            const layout = layer && layer.layout;
+            const textFont = layout && layout['text-font'];
+            if (Array.isArray(textFont) && textFont.length > 1) {
+              console.warn('Layer has multi-font stack', layer.id, textFont);
+            }
+          }
+        };
+        warnMultiFontLayers();
+        console.warn('Glyphs are served from https://fonts.openmaptiles.org/... ensure remote glyphs are reachable for labels.');
+      fetch('/tiles/cz.pmtiles', { method: 'GET', headers: { Range: 'bytes=0-31' } })
+        .then(r => {
+          console.log('PMTiles range test', r.status, r.headers.get('accept-ranges'), r.headers.get('content-range'), r.headers.get('content-length'));
+          if (r.status !== 206) {
+            console.warn('Server does not support byte ranges; PMTiles will not work correctly.');
+          }
+        })
+        .catch(e => console.warn('PMTiles range test failed', e));
+      console.log('PMTiles check', {
+        pmtilesLoaded: typeof window.pmtiles !== 'undefined',
+        protocolRegistered: true,
+        pmtilesUrl: 'pmtiles:///tiles/cz.pmtiles',
+      });
+      fetch('/tiles/cz.pmtiles', { method: 'HEAD' })
+        .then(r => console.log('PMTiles HEAD', r.status, r.headers.get('content-type'), r.headers.get('content-length')))
+        .catch(e => console.warn('PMTiles HEAD failed', e));
+      fetch('https://fonts.openmaptiles.org/Open%20Sans%20Regular/0-255.pbf', { method: 'HEAD' })
+        .then(r => console.log('Glyph test (Open Sans Regular 0-255)', r.status, r.headers.get('content-type'), r.headers.get('content-length')))
+        .catch(e => console.warn('Glyph test failed', e));
       console.log('Map loaded');
       const coarsePointer = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
       const HIT_TOLERANCE = coarsePointer ? 12 : 6;
+
+      const czLabelsSource = map.getSource('cz-labels');
+      console.log('cz-labels source added', czLabelsSource);
+
+      try {
+        map.addLayer({
+          id: 'cz-place-labels',
+          type: 'symbol',
+          source: 'cz-labels',
+          'source-layer': 'place',
+          minzoom: 6,
+          maxzoom: 14,
+          filter: [
+            'match',
+            ['get', 'class'],
+            ['city', 'town', 'village', 'hamlet', 'suburb', 'neighbourhood'],
+            true,
+            false,
+          ],
+          layout: {
+            'text-field': ['coalesce', ['get', 'name:cs'], ['get', 'name']],
+            'text-size': ['interpolate', ['linear'], ['zoom'], 6, 10, 10, 12, 13, 16],
+            'text-allow-overlap': false,
+            'text-ignore-placement': false,
+            'text-font': ['Open Sans Regular'],
+          },
+          paint: {
+            'text-color': '#1a1a1a',
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 2,
+          },
+        });
+        console.log('cz-place-layer exists', !!map.getLayer('cz-place-labels'));
+      } catch (e) {
+        console.warn('addLayer cz-place-labels failed', e);
+        console.warn('Using source-layer:', 'place');
+      }
+
+      try {
+        map.addLayer({
+          id: 'cz-road-labels',
+          type: 'symbol',
+          source: 'cz-labels',
+          'source-layer': 'transportation_name',
+          minzoom: 13,
+          maxzoom: 20,
+          layout: {
+            'symbol-placement': 'line',
+            'text-field': ['coalesce', ['get', 'name:cs'], ['get', 'name']],
+            'text-size': ['interpolate', ['linear'], ['zoom'], 13, 11, 16, 13, 18, 15],
+            'text-keep-upright': true,
+            'text-font': ['Open Sans Regular'],
+          },
+          paint: {
+            'text-halo-color': 'rgba(255, 255, 255, 0.9)',
+            'text-halo-width': 2,
+          },
+        });
+        console.log('cz-road-layer exists', !!map.getLayer('cz-road-labels'));
+      } catch (e) {
+        console.warn('addLayer cz-road-labels failed', e);
+        console.warn('Using source-layer:', 'transportation_name');
+      }
+
+      setTimeout(() => {
+        try {
+          const candidates = ['place', 'transportation_name', 'transportation', 'road', 'roads', 'labels', 'poi', 'name'];
+          const results = {};
+          for (const layer of candidates) {
+            let count = 0;
+            try {
+              const feats = map.querySourceFeatures('cz-labels', { sourceLayer: layer });
+              count = feats ? feats.length : 0;
+            } catch (e) {
+              results[layer] = 'ERR';
+              continue;
+            }
+            results[layer] = count;
+          }
+          console.log('cz-labels querySourceFeatures counts', results);
+        } catch (e) {
+          console.warn('cz-labels querySourceFeatures failed', sanitizeErrorValue(e));
+        }
+      }, 1000);
+
+      const applyStreetNamesVisibility = () => {
+        const visible = !streetNamesCheckbox || streetNamesCheckbox.checked;
+        setLayerVisibility('cz-place-labels', visible);
+        setLayerVisibility('cz-road-labels', visible);
+      };
+
+      applyStreetNamesVisibility();
+      if (streetNamesCheckbox) {
+        streetNamesCheckbox.addEventListener('change', applyStreetNamesVisibility);
+      }
 
       fetch(WORKRECORDS_GEOJSON_URL)
         .then(resp => resp.json())
@@ -492,7 +620,7 @@
         filter: ['has', 'point_count'],
         layout: {
           'text-field': ['get', 'point_count_abbreviated'],
-          'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+          'text-font': ['Open Sans Regular'],
           'text-size': 12,
         },
         paint: {
@@ -629,8 +757,20 @@
       });
     });
     map.on('error', (e) => {
-      const err = sanitizeErrorValue(e?.error || e);
-      console.error('MapLibre error', err);
+      const rawErr = e?.error || e;
+      const err = sanitizeErrorValue(rawErr);
+      const sourceId = rawErr && rawErr.sourceId;
+      const extra = {
+        sourceId,
+        message: rawErr && rawErr.message,
+        status: rawErr && rawErr.status,
+        url: rawErr && rawErr.url ? sanitizeErrorValue(rawErr.url) : undefined,
+      };
+      if (sourceId === 'cz-labels') {
+        console.warn('Vector labels unavailable', { ...extra, error: err });
+        return;
+      }
+      console.error('MapLibre error', { ...extra, error: err });
     });
 
     map.addControl(new maplibregl.NavigationControl(), 'top-right');

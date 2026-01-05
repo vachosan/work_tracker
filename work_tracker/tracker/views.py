@@ -22,6 +22,7 @@ from django.http import (
     FileResponse,
     JsonResponse,
     HttpResponseBadRequest,
+    HttpResponse,
 )
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
@@ -1001,6 +1002,56 @@ def map_gl_pilot(request):
     """Temporary pilot page to verify MapLibre GL rendering."""
     context = _build_map_mapui_context(request)
     return render(request, "tracker/map_gl_pilot.html", context)
+
+
+@login_required
+def pmtiles_range_serve(request, path):
+    """
+    Serve PMTiles with HTTP Range support for MapLibre/pmtiles.js.
+    """
+    static_path = finders.find(f"tiles/{path}")
+    if not static_path or not os.path.isfile(static_path):
+        return HttpResponse(status=404)
+
+    file_size = os.path.getsize(static_path)
+    range_header = request.headers.get("Range") or request.META.get("HTTP_RANGE")
+    content_type = "application/octet-stream"
+
+    if range_header and range_header.startswith("bytes="):
+        try:
+            range_value = range_header.split("=", 1)[1]
+            start_str, end_str = (range_value.split("-", 1) + [""])[:2]
+            start = int(start_str) if start_str else 0
+            end = int(end_str) if end_str else file_size - 1
+        except (ValueError, IndexError):
+            return HttpResponse(status=416)
+
+        if start < 0 or end < start or end >= file_size:
+            return HttpResponse(status=416)
+
+        def range_stream():
+            with open(static_path, "rb") as f:
+                f.seek(start)
+                remaining = end - start + 1
+                chunk_size = 8192
+                while remaining > 0:
+                    chunk = f.read(min(chunk_size, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+
+        resp = StreamingHttpResponse(range_stream(), status=206, content_type=content_type)
+        resp["Content-Length"] = str(end - start + 1)
+        resp["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+        resp["Accept-Ranges"] = "bytes"
+        return resp
+
+    # Full response
+    response = FileResponse(open(static_path, "rb"), content_type=content_type)
+    response["Content-Length"] = str(file_size)
+    response["Accept-Ranges"] = "bytes"
+    return response
 
 
 @login_required

@@ -30,3 +30,8 @@ work_tracker/media/
 
 # --- Interní dokumentace a poznámky ---
 /docs/
+
+# PMTiles (never commit)
+*.pmtiles
+tiles-build/
+**/tiles-build/

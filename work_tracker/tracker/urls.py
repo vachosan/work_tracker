@@ -1,8 +1,13 @@
 from django.urls import path
 from . import views
+from . import views_tiles
 from django.contrib.auth import views as auth_views
 
 urlpatterns = [
+    # PMTiles (Range-enabled) and debug helpers must stay above other routes (avoid catch-alls)
+    path("tiles/<path:path>", views_tiles.pmtiles_range_serve, name="pmtiles_range_serve"),
+    path("tiles-debug/pmtiles", views_tiles.pmtiles_debug, name="pmtiles_debug"),
+    path("tiles-debug/glyph", views_tiles.glyph_debug, name="glyph_debug"),
     path('create/', views.create_work_record, name='create_work_record'),
     path('create/<int:project_id>/', views.create_work_record, name='create_work_record_for_project'),
     path('trees/<int:tree_id>/interventions/new/', views.tree_intervention_create, name='tree_intervention_create'),
@@ -46,6 +51,7 @@ urlpatterns = [
         name="workrecord_detail_api",
     ),
     path("workrecord/<int:pk>/delete/", views.delete_work_record, name="delete_work_record"),
+    path("tiles/<path:path>", views_tiles.pmtiles_range_serve, name="pmtiles_range_serve"),
 
 
 ]
