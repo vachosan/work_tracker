@@ -7,6 +7,9 @@ from .models import (
     TreeAssessment,
     InterventionType,
     TreeIntervention,
+    Dataset,
+    DatasetTree,
+    ProjectTree,
 )
 
 # ---------- Inlines ----------
@@ -90,3 +93,24 @@ class TreeInterventionAdmin(admin.ModelAdmin):
 
 
 admin.site.register(TreeAssessment)
+
+
+@admin.register(Dataset)
+class DatasetAdmin(admin.ModelAdmin):
+    list_display = ("name", "visibility", "is_system", "allow_public_observations", "created_at")
+    list_filter = ("visibility", "is_system", "allow_public_observations")
+    search_fields = ("name",)
+
+
+@admin.register(DatasetTree)
+class DatasetTreeAdmin(admin.ModelAdmin):
+    list_display = ("dataset", "tree")
+    list_filter = ("dataset",)
+    search_fields = ("dataset__name", "tree__title")
+
+
+@admin.register(ProjectTree)
+class ProjectTreeAdmin(admin.ModelAdmin):
+    list_display = ("project", "tree", "added_by", "added_at")
+    list_filter = ("project",)
+    search_fields = ("project__name", "tree__title")

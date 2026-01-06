@@ -86,7 +86,7 @@ def project_detail(request, pk):
     if not user_can_view_project(request.user, project.pk):
         return redirect('work_record_list')
 
-    qs = WorkRecord.objects.filter(project=project)
+    qs = project.trees.all()
 
     # filtry (GET)
     q = request.GET.get('q', '').strip()
@@ -688,13 +688,13 @@ def export_selected_zip(request, pk):
     export_all_requested = bool(request.POST.get("export_all"))
 
     if export_all_requested:
-        work_records = WorkRecord.objects.filter(project=project)
+        work_records = project.trees.all()
     else:
         selected_ids = request.POST.getlist("selected_records")
         if not selected_ids:
             messages.warning(request, "Vyberte prosím alespoň jeden záznam pro export.")
             return redirect("project_detail", pk=pk)
-        work_records = WorkRecord.objects.filter(id__in=selected_ids, project=project)
+        work_records = project.trees.filter(id__in=selected_ids)
 
     # helper na čisté názvy
     def slugify_folder(name):
@@ -812,7 +812,7 @@ def bulk_approve_interventions(request, pk):
         messages.warning(request, "Vyberte prosím alespoň jeden strom / úkon.")
         return redirect("project_detail", pk=pk)
 
-    work_records = WorkRecord.objects.filter(project=project, id__in=selected_ids)
+    work_records = project.trees.filter(id__in=selected_ids)
     interventions_qs = TreeIntervention.objects.filter(
         tree__in=work_records,
         status__in=["draft", "pending_approval"],
@@ -1406,7 +1406,7 @@ def bulk_handover_interventions(request, pk):
         messages.warning(request, "Vyberte prosím alespoň jeden strom / úkon.")
         return redirect("project_detail", pk=pk)
 
-    work_records = WorkRecord.objects.filter(project=project, id__in=selected_ids)
+    work_records = project.trees.filter(id__in=selected_ids)
     interventions_qs = TreeIntervention.objects.filter(
         tree__in=work_records,
         status__in=["approved", "in_progress"],
@@ -1450,7 +1450,7 @@ def bulk_complete_interventions(request, pk):
         messages.warning(request, "Vyberte prosím alespoň jeden strom / úkon.")
         return redirect("project_detail", pk=pk)
 
-    work_records = WorkRecord.objects.filter(project=project, id__in=selected_ids)
+    work_records = project.trees.filter(id__in=selected_ids)
     interventions_qs = TreeIntervention.objects.filter(
         tree__in=work_records,
         status__in=["pending_check", "approved", "in_progress"],

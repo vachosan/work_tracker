@@ -1,6 +1,8 @@
 import string
 
 from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from django.utils import timezone
 from django.conf import settings
 
@@ -67,6 +69,13 @@ class Project(models.Model):
 
     def __str__(self):
         return self.name
+
+    trees = models.ManyToManyField(
+        "WorkRecord",
+        through="ProjectTree",
+        related_name="projects",
+        blank=True,
+    )
 
 
 class Species(models.Model):
@@ -316,6 +325,89 @@ class ProjectMembership(models.Model):
         return f"{self.user} · {self.project} · {self.role}"
 
 
+class Dataset(models.Model):
+    class Visibility(models.TextChoices):
+        PRIVATE = "PRIVATE", "Soukromý"
+        PUBLIC = "PUBLIC", "Veřejný"
+
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    visibility = models.CharField(
+        max_length=20,
+        choices=Visibility.choices,
+        default=Visibility.PRIVATE,
+    )
+    allow_public_observations = models.BooleanField(default=True)
+    is_system = models.BooleanField(default=False)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_datasets",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["is_system"],
+                condition=models.Q(is_system=True),
+                name="unique_system_dataset",
+            )
+        ]
+
+    def __str__(self):
+        return self.name
+
+
+class DatasetTree(models.Model):
+    dataset = models.ForeignKey(
+        "Dataset",
+        on_delete=models.CASCADE,
+        related_name="dataset_trees",
+    )
+    tree = models.ForeignKey(
+        "WorkRecord",
+        on_delete=models.CASCADE,
+        related_name="in_datasets",
+    )
+
+    class Meta:
+        unique_together = ("dataset", "tree")
+        indexes = [
+            models.Index(fields=["tree"]),
+        ]
+
+
+class ProjectTree(models.Model):
+    project = models.ForeignKey(
+        "Project",
+        on_delete=models.CASCADE,
+        related_name="project_trees",
+    )
+    tree = models.ForeignKey(
+        "WorkRecord",
+        on_delete=models.CASCADE,
+        related_name="tree_projects",
+    )
+    added_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="project_tree_additions",
+    )
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("project", "tree")
+        indexes = [
+            models.Index(fields=["project", "tree"]),
+            models.Index(fields=["tree"]),
+        ]
+
+
 INTERVENTION_STATUS_CHOICES = [
     ("draft", "Návrh"),
     ("pending_approval", "Ke schválení"),
@@ -443,3 +535,21 @@ class TreeIntervention(models.Model):
         if status:
             parts.append(status)
         return " · ".join(parts)
+
+
+def _add_tree_to_system_dataset(tree: "WorkRecord") -> None:
+    from .datasets import get_system_dataset
+
+    dataset = get_system_dataset()
+    DatasetTree.objects.get_or_create(dataset=dataset, tree=tree)
+
+
+@receiver(post_save, sender=WorkRecord)
+def _ensure_tree_in_system_dataset(sender, instance, created, **kwargs):
+    if not created:
+        return
+    try:
+        _add_tree_to_system_dataset(instance)
+    except Exception:
+        # Prevent dataset linkage failures from blocking tree creation.
+        pass
