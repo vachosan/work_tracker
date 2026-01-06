@@ -11,6 +11,8 @@ env = environ.Env(
 )
 environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
 
+USE_S3_MEDIA = env("USE_S3_MEDIA", default="0") == "1"
+
 # Security
 SECRET_KEY = env("SECRET_KEY", default="dev-insecure-change-me")
 DEBUG = env("DEBUG")  # nastavíš v .env (True/False)
@@ -46,9 +48,11 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "storages",
     "tracker",
 ]
+
+if USE_S3_MEDIA:
+    INSTALLED_APPS.append("storages")
 
 # Middleware
 MIDDLEWARE = [
@@ -112,24 +116,31 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]  # může klidně dočasně neexistovat
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
-# === S3 storage pro media (fotky) ===
-AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME", "arbomap-media")
-AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME", "eu-west-1")
-AWS_S3_SIGNATURE_VERSION = "s3v4"
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "work_photos"
 
-# doporučené nastavení s django-storages – nepoužívat ACL
-AWS_DEFAULT_ACL = None
+# === Media storage ===
+if USE_S3_MEDIA:
+    AWS_ACCESS_KEY_ID = env("AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY = env("AWS_SECRET_ACCESS_KEY")
+    AWS_STORAGE_BUCKET_NAME = env("AWS_STORAGE_BUCKET_NAME", default="arbomap-media")
+    AWS_S3_REGION_NAME = env("AWS_S3_REGION_NAME", default="eu-west-1")
 
-# bucket je veřejný → NECHCI podepisované URL
-AWS_QUERYSTRING_AUTH = False
+    AWS_QUERYSTRING_AUTH = True
+    AWS_QUERYSTRING_EXPIRE = env.int("AWS_QUERYSTRING_EXPIRE", default=300)
+    AWS_DEFAULT_ACL = None
+    AWS_S3_FILE_OVERWRITE = False
+    AWS_S3_OBJECT_PARAMETERS = {"CacheControl": "max-age=86400"}
 
-# MEDIA_URL bude ukazovat na S3 bucket včetně regionu
-MEDIA_URL = f"https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com/"
+    AWS_MEDIA_PREFIX = env("AWS_MEDIA_PREFIX", default="").strip("/")
+    if AWS_MEDIA_PREFIX:
+        DEFAULT_FILE_STORAGE = "work_tracker.storage_backends.PrefixedMediaStorage"
+    else:
+        DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
 
-# všechny FileField / ImageField půjdou do S3
-DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+    MEDIA_URL = (
+        f"https://{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com/"
+    )
 
 # Defaults
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
