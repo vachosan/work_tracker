@@ -25,3 +25,6 @@
 - `project_detail` nyní vytváří základní queryset přes `project.trees` (všechny stromové zápisy svázané M2M) a následně aplikuje stejné filtry/prefetch jako dříve; starý `WorkRecord.objects.filter(project=project)` se nahrazuje v `work_tracker/tracker/views.py:81-132`.
 - `export_selected_zip` z větví `export_all_requested` i výběru stromů přechází na `project.trees` (`work_tracker/tracker/views.py:681-720`), takže ZIP export zahrnuje přesně ty stromy, které mají M2M vazbu, nikoli jen legacy FK.
 - Akce nad záznamy (`bulk_approve_interventions`, `bulk_handover_interventions`, `bulk_complete_interventions`) filtrují `project.trees.filter(id__in=selected_ids)`, aby se zásahy vybíraly podle nové M2M logiky (`work_tracker/tracker/views.py:801-1471`).
+
+# Hotfix `workrecords_geojson`
+- `workrecords_geojson` nyní filtruje WorkRecordy přes `user_projects_qs(request.user)` plus stromové zápisy bez projektu, takže MapLibre pilot vidí pouze ty body, ke kterým má uživatel přístup, přičemž se stále uplatňuje `bbox` a geografické podmínky (`work_tracker/tracker/views.py:942-977`). Nový kód přidává krátký TODO komentář, že jde o legacy/pilot endpoint, než přijde nový registr datasetů.

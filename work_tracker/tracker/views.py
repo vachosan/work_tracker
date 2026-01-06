@@ -943,11 +943,14 @@ def workrecords_geojson(request):
     """
     GeoJSON feed with coordinates of WorkRecords (pilot usage for MapLibre map).
     """
+    visible_projects = user_projects_qs(request.user)
     qs = WorkRecord.objects.filter(
+        Q(project__in=visible_projects) | Q(project__isnull=True),
         latitude__isnull=False,
         longitude__isnull=False,
     ).only("id", "latitude", "longitude", "external_tree_id", "title")
 
+    # TODO: this pilot endpoint will be replaced by the registry-driven map feed later.
     bbox_param = request.GET.get("bbox")
     if bbox_param:
         try:
