@@ -5,9 +5,12 @@
     workRecordDetailApiBase: null,
     assessmentApiBase: null,
     mapUploadPhotoUrl: null,
+    projectId: null,
+    addToProjectUrlTemplate: null,
     csrfToken: null,
     interventionNoteData: {},
   };
+  const debugEnabled = typeof window !== 'undefined' && window.DEBUG_MAP_UI;
 
   const recordCache = {};
   let currentWorkRecordId = null;
@@ -66,7 +69,6 @@
   let interventionFormErrors;
   let interventionTypeSelect;
   let interventionListContainer;
-
   function mergeConfig() {
     const userCfg = window.workTrackerMapUiConfig || {};
     if (!userCfg || typeof userCfg !== 'object') return;
@@ -79,11 +81,23 @@
     if (userCfg.mapUploadPhotoUrl) {
       cfg.mapUploadPhotoUrl = userCfg.mapUploadPhotoUrl;
     }
+    if (userCfg.projectId !== undefined && userCfg.projectId !== null && userCfg.projectId !== '') {
+      cfg.projectId = userCfg.projectId;
+    }
+    if (userCfg.addToProjectUrlTemplate) {
+      cfg.addToProjectUrlTemplate = userCfg.addToProjectUrlTemplate;
+    }
     if (userCfg.csrfToken) {
       cfg.csrfToken = userCfg.csrfToken;
     }
     if (userCfg.interventionNoteData) {
       cfg.interventionNoteData = userCfg.interventionNoteData || {};
+    }
+    if (debugEnabled) {
+      console.debug('map_ui config', {
+        projectId: cfg.projectId,
+        addToProjectUrlTemplate: cfg.addToProjectUrlTemplate,
+      });
     }
   }
 
@@ -101,6 +115,10 @@
     closeBottomPanel();
     currentWorkRecordId = null;
     window.activeRecordId = null;
+    const placeholder = document.getElementById('workrecord-panel-actions');
+    if (placeholder) {
+      placeholder.innerHTML = '';
+    }
   }
 
   function updateBackLink(recordId) {
@@ -159,10 +177,11 @@
     return '<div class="text-muted small mt-2 mb-0">Bez fotodokumentace</div>';
   }
 
-  function buildPopupHtml(record, state) {
+  function buildPopupHtml(record, state, opts) {
     const detailUrl = '/tracker/' + record.id + '/';
     const displayLabel = getRecordDisplayLabel(record);
     const taxon = record.taxon || '';
+    const options = opts || {};
     const taxonHtml = taxon.trim()
       ? '<div class="wr-desc"><small class="text-muted">Taxon: ' +
         taxon.trim() +
@@ -171,6 +190,26 @@
     const assessClass = record.has_assessment
       ? 'wr-popup-btn assess has-assessment'
       : 'wr-popup-btn assess';
+    const addToProjectEnabled = Boolean(options.addToProjectEnabled);
+    const addedToProject = Boolean(record && (record.in_project || record.added_to_project));
+    const addToProjectMessage = record && record.add_to_project_message ? record.add_to_project_message : '';
+    const addToProjectIcon = addedToProject ? 'bi bi-check-circle' : 'bi bi-folder-plus';
+    const addToProjectButtonHtml = addToProjectEnabled
+      ? '<button type="button" class="wr-popup-btn intervention add-to-project" data-action="add_to_project" data-record-id="' +
+        record.id +
+        '"' +
+        (addedToProject ? ' disabled' : '') +
+        ' title="' +
+        (addedToProject ? 'V projektu' : 'Přidat do projektu') +
+        '"><i class="' +
+        addToProjectIcon +
+        '"></i></button>'
+      : '';
+    const addToProjectMessageHtml = addToProjectEnabled
+      ? '<div class="wr-popup-message small mt-1" data-role="add-to-project-message">' +
+        addToProjectMessage +
+        '</div>'
+      : '';
 
     return (
       '<div class="wr-popup">' +
@@ -193,9 +232,48 @@
       '<button type="button" class="wr-popup-btn intervention" data-action="intervention" data-record-id="' +
       record.id +
       '" title="Zásahy"><i class="bi bi-tools"></i></button>' +
+      addToProjectButtonHtml +
       '<a class="wr-popup-btn edit" href="/tracker/' +
       record.id +
       '/edit/" title="Upravit úkon"><i class="bi bi-pencil-square"></i></a>' +
+      '</div>' +
+      addToProjectMessageHtml +
+      '</div>'
+    );
+  }
+
+  function getProjectContextId() {
+    if (cfg.projectId) return String(cfg.projectId);
+    try {
+      const urlId = new URLSearchParams(window.location.search).get('project');
+      return urlId || '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function getAddToProjectTemplate() {
+    return cfg.addToProjectUrlTemplate || '/tracker/projects/0/trees/0/add/';
+  }
+
+  function buildAddToProjectHtml(record, state) {
+    const projectId = getProjectContextId();
+    const template = getAddToProjectTemplate();
+    if (!projectId || !template) return '';
+    const statusText = (state && state.addToProjectMessage) ? state.addToProjectMessage : '';
+    const buttonLabel = (state && state.addedToProject) ? 'V projektu' : 'Přidat do projektu';
+    const disabledAttr = (state && state.addedToProject) ? ' disabled' : '';
+    return (
+      '<div class="mt-2">' +
+      '<button type="button" class="btn btn-sm btn-outline-primary" data-action="add-to-project" data-record-id="' +
+      record.id +
+      '"' +
+      disabledAttr +
+      '>' +
+      buttonLabel +
+      '</button>' +
+      '<div class="small mt-1" data-role="add-to-project-message">' +
+      statusText +
       '</div>' +
       '</div>'
     );
@@ -204,6 +282,8 @@
   function renderTreePanel(record, state) {
     if (!treePanel || !record) return;
     if (currentWorkRecordId !== Number(record.id)) return;
+    const debugMode = !!debugEnabled;
+    const addToProjectEnabled = Boolean(getProjectContextId());
     const html =
       '<div class="tree-panel-inner">' +
       '<div class="tree-panel-header">' +
@@ -212,9 +292,31 @@
       '</span>' +
       '<button type="button" class="tree-panel-close" aria-label="Zavřít detail stromu">&times;</button>' +
       '</div>' +
-      buildPopupHtml(record, state || {}) +
+      buildPopupHtml(record, state || {}, { addToProjectEnabled: addToProjectEnabled }) +
       '</div>';
+    if (debugMode) {
+      const htmlContainsAdd = html.indexOf('data-action="add_to_project"') !== -1;
+      console.debug('map_ui renderTreePanel debug', {
+        locationSearch: window.location ? window.location.search : '',
+        projectContextId: (typeof getProjectContextId === 'function') ? getProjectContextId() : 'getProjectContextId missing',
+        htmlContainsAdd: htmlContainsAdd,
+      });
+    }
     treePanel.innerHTML = html;
+    if (debugMode) {
+      const addBtn = treePanel.querySelector('[data-action="add_to_project"]');
+      console.debug('map_ui renderTreePanel debug post', {
+        elementExists: !!addBtn,
+      });
+      if (addBtn) {
+        const styles = window.getComputedStyle(addBtn);
+        console.debug('map_ui add-to-project styles', {
+          display: styles.display,
+          visibility: styles.visibility,
+          rect: addBtn.getBoundingClientRect(),
+        });
+      }
+    }
     openBottomPanel();
     attachPanelActionHandlers(record);
   }
@@ -263,6 +365,93 @@
         openInterventionModal(record.id);
       });
     });
+    const addButtons = treePanel.querySelectorAll('.wr-popup-btn[data-action="add_to_project"]');
+    if (debugEnabled) {
+      console.debug('map_ui add-to-project buttons found', addButtons.length);
+    }
+    addButtons.forEach(function (btn) {
+      btn.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const messageEl = treePanel.querySelector('[data-role="add-to-project-message"]');
+        handleAddToProject(record.id, btn, messageEl);
+      });
+    });
+  }
+
+  function buildAddToProjectUrl(recordId) {
+    const projectId = getProjectContextId();
+    const template = getAddToProjectTemplate();
+    if (!projectId || !template) return null;
+    return template.replace('/0/trees/0/add/', '/' + projectId + '/trees/' + recordId + '/add/');
+  }
+
+  function handleAddToProject(recordId, buttonEl, messageEl) {
+    const url = buildAddToProjectUrl(recordId);
+    if (!url) {
+      if (buttonEl) {
+        buttonEl.disabled = true;
+      }
+      return;
+    }
+    if (messageEl) {
+      messageEl.textContent = 'Přidávám do projektu...';
+      messageEl.className = 'wr-popup-message small mt-1 text-muted';
+    }
+    if (buttonEl) {
+      buttonEl.disabled = true;
+    }
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': cfg.csrfToken || '',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    })
+      .then(function (resp) {
+        return resp.json().then(function (body) {
+          if (!resp.ok || !body || !body.ok) {
+            const err = (body && body.error) || 'Chyba při přidání do projektu.';
+            throw new Error(err);
+          }
+          return body;
+        });
+      })
+      .then(function () {
+        if (messageEl) {
+          messageEl.textContent = 'Přidáno do projektu.';
+          messageEl.className = 'wr-popup-message small mt-1 text-success';
+        }
+        if (buttonEl) {
+          buttonEl.innerHTML = '<i class="bi bi-check-circle"></i>';
+          buttonEl.disabled = true;
+          buttonEl.title = 'V projektu';
+        }
+        const cached = recordCache[Number(recordId)];
+        if (cached) {
+          cached.in_project = true;
+          cached.added_to_project = true;
+          cached.add_to_project_message = 'Přidáno do projektu.';
+          cacheRecord(cached);
+        }
+        if (typeof window.refreshProjectWorkrecords === 'function') {
+          window.refreshProjectWorkrecords();
+        }
+      })
+      .catch(function (err) {
+        if (messageEl) {
+          messageEl.textContent = err && err.message ? err.message : 'Nepodařilo se přidat strom do projektu.';
+          messageEl.className = 'wr-popup-message small mt-1 text-danger';
+        }
+        if (buttonEl) {
+          buttonEl.disabled = false;
+        }
+        const cached = recordCache[Number(recordId)];
+        if (cached && messageEl) {
+          cached.add_to_project_message = messageEl.textContent;
+          cacheRecord(cached);
+        }
+      });
   }
 
   function cacheRecord(record) {
@@ -323,10 +512,15 @@
         taxon: prefill.taxon || '',
         has_assessment: false,
         has_photos: false,
+        in_project: prefill.inProject === true,
       };
       cacheRecord(baseRecord);
     } else if (prefill.label && (!baseRecord.title || baseRecord.title === 'Načítám…')) {
       baseRecord = { ...baseRecord, title: prefill.label };
+      cacheRecord(baseRecord);
+    }
+    if (prefill.inProject !== undefined) {
+      baseRecord = { ...baseRecord, in_project: prefill.inProject === true };
       cacheRecord(baseRecord);
     }
 
@@ -885,6 +1079,12 @@
     treePanel = document.getElementById('tree-panel');
     backLink = document.getElementById('mapBackLink');
     backLinkDefaultHref = backLink ? backLink.getAttribute('href') : null;
+    if (debugEnabled) {
+      console.debug('map_ui dom', {
+        bottomPanel: !!bottomPanel,
+        treePanel: !!treePanel,
+      });
+    }
 
     if (treePanel) {
       treePanel.addEventListener('click', function (event) {

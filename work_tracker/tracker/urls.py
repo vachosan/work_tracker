@@ -32,9 +32,11 @@ urlpatterns = [
     path('project/<int:pk>/bulk-approve-interventions/', views.bulk_approve_interventions, name='bulk_approve_interventions'),
     path('project/<int:pk>/bulk-handover-interventions/', views.bulk_handover_interventions, name='bulk_handover_interventions'),
     path('project/<int:pk>/bulk-complete-interventions/', views.bulk_complete_interventions, name='bulk_complete_interventions'),
+    path('projects/<int:project_pk>/trees/<int:workrecord_pk>/add/', views.project_tree_add, name='project_tree_add'),
     # testovac mapy endpoints odstranny
     path("map-leaflet/", views.map_leaflet_test, name="map_leaflet_test"),
     path("map-gl-pilot/", views.map_gl_pilot, name="map_gl_pilot"),
+    path("map-project/<int:pk>/", views.map_project_redirect, name="map_project_redirect"),
     path("api/workrecords.geojson", views.workrecords_geojson, name="workrecords_geojson"),
     path("api/gbif-taxons/", views.gbif_taxon_suggest, name="gbif_taxon_suggest"),
     path("save-coordinates/", views.save_coordinates, name="save_coordinates"),

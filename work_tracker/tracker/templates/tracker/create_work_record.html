@@ -13,6 +13,7 @@
   {% csrf_token %}
   {% if request.GET.lat %}<input type="hidden" name="latitude" value="{{ request.GET.lat }}">{% endif %}
   {% if request.GET.lon %}<input type="hidden" name="longitude" value="{{ request.GET.lon }}">{% endif %}
+  {% if project_context_id %}<input type="hidden" name="project" value="{{ project_context_id }}">{% endif %}
 
   <div class="card border-0 shadow-sm">
     <div class="card-body vstack gap-3">

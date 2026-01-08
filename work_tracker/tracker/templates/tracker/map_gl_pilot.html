@@ -47,11 +47,18 @@
     workRecordDetailApiBase: "{% url 'workrecord_detail_api' 0 %}".replace(/0\/?$/, ""),
     assessmentApiBase: "{% url 'workrecord_assessment_api' 0 %}".replace("0/assessment/", ""),
     mapUploadPhotoUrl: "{% url 'map_upload_photo' %}",
+    projectId: "{{ request.GET.project|default:'' }}",
+    addToProjectUrlTemplate: "{% url 'project_tree_add' 0 0 %}",
     csrfToken: "{{ csrf_token }}",
     interventionNoteData: {{ intervention_note_data_json|default:"{}" | safe }},
   };
+  {% if request.GET.debug_map_ui %}
+  window.DEBUG_MAP_UI = true;
+  {% else %}
+  window.DEBUG_MAP_UI = false;
+  {% endif %}
 </script>
-<script src="{% static 'js/map_ui.js' %}"></script>
+<script src="{% static 'js/map_ui.js' %}?v=dev1"></script>
 <script>
     document.addEventListener('DOMContentLoaded', () => {
     if (!window.maplibregl) {
@@ -66,12 +73,59 @@
     const taxonSuggestUrl = "{% url 'gbif_taxon_suggest' %}";
     const LABEL_MIN_ZOOM = 17;
     const LABEL_LIMIT = 200;
+    const CONTEXT_ZOOM = 18;
+    const CONTEXT_SOURCE_ID = 'workrecords-context';
+    const CONTEXT_LAYER_ID = 'workrecords-context-points';
     const labelOverlay = document.getElementById('wr-label-overlay');
     let workrecordFeatures = [];
     let workrecordFeatureCollection = null;
+    let contextFeatures = [];
     let selectedLat = null;
     let selectedLon = null;
     let newRecordCoords = null;
+    let pendingFocusId = null;
+    const WORKRECORD_POINT_RADIUS = 5;
+    const WORKRECORD_POINT_STROKE_WIDTH = 1;
+    const WORKRECORD_POINT_STROKE_COLOR = '#fff';
+    const WORKRECORD_POINT_OPACITY = 1;
+    const PROJECT_POINT_COLOR = '#f97316';
+    const CONTEXT_POINT_COLOR = '#888';
+    const CONTEXT_POINT_OPACITY = 0.7;
+
+    const toNumber = (value) => {
+      if (value === null || value === '') return null;
+      const num = Number(value);
+      return Number.isFinite(num) ? num : null;
+    };
+    const params = new URLSearchParams(window.location.search);
+    const projectParam = params.get('project');
+    const dataParams = new URLSearchParams();
+    if (projectParam) {
+      dataParams.set('project', projectParam);
+    }
+    const WORKRECORDS_GEOJSON_URL_WITH_PARAMS = dataParams.toString()
+      ? `${WORKRECORDS_GEOJSON_URL}?${dataParams.toString()}`
+      : WORKRECORDS_GEOJSON_URL;
+    const initialLat = toNumber(params.get('lat'));
+    const initialLon = toNumber(params.get('lon'));
+    const initialZoom = toNumber(params.get('z'));
+    const focusParam = toNumber(params.get('focus'));
+    pendingFocusId = Number.isFinite(focusParam) ? focusParam : null;
+    let initialBbox = null;
+    const bboxParam = params.get('bbox');
+    if (bboxParam) {
+      const parts = bboxParam.split(',').map(toNumber);
+      if (parts.length === 4 && parts.every((p) => p !== null)) {
+        initialBbox = parts;
+      }
+    }
+    const clearFocusParam = () => {
+      if (!params.has('focus')) return;
+      params.delete('focus');
+      const qs = params.toString();
+      const nextUrl = window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash;
+      window.history.replaceState({}, '', nextUrl);
+    };
 
     const newRecordModal = document.getElementById('newRecordModal');
     const newRecordTitleInput = document.getElementById('newRecordTitle');
@@ -216,6 +270,8 @@
         alert('Nejdřív klikni do mapy a vyber bod.');
         return;
       }
+      const urlParams = new URLSearchParams(window.location.search);
+      const projectIdParam = urlParams.get('project');
       const title = newRecordTitleInput ? newRecordTitleInput.value.trim() : '';
       const displayTaxon = taxonDisplayInput ? taxonDisplayInput.value.trim() : '';
       const latinTaxon = taxonLatinInput ? taxonLatinInput.value.trim() : '';
@@ -236,8 +292,19 @@
         latitude: selectedLat,
         longitude: selectedLon,
       });
+      if (projectIdParam) {
+        payload.set('project', projectIdParam);
+      }
+      const requestUrl = projectIdParam
+        ? `${MAP_CREATE_RECORD_URL}?project=${encodeURIComponent(projectIdParam)}`
+        : MAP_CREATE_RECORD_URL;
+      if (console && console.debug) {
+        console.debug('map-create projectId', projectIdParam);
+        console.debug('map-create requestUrl', requestUrl);
+        console.debug('map-create payload has project', payload.has('project'));
+      }
 
-      fetch(MAP_CREATE_RECORD_URL, {
+      fetch(requestUrl, {
         method: 'POST',
         headers: {
           'X-CSRFToken': CSRF_TOKEN,
@@ -366,6 +433,103 @@
       center: [17.2509, 49.5938], // Olomouc
       zoom: 13,
     });
+    const applyInitialView = () => {
+      if (initialBbox) {
+        const [minLon, minLat, maxLon, maxLat] = initialBbox;
+        map.fitBounds([[minLon, minLat], [maxLon, maxLat]], {
+          padding: 40,
+          duration: 800,
+        });
+        return;
+      }
+      if (initialLat !== null && initialLon !== null) {
+        map.flyTo({
+          center: [initialLon, initialLat],
+          zoom: initialZoom !== null ? initialZoom : 16,
+          duration: 800,
+        });
+      }
+    };
+    const focusWorkRecordById = (recordId) => {
+      if (!recordId) return false;
+      const target = workrecordFeatures.find((feature) => Number(feature.id) === Number(recordId));
+      if (!target) return false;
+      map.easeTo({
+        center: target.coordinates,
+        zoom: Math.max(map.getZoom(), 18),
+        duration: 600,
+      });
+      if (window.openWorkRecordPanel) {
+        window.openWorkRecordPanel(target.id, { label: target.label });
+      }
+      return true;
+    };
+    const applyInitialFocus = () => {
+      if (!pendingFocusId) return;
+      focusWorkRecordById(pendingFocusId);
+      pendingFocusId = null;
+      clearFocusParam();
+    };
+    const buildContextUrl = () => {
+      const bounds = map.getBounds && map.getBounds();
+      if (!bounds) return null;
+      const sw = bounds.getSouthWest();
+      const ne = bounds.getNorthEast();
+      if (!sw || !ne) return null;
+      const bbox = `${sw.lng},${sw.lat},${ne.lng},${ne.lat}`;
+      return `${WORKRECORDS_GEOJSON_URL}?bbox=${encodeURIComponent(bbox)}`;
+    };
+    let contextRefreshTimer = null;
+    const refreshContextSource = () => {
+      if (!projectParam) return;
+      const source = map.getSource(CONTEXT_SOURCE_ID);
+      if (!source) return;
+      const zoom = map.getZoom();
+      if (!Number.isFinite(zoom) || zoom < CONTEXT_ZOOM) {
+        if (map.getLayer(CONTEXT_LAYER_ID)) {
+          map.setLayoutProperty(CONTEXT_LAYER_ID, 'visibility', 'none');
+        }
+        if (contextFeatures.length) {
+          contextFeatures = [];
+          renderLabelOverlay();
+        }
+        return;
+      }
+      const url = buildContextUrl();
+      if (!url) return;
+      if (map.getLayer(CONTEXT_LAYER_ID)) {
+        map.setLayoutProperty(CONTEXT_LAYER_ID, 'visibility', 'visible');
+      }
+      fetch(url)
+        .then(resp => resp.json())
+        .then(fc => {
+          const features = Array.isArray(fc && fc.features) ? fc.features : [];
+          contextFeatures = features
+            .map(feature => {
+              if (!feature || !feature.geometry || !feature.properties) return null;
+              const coords = feature.geometry.coordinates;
+              if (!Array.isArray(coords) || coords.length < 2) return null;
+              return {
+                id: feature.properties.id,
+                label: feature.properties.label,
+                coordinates: coords,
+              };
+            })
+            .filter(Boolean);
+          source.setData(fc);
+          renderLabelOverlay();
+        })
+        .catch(err => console.error('Context GeoJSON error', err));
+    };
+    const scheduleContextRefresh = () => {
+      if (!projectParam) return;
+      if (contextRefreshTimer) {
+        clearTimeout(contextRefreshTimer);
+      }
+      contextRefreshTimer = setTimeout(() => {
+        refreshContextSource();
+      }, 200);
+    };
 
     const clearLabelOverlay = () => {
       if (!labelOverlay) return;
@@ -382,8 +546,7 @@
     };
 
     const renderLabelOverlay = () => {
-      if (!labelOverlay || !workrecordFeatures.length) {
-        clearLabelOverlay();
+      if (!labelOverlay) {
         return;
       }
       const zoom = map.getZoom();
@@ -394,24 +557,44 @@
       const bounds = map.getBounds();
       const fragment = document.createDocumentFragment();
       let rendered = 0;
-      for (const feature of workrecordFeatures) {
-        if (!feature) continue;
-        const coords = feature.coordinates;
-        if (!Array.isArray(coords) || coords.length < 2) continue;
-        const [lng, lat] = coords;
-        if (!bounds || typeof bounds.contains !== 'function' || !bounds.contains([lng, lat])) {
-          continue;
+      const buildLabelNodes = (features, maxCount) => {
+        const nodes = [];
+        let count = 0;
+        for (const feature of features) {
+          if (!feature) continue;
+          const coords = feature.coordinates;
+          if (!Array.isArray(coords) || coords.length < 2) continue;
+          const [lng, lat] = coords;
+          if (!bounds || typeof bounds.contains !== 'function' || !bounds.contains([lng, lat])) {
+            continue;
+          }
+          const labelText = feature.label || (feature.id ? `WR ${feature.id}` : '');
+          if (!labelText) continue;
+          const point = map.project([lng, lat]);
+          const el = document.createElement('div');
+          el.className = 'wr-label';
+          el.textContent = labelText;
+          el.style.transform = `translate(${point.x}px, ${point.y}px) translate(-50%, -130%)`;
+          nodes.push(el);
+          count += 1;
+          if (count >= maxCount) break;
         }
-        const labelText = feature.label || (feature.id ? `WR ${feature.id}` : '');
-        if (!labelText) continue;
-        const point = map.project([lng, lat]);
-        const el = document.createElement('div');
-        el.className = 'wr-label';
-        el.textContent = labelText;
-        el.style.transform = `translate(${point.x}px, ${point.y}px) translate(-50%, -130%)`;
-        fragment.appendChild(el);
-        rendered += 1;
-        if (rendered >= LABEL_LIMIT) break;
+        return nodes;
+      };
+      const contextEnabled = Boolean(projectParam) && Number.isFinite(zoom) && zoom >= CONTEXT_ZOOM;
+      const projectNodes = workrecordFeatures.length
+        ? buildLabelNodes(workrecordFeatures, LABEL_LIMIT)
+        : [];
+      rendered += projectNodes.length;
+      const remaining = Math.max(LABEL_LIMIT - rendered, 0);
+      const contextNodes = contextEnabled && contextFeatures.length && remaining > 0
+        ? buildLabelNodes(contextFeatures, remaining)
+        : [];
+      for (const node of contextNodes) {
+        fragment.appendChild(node);
+      }
+      for (const node of projectNodes) {
+        fragment.appendChild(node);
       }
       if (typeof labelOverlay.replaceChildren === 'function') {
         labelOverlay.replaceChildren(fragment);
@@ -426,6 +609,7 @@
     map.on('rotate', renderLabelOverlay);
 
       map.on('load', () => {
+        applyInitialView();
         const pm = new window.pmtiles.PMTiles('/tiles/cz.pmtiles');
         pm.getMetadata()
           .then(md => {
@@ -564,36 +748,70 @@
         streetNamesCheckbox.addEventListener('change', applyStreetNamesVisibility);
       }
 
-      fetch(WORKRECORDS_GEOJSON_URL)
-        .then(resp => resp.json())
-        .then(fc => {
-          const features = Array.isArray(fc && fc.features) ? fc.features : [];
-          console.log('GeoJSON features:', features.length);
-          console.log('Sample labels:', features.slice(0, 3).map(f => f && f.properties ? f.properties.label : null));
-          workrecordFeatures = features
-            .map(feature => {
-              if (!feature || !feature.geometry || !feature.properties) return null;
-              const coords = feature.geometry.coordinates;
-              if (!Array.isArray(coords) || coords.length < 2) return null;
-              return {
-                id: feature.properties.id,
-                label: feature.properties.label,
-                coordinates: coords,
-              };
-            })
-            .filter(Boolean);
-          workrecordFeatureCollection = fc;
-          renderLabelOverlay();
-        })
-        .catch(err => console.error('GeoJSON debug error', err));
+      const refreshProjectWorkrecords = () => {
+        return fetch(WORKRECORDS_GEOJSON_URL_WITH_PARAMS)
+          .then(resp => resp.json())
+          .then(fc => {
+            const features = Array.isArray(fc && fc.features) ? fc.features : [];
+            console.log('GeoJSON features:', features.length);
+            console.log('Sample labels:', features.slice(0, 3).map(f => f && f.properties ? f.properties.label : null));
+            workrecordFeatures = features
+              .map(feature => {
+                if (!feature || !feature.geometry || !feature.properties) return null;
+                const coords = feature.geometry.coordinates;
+                if (!Array.isArray(coords) || coords.length < 2) return null;
+                return {
+                  id: feature.properties.id,
+                  label: feature.properties.label,
+                  coordinates: coords,
+                };
+              })
+              .filter(Boolean);
+            workrecordFeatureCollection = fc;
+            const src = map.getSource('workrecords');
+            if (src && typeof src.setData === 'function') {
+              src.setData(fc);
+            }
+            renderLabelOverlay();
+            applyInitialFocus();
+          })
+          .catch(err => console.error('GeoJSON debug error', err));
+      };
+      window.refreshProjectWorkrecords = refreshProjectWorkrecords;
+
+      if (projectParam) {
+        map.addSource(CONTEXT_SOURCE_ID, {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
+        map.addLayer({
+          id: CONTEXT_LAYER_ID,
+          type: 'circle',
+          source: CONTEXT_SOURCE_ID,
+          paint: {
+            'circle-color': CONTEXT_POINT_COLOR,
+            'circle-radius': WORKRECORD_POINT_RADIUS,
+            'circle-opacity': CONTEXT_POINT_OPACITY,
+            'circle-stroke-width': WORKRECORD_POINT_STROKE_WIDTH,
+            'circle-stroke-color': WORKRECORD_POINT_STROKE_COLOR,
+          },
+          layout: {
+            visibility: 'none',
+          },
+        });
+        scheduleContextRefresh();
+        map.on('moveend', scheduleContextRefresh);
+        map.on('zoomend', scheduleContextRefresh);
+      }
 
       map.addSource('workrecords', {
         type: 'geojson',
-        data: WORKRECORDS_GEOJSON_URL,
+        data: WORKRECORDS_GEOJSON_URL_WITH_PARAMS,
         cluster: true,
         clusterRadius: 25,
         clusterMaxZoom: 15,
       });
+      refreshProjectWorkrecords();
 
       map.addLayer({
         id: 'workrecord-clusters',
@@ -634,10 +852,11 @@
         source: 'workrecords',
         filter: ['!', ['has', 'point_count']],
         paint: {
-          'circle-color': '#f97316',
-          'circle-radius': 5,
-          'circle-stroke-width': 1,
-          'circle-stroke-color': '#fff',
+          'circle-color': PROJECT_POINT_COLOR,
+          'circle-radius': WORKRECORD_POINT_RADIUS,
+          'circle-opacity': WORKRECORD_POINT_OPACITY,
+          'circle-stroke-width': WORKRECORD_POINT_STROKE_WIDTH,
+          'circle-stroke-color': WORKRECORD_POINT_STROKE_COLOR,
         },
       });
 
@@ -705,7 +924,9 @@
         const recordId = feature.properties && feature.properties.id;
         const label = feature.properties && feature.properties.label;
         if (recordId && window.openWorkRecordPanel) {
-          window.openWorkRecordPanel(recordId, { label });
+          const layerId = feature.layer && feature.layer.id;
+          const inProject = layerId ? layerId !== CONTEXT_LAYER_ID : undefined;
+          window.openWorkRecordPanel(recordId, { label, inProject });
         }
       };
 
@@ -715,6 +936,11 @@
       map.on('click', 'workrecord-hitarea', (event) => {
         handleWorkRecordClick(event, ['workrecord-hitarea']);
       });
+      if (projectParam) {
+        map.on('click', CONTEXT_LAYER_ID, (event) => {
+          handleWorkRecordClick(event, [CONTEXT_LAYER_ID]);
+        });
+      }
 
       const setPointer = () => { map.getCanvas().style.cursor = 'pointer'; };
       const resetPointer = () => { map.getCanvas().style.cursor = ''; };
@@ -724,17 +950,26 @@
       map.on('mouseleave', 'workrecord-unclustered', resetPointer);
       map.on('mouseenter', 'workrecord-hitarea', setPointer);
       map.on('mouseleave', 'workrecord-hitarea', resetPointer);
+      if (projectParam) {
+        map.on('mouseenter', CONTEXT_LAYER_ID, setPointer);
+        map.on('mouseleave', CONTEXT_LAYER_ID, resetPointer);
+      }
       map.on('click', (event) => {
         const bbox = [
           [event.point.x - HIT_TOLERANCE, event.point.y - HIT_TOLERANCE],
           [event.point.x + HIT_TOLERANCE, event.point.y + HIT_TOLERANCE],
         ];
-        const unclustered = map.queryRenderedFeatures(bbox, { layers: ['workrecord-hitarea', 'workrecord-unclustered'] });
+        const clickLayers = projectParam
+          ? ['workrecord-hitarea', 'workrecord-unclustered', CONTEXT_LAYER_ID]
+          : ['workrecord-hitarea', 'workrecord-unclustered'];
+        const unclustered = map.queryRenderedFeatures(bbox, { layers: clickLayers });
         if (unclustered && unclustered.length) {
           const recordId = unclustered[0].properties && unclustered[0].properties.id;
           const label = unclustered[0].properties && unclustered[0].properties.label;
           if (recordId && window.openWorkRecordPanel) {
-            window.openWorkRecordPanel(recordId, { label });
+            const layerId = unclustered[0].layer && unclustered[0].layer.id;
+            const inProject = layerId ? layerId !== CONTEXT_LAYER_ID : undefined;
+            window.openWorkRecordPanel(recordId, { label, inProject });
           }
           return;
         }

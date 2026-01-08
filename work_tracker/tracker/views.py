@@ -4,6 +4,7 @@ import zipfile
 import unicodedata
 import re
 import tempfile
+from urllib.parse import urlencode
 import zipstream
 import json
 import requests
@@ -16,7 +17,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.files import File
 from django.core.files.base import ContentFile
 from django.core.paginator import Paginator
-from django.db.models import Max, F, Count, Q, Prefetch, Exists, OuterRef
+from django.db.models import Max, Min, F, Count, Q, Prefetch, Exists, OuterRef
 from django.http import (
     StreamingHttpResponse,
     FileResponse,
@@ -319,7 +320,7 @@ def work_record_list(request):
         .filter(is_closed=False)
         .annotate(
             latest_work_time=Max('work_records__created_at'),
-            wr_count=Count('work_records')
+            trees_count=Count('trees', distinct=True)
         )
         .order_by(F('latest_work_time').desc(nulls_last=True), '-id')
         .prefetch_related(
@@ -341,6 +342,7 @@ def work_record_list(request):
 
 @login_required
 def create_work_record(request, project_id=None):
+    project_context_id = project_id or request.GET.get("project") or request.POST.get("project")
     if request.method == 'POST':
         work_record_form = WorkRecordForm(request.POST)
         photo_form = PhotoDocumentationForm(request.POST, request.FILES)
@@ -375,16 +377,27 @@ def create_work_record(request, project_id=None):
             if work_record.project_id and not user_can_view_project(request.user, work_record.project_id):
                 return redirect('work_record_list')
 
+            if project_context_id:
+                try:
+                    project = Project.objects.get(pk=project_context_id)
+                except Project.DoesNotExist:
+                    return redirect('work_record_list')
+                if not user_can_view_project(request.user, project.pk):
+                    return redirect('work_record_list')
+                project.trees.add(work_record)
+
             if 'photo' in request.FILES and photo_form.is_valid():
                 photo = photo_form.save(commit=False)
                 photo.work_record = work_record
                 photo.save()
 
+            if project_context_id:
+                return redirect('project_detail', pk=project_context_id)
             return redirect('work_record_detail', pk=work_record.pk)
     else:
         initial_data = {}
-        if project_id:
-            project = get_project_or_404_for_user(request.user, project_id)
+        if project_context_id:
+            project = get_project_or_404_for_user(request.user, project_context_id)
             initial_data['project'] = project
 
         work_record_form = WorkRecordForm(initial=initial_data)
@@ -393,6 +406,7 @@ def create_work_record(request, project_id=None):
     return render(request, 'tracker/create_work_record.html', {
         'work_record_form': work_record_form,
         'photo_form': photo_form,
+        'project_context_id': project_context_id,
     })
 
 @login_required
@@ -934,8 +948,11 @@ def _build_map_mapui_context(request):
 
 @login_required
 def map_leaflet_test(request):
-    context = _build_map_mapui_context(request)
-    return render(request, "tracker/map_leaflet.html", context)
+    target = reverse("map_gl_pilot")
+    query = request.META.get("QUERY_STRING")
+    if query:
+        return redirect(f"{target}?{query}")
+    return redirect(target)
 
 
 @login_required
@@ -943,12 +960,26 @@ def workrecords_geojson(request):
     """
     GeoJSON feed with coordinates of WorkRecords (pilot usage for MapLibre map).
     """
-    visible_projects = user_projects_qs(request.user)
-    qs = WorkRecord.objects.filter(
-        Q(project__in=visible_projects) | Q(project__isnull=True),
-        latitude__isnull=False,
-        longitude__isnull=False,
-    ).only("id", "latitude", "longitude", "external_tree_id", "title")
+    project_param = request.GET.get("project")
+    if project_param:
+        try:
+            project_id = int(project_param)
+        except (TypeError, ValueError):
+            return HttpResponseBadRequest("Invalid project parameter")
+        project = get_object_or_404(Project, pk=project_id)
+        if not user_can_view_project(request.user, project.pk):
+            return JsonResponse({"error": "Forbidden"}, status=403)
+        qs = project.trees.filter(
+            latitude__isnull=False,
+            longitude__isnull=False,
+        ).only("id", "latitude", "longitude", "external_tree_id", "title")
+    else:
+        visible_projects = user_projects_qs(request.user)
+        qs = WorkRecord.objects.filter(
+            Q(project__in=visible_projects) | Q(project__isnull=True),
+            latitude__isnull=False,
+            longitude__isnull=False,
+        ).only("id", "latitude", "longitude", "external_tree_id", "title")
 
     # TODO: this pilot endpoint will be replaced by the registry-driven map feed later.
     bbox_param = request.GET.get("bbox")
@@ -1005,6 +1036,56 @@ def map_gl_pilot(request):
     """Temporary pilot page to verify MapLibre GL rendering."""
     context = _build_map_mapui_context(request)
     return render(request, "tracker/map_gl_pilot.html", context)
+
+
+@login_required
+def map_project_redirect(request, pk):
+    project = get_object_or_404(Project, pk=pk)
+    if not user_can_view_project(request.user, project.pk):
+        return redirect("work_record_list")
+
+    coords_qs = project.trees.filter(
+        latitude__isnull=False,
+        longitude__isnull=False,
+    )
+    coords_count = coords_qs.count()
+    base_params = {"project": project.pk}
+    if coords_count == 0:
+        messages.warning(request, "Projekt nemá žádné stromy se souřadnicemi.")
+        target = f"{reverse('map_gl_pilot')}?{urlencode(base_params)}"
+        return redirect(target)
+    if coords_count == 1:
+        single = coords_qs.values("latitude", "longitude").first()
+        if single:
+            lat = single["latitude"]
+            lon = single["longitude"]
+            params = {"lat": lat, "lon": lon, "z": 18, **base_params}
+            return redirect(f"{reverse('map_gl_pilot')}?{urlencode(params)}")
+
+    coords = coords_qs.aggregate(
+        min_lat=Min("latitude"),
+        max_lat=Max("latitude"),
+        min_lon=Min("longitude"),
+        max_lon=Max("longitude"),
+    )
+
+    target = reverse("map_gl_pilot")
+    if all(value is not None for value in coords.values()):
+        bbox = f"{coords['min_lon']},{coords['min_lat']},{coords['max_lon']},{coords['max_lat']}"
+        params = {"bbox": bbox, **base_params}
+        return redirect(f"{target}?{urlencode(params)}")
+    return redirect(f"{target}?{urlencode(base_params)}")
+
+
+@login_required
+@require_http_methods(["POST"])
+def project_tree_add(request, project_pk, workrecord_pk):
+    project = get_object_or_404(Project, pk=project_pk)
+    if not user_is_foreman(request.user, project.pk):
+        return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
+    work_record = get_object_or_404(WorkRecord, pk=workrecord_pk)
+    project.trees.add(work_record)
+    return JsonResponse({"ok": True})
 
 
 @login_required
@@ -1220,7 +1301,7 @@ def map_create_work_record(request):
     taxon_czech_value = (request.POST.get("taxon_czech") or "").strip()
     taxon_latin_value = (request.POST.get("taxon_latin") or "").strip()
     gbif_key_raw = (request.POST.get("taxon_gbif_key") or "").strip()
-    project_id = request.POST.get("project_id") or None
+    project_id = request.POST.get("project_id") or request.POST.get("project") or request.GET.get("project") or None
     date_str = (request.POST.get("date") or "").strip()
     lat_str = request.POST.get("latitude")
     lon_str = request.POST.get("longitude")
@@ -1285,6 +1366,11 @@ def map_create_work_record(request):
             "date",
         ]
     )
+
+    if project:
+        project.trees.add(work_record)
+        if settings.DEBUG:
+            print(f"[map_create_work_record] project_id={project.pk} work_record_id={work_record.pk}")
 
     return JsonResponse({
         "status": "ok",

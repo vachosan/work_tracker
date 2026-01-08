@@ -93,7 +93,7 @@
           </button>
         </div>
       </form>
-      <a class="btn btn-outline-primary btn-sm" href="{% url 'map_leaflet_test' %}?project={{ project.pk }}">
+      <a class="btn btn-outline-primary btn-sm" href="{% url 'map_project_redirect' project.pk %}">
         <i class="bi bi-map"></i> Mapa projektu
       </a>
     </div>
@@ -238,11 +238,19 @@
             {% else %}
               <i class="bi bi-geo text-muted" title="Bez polohy"></i>
             {% endif %}
-            <a href="{% url 'map_leaflet_test' %}?record={{ wr.id }}&project={{ project.pk }}"
-               class="text-muted"
-               title="Zobrazit v mapě">
-              <i class="bi bi-map"></i>
-            </a>
+            {% if wr.latitude and wr.longitude %}
+              <a href="{% url 'map_gl_pilot' %}?lat={{ wr.latitude }}&lon={{ wr.longitude }}&z=18&focus={{ wr.id }}"
+                 class="text-muted"
+                 title="Zobrazit v mapě">
+                <i class="bi bi-map"></i>
+              </a>
+            {% else %}
+              <a href="{% url 'map_gl_pilot' %}"
+                 class="text-muted"
+                 title="Otevřít mapu">
+                <i class="bi bi-map"></i>
+              </a>
+            {% endif %}
             <a href="{% url 'work_record_detail' wr.pk %}#intervence_new"
                class="btn btn-sm btn-outline-secondary">
               Zásahy
