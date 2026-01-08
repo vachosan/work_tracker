@@ -974,12 +974,17 @@ def workrecords_geojson(request):
             longitude__isnull=False,
         ).only("id", "latitude", "longitude", "external_tree_id", "title")
     else:
+        # Use the Project.trees M2M as the source of truth; legacy FK can drift.
         visible_projects = user_projects_qs(request.user)
-        qs = WorkRecord.objects.filter(
-            Q(project__in=visible_projects) | Q(project__isnull=True),
-            latitude__isnull=False,
-            longitude__isnull=False,
-        ).only("id", "latitude", "longitude", "external_tree_id", "title")
+        qs = (
+            WorkRecord.objects.filter(
+                Q(projects__in=visible_projects),
+                latitude__isnull=False,
+                longitude__isnull=False,
+            )
+            .distinct()
+            .only("id", "latitude", "longitude", "external_tree_id", "title")
+        )
 
     # TODO: this pilot endpoint will be replaced by the registry-driven map feed later.
     bbox_param = request.GET.get("bbox")
@@ -1085,6 +1090,9 @@ def project_tree_add(request, project_pk, workrecord_pk):
         return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
     work_record = get_object_or_404(WorkRecord, pk=workrecord_pk)
     project.trees.add(work_record)
+    if work_record.project_id is None:
+        work_record.project = project
+        work_record.save(update_fields=["project"])
     return JsonResponse({"ok": True})
 
 
