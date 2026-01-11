@@ -92,6 +92,9 @@ document.addEventListener('DOMContentLoaded', function () {
   const assessmentWorkRecordIdInput = document.getElementById('assessmentWorkRecordId');
   const assessmentDbhInput = document.getElementById('assessmentDbh');
   const assessmentHeightInput = document.getElementById('assessmentHeight');
+  const assessmentCrownWidthInput = document.getElementById('assessmentCrownWidth');
+  const assessmentCrownAreaInput = document.getElementById('assessmentCrownArea');
+  const assessmentCrownAreaHint = document.getElementById('assessmentCrownAreaHint');
   const assessmentPhysAge = document.getElementById('assessmentPhysAge');
   const assessmentVitality = document.getElementById('assessmentVitality');
   const assessmentHealth = document.getElementById('assessmentHealth');
@@ -875,6 +878,35 @@ document.addEventListener('DOMContentLoaded', function () {
     labelEl.textContent = inputEl.value || '–';
   }
 
+  function updateCrownAreaHint(areaValue, widthValue, heightValue) {
+    if (assessmentCrownAreaInput) {
+      assessmentCrownAreaInput.value = areaValue || "";
+    }
+    if (!assessmentCrownAreaHint) return;
+    if (areaValue) {
+      assessmentCrownAreaHint.textContent = "";
+      return;
+    }
+    const widthNum = typeof widthValue === "number" ? widthValue : parseFloat(widthValue);
+    const heightNum = typeof heightValue === "number" ? heightValue : parseFloat(heightValue);
+    if (!heightNum || heightNum <= 0) {
+      assessmentCrownAreaHint.textContent = "Chybí výška stromu";
+      return;
+    }
+    if (!widthNum || widthNum <= 0) {
+      assessmentCrownAreaHint.textContent = "Zadej šířku koruny";
+      return;
+    }
+    assessmentCrownAreaHint.textContent = "";
+  }
+
+  function updateCrownAreaHintFromInputs() {
+    const widthVal = assessmentCrownWidthInput ? assessmentCrownWidthInput.value : null;
+    const heightVal = assessmentHeightInput ? assessmentHeightInput.value : null;
+    const areaVal = assessmentCrownAreaInput ? assessmentCrownAreaInput.value : null;
+    updateCrownAreaHint(areaVal, widthVal, heightVal);
+  }
+
   function perspectiveLetterFromSlider(val) {
     const n = Number(val);
     if (n === 1) return 'a';
@@ -1127,6 +1159,13 @@ document.addEventListener('DOMContentLoaded', function () {
     inputEl.addEventListener('input', () => updateSliderLabel(inputEl, labelEl));
   });
 
+  if (assessmentCrownWidthInput) {
+    assessmentCrownWidthInput.addEventListener("input", updateCrownAreaHintFromInputs);
+  }
+  if (assessmentHeightInput) {
+    assessmentHeightInput.addEventListener("input", updateCrownAreaHintFromInputs);
+  }
+
   if (assessmentPerspectiveSlider && assessmentPerspectiveValue) {
     assessmentPerspectiveSlider.addEventListener('input', () => {
       const letter = perspectiveLetterFromSlider(assessmentPerspectiveSlider.value);
@@ -1140,6 +1179,9 @@ document.addEventListener('DOMContentLoaded', function () {
     if (assessmentWorkRecordIdInput) assessmentWorkRecordIdInput.value = recordId;
     if (assessmentDbhInput) assessmentDbhInput.value = '';
     if (assessmentHeightInput) assessmentHeightInput.value = '';
+    if (assessmentCrownWidthInput) assessmentCrownWidthInput.value = "";
+    if (assessmentCrownAreaInput) assessmentCrownAreaInput.value = "";
+    if (assessmentCrownAreaHint) assessmentCrownAreaHint.textContent = "";
     if (assessmentPhysAge) assessmentPhysAge.value = 3;
     if (assessmentVitality) assessmentVitality.value = 3;
     if (assessmentHealth) assessmentHealth.value = 3;
@@ -1154,6 +1196,7 @@ document.addEventListener('DOMContentLoaded', function () {
     updateSliderLabel(assessmentVitality, assessmentVitalityValue);
     updateSliderLabel(assessmentHealth, assessmentHealthValue);
     updateSliderLabel(assessmentStability, assessmentStabilityValue);
+    updateCrownAreaHintFromInputs();
     if (assessmentMessage) {
       assessmentMessage.textContent = '';
       assessmentMessage.className = 'mt-2 small';
@@ -1179,6 +1222,12 @@ document.addEventListener('DOMContentLoaded', function () {
         if (assessmentHeightInput && data.height_m !== null && data.height_m !== undefined) {
           assessmentHeightInput.value = data.height_m;
         }
+        if (assessmentCrownWidthInput && data.crown_width_m !== null && data.crown_width_m !== undefined) {
+          assessmentCrownWidthInput.value = data.crown_width_m;
+        }
+        if (assessmentCrownAreaInput && data.crown_area_m2 !== null && data.crown_area_m2 !== undefined) {
+          assessmentCrownAreaInput.value = data.crown_area_m2;
+        }
         if (assessmentPhysAge && data.physiological_age) {
           assessmentPhysAge.value = data.physiological_age;
         }
@@ -1201,6 +1250,7 @@ document.addEventListener('DOMContentLoaded', function () {
         updateSliderLabel(assessmentVitality, assessmentVitalityValue);
         updateSliderLabel(assessmentHealth, assessmentHealthValue);
         updateSliderLabel(assessmentStability, assessmentStabilityValue);
+        updateCrownAreaHintFromInputs();
       })
       .catch(err => {
         console.error(err);
@@ -1436,6 +1486,7 @@ document.addEventListener('DOMContentLoaded', function () {
       const payload = {
         dbh_cm: assessmentDbhInput && assessmentDbhInput.value ? assessmentDbhInput.value : null,
         height_m: assessmentHeightInput && assessmentHeightInput.value ? assessmentHeightInput.value : null,
+        crown_width_m: assessmentCrownWidthInput && assessmentCrownWidthInput.value ? assessmentCrownWidthInput.value : null,
         physiological_age: assessmentPhysAge && assessmentPhysAge.value ? assessmentPhysAge.value : null,
         vitality: assessmentVitality && assessmentVitality.value ? assessmentVitality.value : null,
         health_state: assessmentHealth && assessmentHealth.value ? assessmentHealth.value : null,

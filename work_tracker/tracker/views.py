@@ -1,6 +1,9 @@
 import os
 import io
 import zipfile
+import csv
+import datetime as dt
+import xml.etree.ElementTree as ET
 import unicodedata
 import re
 import tempfile
@@ -9,6 +12,7 @@ import zipstream
 import json
 import requests
 from datetime import date
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.contrib import messages
@@ -27,6 +31,7 @@ from django.http import (
 )
 from django.shortcuts import render, redirect, get_object_or_404
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.utils.safestring import mark_safe
 from django.views.decorators.http import require_GET, require_http_methods
@@ -691,6 +696,50 @@ def delete_photo(request, pk):
     photo.delete()
     return redirect('edit_work_record', pk=work_record_pk)
 
+
+
+
+def _slugify_export_name(name):
+    name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
+    name = re.sub(r'[^a-zA-Z0-9_-]+', '_', name)
+    return name.strip('_') or 'ukon'
+
+
+def _get_export_work_records(request, project):
+    export_all_requested = bool(request.POST.get("export_all"))
+    if export_all_requested:
+        return project.trees.all(), None
+
+    selected_ids = request.POST.getlist("selected_records")
+    if not selected_ids:
+        messages.warning(request, "Vyberte prosim alespon jeden zaznam pro export.")
+        return None, redirect("project_detail", pk=project.pk)
+
+    return project.trees.filter(id__in=selected_ids), None
+
+
+def _build_export_queryset(work_records):
+    latest_assessments_qs = TreeAssessment.objects.order_by("-assessed_at", "-id")
+    return (
+        work_records.select_related("project")
+        .prefetch_related(
+            Prefetch(
+                "assessments",
+                queryset=latest_assessments_qs,
+                to_attr="prefetched_assessments",
+            )
+        )
+        .annotate(intervention_count=Count("interventions", distinct=True))
+    )
+
+
+def _latest_assessment_for_export(record):
+    assessments = getattr(record, "prefetched_assessments", None)
+    if assessments:
+        return assessments[0]
+    return None
+
+
 @login_required
 def export_selected_zip(request, pk):
     """Export vybraných nebo všech úkonů projektu jako streamovaný ZIP (nízká paměťová náročnost)."""
@@ -699,22 +748,10 @@ def export_selected_zip(request, pk):
     if not user_can_view_project(request.user, project.pk):
         return redirect('work_record_list')
 
-    export_all_requested = bool(request.POST.get("export_all"))
+    work_records, redirect_response = _get_export_work_records(request, project)
+    if redirect_response:
+        return redirect_response
 
-    if export_all_requested:
-        work_records = project.trees.all()
-    else:
-        selected_ids = request.POST.getlist("selected_records")
-        if not selected_ids:
-            messages.warning(request, "Vyberte prosím alespoň jeden záznam pro export.")
-            return redirect("project_detail", pk=pk)
-        work_records = project.trees.filter(id__in=selected_ids)
-
-    # helper na čisté názvy
-    def slugify_folder(name):
-        name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
-        name = re.sub(r'[^a-zA-Z0-9_-]+', '_', name)
-        return name.strip('_') or 'ukon'
 
     def file_chunks(file_obj):
         if hasattr(file_obj, "chunks"):
@@ -732,7 +769,7 @@ def export_selected_zip(request, pk):
     z = zipstream.ZipFile(mode='w', compression=zipfile.ZIP_DEFLATED)
 
     for record in work_records:
-        folder = slugify_folder(record.title or f"ukon_{record.id}")
+        folder = _slugify_export_name(record.title or f"ukon_{record.id}")
         photos = PhotoDocumentation.objects.filter(work_record=record)
 
         for photo in photos:
@@ -743,7 +780,7 @@ def export_selected_zip(request, pk):
             ext = os.path.splitext(base_filename)[1] or ".jpg"
 
             if photo.description:
-                safe_name = slugify_folder(photo.description)
+                safe_name = _slugify_export_name(photo.description)
                 filename = f"{safe_name}{ext}"
             else:
                 filename = base_filename
@@ -771,11 +808,255 @@ def export_selected_zip(request, pk):
 
     # příprava odpovědi
     today_str = date.today().strftime("%Y-%m-%d")
-    filename = f'{slugify_folder(project.name)}_{today_str}.zip'
+    filename = f'{_slugify_export_name(project.name)}_{today_str}.zip'
 
     response = StreamingHttpResponse(z, content_type='application/zip')
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
+
+EXPORT_DATA_HEADERS = [
+    "work_record_id",
+    "project_id",
+    "project_name",
+    "title",
+    "external_tree_id",
+    "taxon",
+    "taxon_czech",
+    "taxon_latin",
+    "latitude",
+    "longitude",
+    "date",
+    "created_at",
+    "intervention_count",
+    "assessment_assessed_at",
+    "assessment_dbh_cm",
+    "assessment_height_m",
+    "assessment_crown_width_m",
+    "assessment_crown_area_m2",
+    "assessment_physiological_age",
+    "assessment_vitality",
+    "assessment_health_state",
+    "assessment_stability",
+    "assessment_perspective",
+]
+
+
+def _export_row_native(record, assessment):
+    def to_float(value):
+        if value is None:
+            return None
+        return float(value)
+
+    return [
+        record.id,
+        record.project_id,
+        record.project.name if record.project else None,
+        record.title or None,
+        record.external_tree_id or None,
+        record.taxon or None,
+        record.taxon_czech or None,
+        record.taxon_latin or None,
+        to_float(record.latitude) if record.latitude is not None else None,
+        to_float(record.longitude) if record.longitude is not None else None,
+        record.date if record.date else None,
+        record.created_at if record.created_at else None,
+        getattr(record, "intervention_count", None),
+        assessment.assessed_at if assessment and assessment.assessed_at else None,
+        to_float(assessment.dbh_cm) if assessment and assessment.dbh_cm is not None else None,
+        to_float(assessment.height_m) if assessment and assessment.height_m is not None else None,
+        to_float(assessment.crown_width_m) if assessment and assessment.crown_width_m is not None else None,
+        to_float(assessment.crown_area_m2) if assessment and assessment.crown_area_m2 is not None else None,
+        assessment.physiological_age if assessment and assessment.physiological_age is not None else None,
+        assessment.vitality if assessment and assessment.vitality is not None else None,
+        assessment.health_state if assessment and assessment.health_state is not None else None,
+        assessment.stability if assessment and assessment.stability is not None else None,
+        assessment.perspective if assessment and assessment.perspective is not None else None,
+    ]
+
+
+
+
+@login_required
+def export_selected_csv(request, pk):
+    project = get_object_or_404(Project, pk=pk)
+
+    if not user_can_view_project(request.user, project.pk):
+        return redirect('work_record_list')
+
+    work_records, redirect_response = _get_export_work_records(request, project)
+    if redirect_response:
+        return redirect_response
+
+    work_records = _build_export_queryset(work_records)
+
+    today_str = date.today().strftime("%Y-%m-%d")
+    filename = f'{_slugify_export_name(project.name)}_{today_str}.csv'
+
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+    writer = csv.writer(response, delimiter=';', quoting=csv.QUOTE_MINIMAL)
+    writer.writerow(EXPORT_DATA_HEADERS)
+
+    for record in work_records:
+        assessment = _latest_assessment_for_export(record)
+        writer.writerow(
+            [
+                record.id,
+                record.project_id or "",
+                record.project.name if record.project else "",
+                record.title or "",
+                record.external_tree_id or "",
+                record.taxon or "",
+                record.taxon_czech or "",
+                record.taxon_latin or "",
+                record.latitude if record.latitude is not None else "",
+                record.longitude if record.longitude is not None else "",
+                record.date.isoformat() if record.date else "",
+                record.created_at.isoformat() if record.created_at else "",
+                getattr(record, "intervention_count", ""),
+                assessment.assessed_at.isoformat() if assessment and assessment.assessed_at else "",
+                assessment.dbh_cm if assessment and assessment.dbh_cm is not None else "",
+                assessment.height_m if assessment and assessment.height_m is not None else "",
+                assessment.crown_width_m if assessment and assessment.crown_width_m is not None else "",
+                assessment.crown_area_m2 if assessment and assessment.crown_area_m2 is not None else "",
+                assessment.physiological_age if assessment and assessment.physiological_age is not None else "",
+                assessment.vitality if assessment and assessment.vitality is not None else "",
+                assessment.health_state if assessment and assessment.health_state is not None else "",
+                assessment.stability if assessment and assessment.stability is not None else "",
+                assessment.perspective if assessment and assessment.perspective is not None else "",
+            ]
+        )
+
+    return response
+
+
+
+
+
+@login_required
+def export_selected_xlsx(request, pk):
+    try:
+        from openpyxl import Workbook
+        from openpyxl.utils import get_column_letter
+    except ModuleNotFoundError:
+        messages.error(
+            request,
+            "Export Excelu vyzaduje balicek openpyxl. Nainstalujte jej prosim.",
+        )
+        return redirect("project_detail", pk=pk)
+
+    def excel_safe(value):
+        if isinstance(value, dt.datetime):
+            if timezone.is_aware(value):
+                return timezone.localtime(value).replace(tzinfo=None)
+            return value
+        return value
+
+    project = get_object_or_404(Project, pk=pk)
+
+    if not user_can_view_project(request.user, project.pk):
+        return redirect('work_record_list')
+
+    work_records, redirect_response = _get_export_work_records(request, project)
+    if redirect_response:
+        return redirect_response
+
+    work_records = _build_export_queryset(work_records)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "data"
+    ws.append(EXPORT_DATA_HEADERS)
+
+    for record in work_records:
+        assessment = _latest_assessment_for_export(record)
+        row = _export_row_native(record, assessment)
+        ws.append([excel_safe(item) for item in row])
+
+    ws.freeze_panes = "A2"
+    last_row = ws.max_row
+    last_col_letter = get_column_letter(len(EXPORT_DATA_HEADERS))
+    ws.auto_filter.ref = f"A1:{last_col_letter}{last_row}"
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    filename = f"arbomap_project_{project.pk}_data.xlsx"
+    response = HttpResponse(
+        output.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+@login_required
+def export_selected_xml(request, pk):
+    project = get_object_or_404(Project, pk=pk)
+
+    if not user_can_view_project(request.user, project.pk):
+        return redirect('work_record_list')
+
+    work_records, redirect_response = _get_export_work_records(request, project)
+    if redirect_response:
+        return redirect_response
+
+    work_records = _build_export_queryset(work_records)
+
+    root = ET.Element("arbomap_export", generated_at=timezone.now().isoformat())
+    project_el = ET.SubElement(
+        root,
+        "project",
+        id=str(project.pk),
+        name=project.name or "",
+    )
+
+    for record in work_records:
+        wr_el = ET.SubElement(project_el, "work_record", id=str(record.pk))
+        loc_attrs = {}
+        if record.latitude is not None:
+            loc_attrs["lat"] = str(record.latitude)
+        if record.longitude is not None:
+            loc_attrs["lon"] = str(record.longitude)
+        if loc_attrs:
+            ET.SubElement(wr_el, "location", **loc_attrs)
+
+        assessment = _latest_assessment_for_export(record)
+        if assessment:
+            attrs = {}
+            if assessment.height_m is not None:
+                attrs["height_m"] = str(assessment.height_m)
+            if assessment.crown_width_m is not None:
+                attrs["crown_width_m"] = str(assessment.crown_width_m)
+            if assessment.crown_area_m2 is not None:
+                attrs["crown_area_m2"] = str(assessment.crown_area_m2)
+            if assessment.dbh_cm is not None:
+                attrs["dbh_cm"] = str(assessment.dbh_cm)
+            if assessment.physiological_age is not None:
+                attrs["physiological_age"] = str(assessment.physiological_age)
+            if assessment.vitality is not None:
+                attrs["vitality"] = str(assessment.vitality)
+            if assessment.health_state is not None:
+                attrs["health_state"] = str(assessment.health_state)
+            if assessment.stability is not None:
+                attrs["stability"] = str(assessment.stability)
+            if assessment.perspective:
+                attrs["perspective"] = assessment.perspective
+            if assessment.assessed_at:
+                attrs["assessed_at"] = assessment.assessed_at.isoformat()
+            ET.SubElement(wr_el, "assessment", **attrs)
+
+    ET.indent(root, space="  ")
+    xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True) + b"\n"
+
+    filename = f"arbomap_project_{project.pk}.xml"
+    response = HttpResponse(xml_bytes, content_type='application/xml; charset=utf-8')
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
 
 """
 # ------------------ Test mapy ------------------
@@ -1417,6 +1698,8 @@ def workrecord_assessment_api(request, pk):
             "work_record_id": work_record.pk,
             "dbh_cm": assessment.dbh_cm if assessment else None,
             "height_m": assessment.height_m if assessment else None,
+            "crown_width_m": str(assessment.crown_width_m) if assessment and assessment.crown_width_m is not None else None,
+            "crown_area_m2": str(assessment.crown_area_m2) if assessment and assessment.crown_area_m2 is not None else None,
             "physiological_age": assessment.physiological_age if assessment else None,
             "vitality": assessment.vitality if assessment else None,
             "health_state": assessment.health_state if assessment else None,
@@ -1451,8 +1734,17 @@ def workrecord_assessment_api(request, pk):
         except (TypeError, ValueError):
             return None
 
+    def parse_decimal(value):
+        if value in (None, ""):
+            return None
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            return None
+
     dbh_cm = parse_float(payload.get("dbh_cm"))
     height_m = parse_float(payload.get("height_m"))
+    crown_width_m = parse_decimal(payload.get("crown_width_m"))
     physiological_age = parse_int(payload.get("physiological_age"), 1, 5)
     vitality = parse_int(payload.get("vitality"), 1, 5)
     health_state = parse_int(payload.get("health_state"), 1, 5)
@@ -1466,6 +1758,7 @@ def workrecord_assessment_api(request, pk):
         assessed_at=date.today(),
         dbh_cm=dbh_cm,
         height_m=height_m,
+        crown_width_m=crown_width_m,
         physiological_age=physiological_age,
         vitality=vitality,
         health_state=health_state,
@@ -1479,6 +1772,8 @@ def workrecord_assessment_api(request, pk):
         "work_record_id": work_record.pk,
         "dbh_cm": assessment.dbh_cm,
         "height_m": assessment.height_m,
+        "crown_width_m": str(assessment.crown_width_m) if assessment.crown_width_m is not None else None,
+        "crown_area_m2": str(assessment.crown_area_m2) if assessment.crown_area_m2 is not None else None,
         "physiological_age": assessment.physiological_age,
         "vitality": assessment.vitality,
         "health_state": assessment.health_state,

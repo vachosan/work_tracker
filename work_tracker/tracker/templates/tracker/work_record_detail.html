@@ -127,6 +127,24 @@
                   <td>{{ assessment.height_m|default:"–" }}</td>
                 </tr>
                 <tr>
+                  <th scope="row">Šířka koruny [m]</th>
+                  <td>{{ assessment.crown_width_m|default:"-" }}</td>
+                </tr>
+                <tr>
+                  <th scope="row">Plocha koruny [m²]</th>
+                  <td>
+                    {% if assessment.crown_area_m2 %}
+                      {{ assessment.crown_area_m2 }}
+                    {% elif not assessment.height_m %}
+                      Chybí výška stromu
+                    {% elif not assessment.crown_width_m %}
+                      Zadej šířku koruny
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                </tr>
+                <tr>
                   <th scope="row">Fyziologické stáří</th>
                   <td>
                     {% if assessment.physiological_age == 1 %}1 – mladý jedinec ve fázi ujímání
@@ -209,6 +227,9 @@
                 <th>Datum hodnocení</th>
                 <th>DBH [cm]</th>
                 <th>Výška [m]</th>
+                <th>Šířka koruny [m]</th>
+                <th>Plocha koruny [m²]</th>
+                <th>Fyziologické stáří</th>
                 <th>Vitalita</th>
                 <th>Zdravotní stav</th>
                 <th>Stabilita</th>
@@ -221,6 +242,19 @@
                   <td>{{ a.assessed_at|date:"d.m.Y" }}</td>
                   <td>{{ a.dbh_cm|default:"–" }}</td>
                   <td>{{ a.height_m|default:"–" }}</td>
+                  <td>{{ a.crown_width_m|default:"-" }}</td>
+                  <td>
+                    {% if a.crown_area_m2 %}
+                      {{ a.crown_area_m2 }}
+                    {% elif not a.height_m %}
+                      Chybí výška stromu
+                    {% elif not a.crown_width_m %}
+                      Zadej šířku koruny
+                    {% else %}
+                      -
+                    {% endif %}
+                  </td>
+                  <td>{{ a.physiological_age|default:"-" }}</td>
                   <td>{{ a.vitality|default:"–" }}</td>
                   <td>{{ a.health_state|default:"–" }}</td>
                   <td>{{ a.stability|default:"–" }}</td>

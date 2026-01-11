@@ -1,4 +1,5 @@
 import string
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import models
 from django.db.models.signals import post_save
@@ -234,6 +235,22 @@ class TreeAssessment(models.Model):
         help_text="Výška stromu v metrech.",
     )
 
+    crown_width_m = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Šířka koruny [m]",
+    )
+
+    crown_area_m2 = models.DecimalField(
+        max_digits=9,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Plocha koruny [m²]",
+    )
+
     physiological_age = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
@@ -276,6 +293,21 @@ class TreeAssessment(models.Model):
 
     def __str__(self):
         return f"Hodnocení pro WorkRecord #{self.work_record_id}"
+
+    def _compute_crown_area_m2(self):
+        width = self.crown_width_m
+        height = self.height_m
+        if width is None or height is None:
+            return None
+        if width <= 0 or height <= 0:
+            return None
+        width_dec = width if isinstance(width, Decimal) else Decimal(str(width))
+        height_dec = Decimal(str(height))
+        return (width_dec * height_dec).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    def save(self, *args, **kwargs):
+        self.crown_area_m2 = self._compute_crown_area_m2()
+        super().save(*args, **kwargs)
 
 
 class PhotoDocumentation(models.Model):

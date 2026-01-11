@@ -110,14 +110,57 @@
     </div>
     <div class="d-flex gap-2 flex-wrap">
       <button type="submit" name="export_selected" value="1" class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-download"></i> Exportovat vybrané
+        <i class="bi bi-download"></i> Export fotodokumentace (vybrane)
       </button>
       <button type="submit"
               name="export_all"
               value="1"
               class="btn btn-outline-primary btn-sm">
-        <i class="bi bi-archive"></i> Exportovat celý projekt
+        <i class="bi bi-archive"></i> Export fotodokumentace (cely projekt)
       </button>
+      <button type="submit"
+              name="export_selected"
+              value="1"
+              class="btn btn-outline-secondary btn-sm"
+              formaction="{% url 'export_selected_csv' project.pk %}">
+        <i class="bi bi-download"></i> Export dat (CSV)
+      </button>
+      <button type="submit"
+              name="export_selected"
+              value="1"
+              class="btn btn-outline-secondary btn-sm"
+              formaction="{% url 'export_selected_xml' project.pk %}">
+        <i class="bi bi-download"></i> Export dat (XML)
+      </button>
+      <button type="submit"
+              name="export_selected"
+              value="1"
+              class="btn btn-outline-secondary btn-sm"
+              formaction="{% url 'export_selected_xlsx' project.pk %}">
+        <i class="bi bi-download"></i> Export dat (Excel)
+      </button>
+      <button type="submit"
+              name="export_all"
+              value="1"
+              class="btn btn-outline-primary btn-sm"
+              formaction="{% url 'export_selected_csv' project.pk %}">
+        <i class="bi bi-archive"></i> Export dat (CSV) - cely projekt
+      </button>
+      <button type="submit"
+              name="export_all"
+              value="1"
+              class="btn btn-outline-primary btn-sm"
+              formaction="{% url 'export_selected_xml' project.pk %}">
+        <i class="bi bi-archive"></i> Export dat (XML) - cely projekt
+      </button>
+      <button type="submit"
+              name="export_all"
+              value="1"
+              class="btn btn-outline-primary btn-sm"
+              formaction="{% url 'export_selected_xlsx' project.pk %}">
+        <i class="bi bi-archive"></i> Export dat (Excel) - cely projekt
+      </button>
+      <span class="small text-muted align-self-center">ZIP obsahuje fotky a muze byt velky.</span>
       <button type="submit"
               name="bulk_approve_interventions"
               value="1"
