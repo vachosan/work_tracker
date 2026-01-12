@@ -24,13 +24,46 @@
             {% endif %}
 
             <div class="mt-auto">
-              {% if project.is_foreman %}
-                <a class="btn btn-sm btn-success" href="{% url 'activate_project' project.pk %}">
-                  <i class="bi bi-unlock"></i> Otevřít projekt
-                </a>
+              <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between">
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                  {% if project.is_foreman %}
+                    <a class="btn btn-sm btn-success" href="{% url 'activate_project' project.pk %}">
+                      <i class="bi bi-unlock"></i> Otevřít projekt
+                    </a>
+                  {% endif %}
+                  <a class="btn btn-sm btn-outline-secondary" href="{% url 'project_detail' project.pk %}">Detail</a>
+                </div>
+                {% if project.can_delete_project %}
+                  <form method="post"
+                        action="{% url 'delete_project' project.pk %}"
+                        class="d-flex flex-wrap gap-2 align-items-center"
+                        onsubmit="return confirm('Opravdu chcete smazat tento projekt?');">
+                    {% csrf_token %}
+                    <button class="btn btn-sm btn-outline-danger" type="submit">
+                      <i class="bi bi-trash"></i> Odstranit projekt (ponechá úkony)
+                    </button>
+                  </form>
+                {% endif %}
+              </div>
+              {% if project.can_purge_project %}
+                <div class="mt-2 d-flex flex-wrap gap-2 align-items-center">
+                  <form method="post"
+                        action="{% url 'purge_project' project.pk %}"
+                        class="d-flex flex-wrap gap-2 align-items-center"
+                        onsubmit="return confirm('Opravdu chcete PURGE? Úkony i fotky budou nenávratně smazány.');">
+                    {% csrf_token %}
+                    <input type="text"
+                           name="confirm_text"
+                           class="form-control form-control-sm flex-grow-1"
+                           style="max-width: 320px;"
+                           placeholder="Napiš název projektu nebo DELETE"
+                           required>
+                    <button class="btn btn-sm btn-danger" type="submit">
+                      <i class="bi bi-exclamation-triangle"></i> PURGE
+                    </button>
+                  </form>
+                </div>
               {% endif %}
-              <a class="btn btn-sm btn-outline-secondary" href="{% url 'project_detail' project.pk %}">Detail</a>
-
             </div>
           </div>
         </div>

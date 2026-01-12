@@ -1,0 +1,68 @@
+{% extends 'tracker/base.html' %}
+{% block title %}Bez projektu{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <h1 class="h4 m-0">Stromy bez projektu</h1>
+    <div class="text-muted small">Seznam vsech stromu, ktere nejsou prirazene k projektu.</div>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'work_record_list' %}">
+    <i class="bi bi-arrow-left"></i> Zpet na projekty
+  </a>
+</div>
+
+<div class="vstack gap-2">
+  {% for wr in page_obj.object_list %}
+    <div class="card border-0 shadow-sm">
+      <div class="card-body d-flex justify-content-between align-items-start gap-2 flex-wrap">
+        <div class="min-w-0">
+          <div class="fw-semibold text-truncate">{{ wr.title|default:"Bez nazvu" }}</div>
+          <div class="small text-muted">{{ wr.date|date:"d.m.Y" }}</div>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+          <a href="{% url 'work_record_detail' wr.pk %}" class="btn btn-sm btn-outline-secondary">
+            Detail stromu
+          </a>
+        </div>
+      </div>
+    </div>
+  {% empty %}
+    <div class="alert alert-info">Zadne stromy bez projektu.</div>
+  {% endfor %}
+</div>
+
+<nav class="mt-3">
+  <ul class="pagination">
+    {% if page_obj.has_previous %}
+      <li class="page-item">
+        <a class="page-link" href="?page={{ page_obj.previous_page_number }}">
+          &laquo;
+        </a>
+      </li>
+    {% else %}
+      <li class="page-item disabled">
+        <span class="page-link">&laquo;</span>
+      </li>
+    {% endif %}
+
+    <li class="page-item disabled">
+      <span class="page-link">
+        Strana {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}
+      </span>
+    </li>
+
+    {% if page_obj.has_next %}
+      <li class="page-item">
+        <a class="page-link" href="?page={{ page_obj.next_page_number }}">
+          &raquo;
+        </a>
+      </li>
+    {% else %}
+      <li class="page-item disabled">
+        <span class="page-link">&raquo;</span>
+      </li>
+    {% endif %}
+  </ul>
+</nav>
+{% endblock %}

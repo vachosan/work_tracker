@@ -31,17 +31,26 @@
         <span class="text-muted d-flex align-items-center" style="font-size:.9rem;">
           <i class="bi bi-person-fill me-1"></i> {{ user.username }}
         </span>
-        <a href="{% url 'logout' %}" class="text-muted" title="Odhlásit" style="font-size:1.1rem;">
+        <a href="{% url 'account_logout' %}" class="text-muted" title="Odhlásit" style="font-size:1.1rem;">
           <i class="bi bi-box-arrow-right"></i>
         </a>
       </div>
     {% else %}
-      <a class="btn btn-primary btn-sm" href="{% url 'login' %}">Přihlásit</a>
+      <a class="btn btn-primary btn-sm" href="{% url 'account_login' %}">Přihlásit</a>
     {% endif %}
   </div>
 </nav>
 
 <main class="container py-3">
+  {% if messages %}
+    <div class="mb-3">
+      {% for message in messages %}
+        <div class="alert alert-{{ message.tags|default:'info' }}" role="alert">
+          {{ message }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
   {% block content %}{% endblock %}
 </main>
 

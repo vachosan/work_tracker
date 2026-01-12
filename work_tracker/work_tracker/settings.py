@@ -48,6 +48,9 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.sites",
+    "allauth",
+    "allauth.account",
     "tracker",
 ]
 
@@ -63,6 +66,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "allauth.account.middleware.AccountMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -144,6 +148,32 @@ if USE_S3_MEDIA:
 
 # Defaults
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Sites / allauth
+SITE_ID = 1
+
+# Auth backends
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+    "allauth.account.auth_backends.AuthenticationBackend",
+]
+
+# Allauth settings
+ACCOUNT_AUTHENTICATION_METHOD = "username_email"
+ACCOUNT_USERNAME_REQUIRED = True
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_UNIQUE_EMAIL = True
+ACCOUNT_EMAIL_VERIFICATION = "mandatory"
+ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = False
+ACCOUNT_FORMS = {
+    "signup": "tracker.forms.CustomSignupForm",
+    "login": "tracker.forms.CustomLoginForm",
+    "reset_password": "tracker.forms.CustomResetPasswordForm",
+}
+ACCOUNT_ADAPTER = "tracker.adapters.CustomAccountAdapter"
+
+# Email (dev)
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 # Auth redirects
 LOGIN_URL = "/accounts/login/"

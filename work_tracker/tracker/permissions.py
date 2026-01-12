@@ -9,12 +9,43 @@ def user_projects_qs(user, roles=None):
         qs = qs.filter(memberships__role__in=roles)
     return qs.distinct()
 
+def is_project_member(user, project):
+    if user.is_superuser:
+        return True  # superuser has full access
+    return ProjectMembership.objects.filter(user=user, project=project).exists()
+
 def user_can_view_project(user, project_id):
     if user.is_superuser:
         return True
     return ProjectMembership.objects.filter(user=user, project_id=project_id).exists()
 
+def can_edit_project(user, project):
+    if user.is_superuser:
+        return True  # superuser has full access
+    return ProjectMembership.objects.filter(
+        user=user, project=project, role=ProjectMembership.Role.FOREMAN
+    ).exists()
+
+def can_lock_project(user, project):
+    if user.is_superuser:
+        return True  # superuser has full access
+    return ProjectMembership.objects.filter(
+        user=user, project=project, role=ProjectMembership.Role.FOREMAN
+    ).exists()
+
+def can_delete_project(user, project):
+    if user.is_superuser:
+        return True  # superuser has full access
+    return False
+
+def can_purge_project(user, project):
+    if user.is_superuser:
+        return True  # superuser has full access
+    return False
+
 def user_is_foreman(user, project_id):
+    if user.is_superuser:
+        return True  # superuser has full access
     return ProjectMembership.objects.filter(user=user, project_id=project_id, role=ProjectMembership.Role.FOREMAN).exists()
 
 def get_project_or_404_for_user(user, project_id):

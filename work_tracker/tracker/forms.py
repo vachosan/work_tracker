@@ -3,6 +3,7 @@ from django.utils import timezone
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import get_user_model  # místo přímého importu User (viz níže)
 from django.utils.dateformat import format
+from allauth.account.forms import SignupForm, LoginForm, ResetPasswordForm
 
 from .models import (
     WorkRecord,
@@ -193,3 +194,37 @@ class TreeInterventionForm(forms.ModelForm):
                 "note_hint": item.note_hint or "",
             }
         return data
+
+
+# --------------------------------------
+# ALLAUTH FORMS
+# --------------------------------------
+class CustomSignupForm(SignupForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["email"].required = True
+        self.fields["email"].label = "E-mail"
+        for name, field in self.fields.items():
+            field.widget.attrs.setdefault("class", "form-control")
+
+
+class CustomLoginForm(LoginForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if "login" in self.fields:
+            self.fields["login"].label = "E-mail nebo uživatelské jméno"
+        for name, field in self.fields.items():
+            field.widget.attrs.setdefault("class", "form-control")
+
+
+class CustomResetPasswordForm(ResetPasswordForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, field in self.fields.items():
+            field.widget.attrs.setdefault("class", "form-control")
+
+    def clean_email(self):
+        email = super().clean_email()
+        if not User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError("Kontaktujte administrátora.")
+        return email

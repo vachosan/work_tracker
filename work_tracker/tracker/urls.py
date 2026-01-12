@@ -1,7 +1,6 @@
 from django.urls import path
 from . import views
 from . import views_tiles
-from django.contrib.auth import views as auth_views
 
 urlpatterns = [
     # PMTiles (Range-enabled) and debug helpers must stay above other routes (avoid catch-alls)
@@ -17,12 +16,12 @@ urlpatterns = [
     path('<int:pk>/edit/', views.edit_work_record, name='edit_work_record'),
     path('photo/<int:pk>/delete/', views.delete_photo, name='delete_photo'),
     path('list/', views.work_record_list, name='work_record_list'),
+    path('projects/unassigned/', views.unassigned_work_records_list, name='unassigned_work_records_list'),
     path('project/create/', views.create_project, name='create_project'),
     path('project/<int:pk>/close/', views.close_project, name='close_project'),
     path('project/<int:pk>/activate/', views.activate_project, name='activate_project'),
-    path('accounts/login/', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),
-    path('accounts/signup/', views.signup, name='signup'),
-    path('accounts/logout/', auth_views.LogoutView.as_view(), name='logout'),
+    path('project/<int:pk>/delete/', views.delete_project, name='delete_project'),
+    path('project/<int:pk>/purge/', views.purge_project, name='purge_project'),
     path('project/<int:pk>/edit/', views.edit_project, name='edit_project'),
     path('project/<int:pk>/remove-member/<int:user_id>/', views.remove_member, name='remove_member'),
     # duplicitn route odstranena
@@ -32,6 +31,7 @@ urlpatterns = [
     path('project/<int:pk>/export_csv/', views.export_selected_csv, name='export_selected_csv'),
     path('project/<int:pk>/export_xml/', views.export_selected_xml, name='export_selected_xml'),
     path('project/<int:pk>/export_xlsx/', views.export_selected_xlsx, name='export_selected_xlsx'),
+    path('project/<int:pk>/items/', views.project_detail_items, name='project_detail_items'),
     path('project/<int:pk>/bulk-approve-interventions/', views.bulk_approve_interventions, name='bulk_approve_interventions'),
     path('project/<int:pk>/bulk-handover-interventions/', views.bulk_handover_interventions, name='bulk_handover_interventions'),
     path('project/<int:pk>/bulk-complete-interventions/', views.bulk_complete_interventions, name='bulk_complete_interventions'),

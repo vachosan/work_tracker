@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 import unicodedata
 import re
 import tempfile
+import logging
 from urllib.parse import urlencode
 import zipstream
 import json
@@ -21,6 +22,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.files import File
 from django.core.files.base import ContentFile
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import Max, Min, F, Count, Q, Prefetch, Exists, OuterRef
 from django.http import (
     StreamingHttpResponse,
@@ -60,9 +62,15 @@ from .permissions import (
     user_can_view_project,
     user_is_foreman,
     get_project_or_404_for_user,
+    is_project_member,
+    can_edit_project,
+    can_lock_project,
+    can_delete_project,
+    can_purge_project,
 )
 
 # ------------------ Auth / základní stránky ------------------
+logger = logging.getLogger(__name__)
 
 def logout_view(request):
     logout(request)
@@ -83,23 +91,18 @@ def signup(request):
 
 # ------------------ Projekty ------------------
 
-@login_required
-def project_detail(request, pk):
-    """Stránka všech úkonů projektu + vyhledávání, filtry, stránkování."""
-    project = get_object_or_404(Project, pk=pk)
+PROJECT_DETAIL_PAGE_SIZE = 40
 
-    # práva
-    if not user_can_view_project(request.user, project.pk):
-        return redirect('work_record_list')
-
-    qs = project.trees.all()
-
-    # filtry (GET)
+def _project_detail_filters(request):
     q = request.GET.get('q', '').strip()
     df = parse_date(request.GET.get('date_from') or '')
     dt = parse_date(request.GET.get('date_to') or '')
     has_assessment = request.GET.get('has_assessment', '').strip()
     has_open_interventions = request.GET.get('has_open_interventions', '').strip()
+    return q, df, dt, has_assessment, has_open_interventions
+
+def _project_detail_queryset(project, q, df, dt, has_assessment, has_open_interventions):
+    qs = project.trees.all()
 
     if q:
         qs = qs.filter(Q(title__icontains=q) | Q(description__icontains=q))
@@ -108,36 +111,28 @@ def project_detail(request, pk):
     if dt:
         qs = qs.filter(date__lte=dt)
 
-    # filtr podle hodnocení
     if has_assessment == "yes":
         qs = qs.filter(assessments__isnull=False).distinct()
     elif has_assessment == "no":
         qs = qs.filter(assessments__isnull=True)
 
-    # filtr podle zásahů
     if has_open_interventions == "none":
-        # úkony bez jakéhokoli zásahu
         qs = qs.filter(interventions__isnull=True)
     elif has_open_interventions == "proposed":
-        # alespoň jeden zásah ve stavu draft/pending_approval
         qs = qs.filter(
             interventions__status__in=["draft", "pending_approval"]
         ).distinct()
     elif has_open_interventions == "approved":
-        # alespoň jeden zásah ve stavu approved
         qs = qs.filter(interventions__status="approved").distinct()
     elif has_open_interventions == "handover":
-        # alespoň jeden zásah ve stavu pending_check
         qs = qs.filter(interventions__status="pending_check").distinct()
     elif has_open_interventions == "completed":
-        # alespoň jeden zásah ve stavu completed
         qs = qs.filter(interventions__status="completed").distinct()
 
-    # přednačtení souvisejících dat pro souhrny
     latest_assessments_qs = TreeAssessment.objects.order_by("-assessed_at", "-id")
     interventions_qs = TreeIntervention.objects.order_by("urgency", "due_date", "id")
 
-    qs = (
+    return (
         qs.select_related("project")
         .prefetch_related(
             Prefetch("assessments", queryset=latest_assessments_qs, to_attr="prefetched_assessments"),
@@ -146,19 +141,14 @@ def project_detail(request, pk):
         .order_by("-created_at")
     )
 
-    # stránkování
-    paginator = Paginator(qs, 20)  # 20 na stránku
-    page_obj = paginator.get_page(request.GET.get("page"))
 
-    # dopočítání souhrnů pro řádky
-    for wr in page_obj.object_list:
-        # latest_assessment je @property na WorkRecord, nepřepisujeme ho zde.
+def _decorate_workrecords(work_records):
+    for wr in work_records:
         interventions = list(getattr(wr, "prefetched_interventions", []))
         wr.intervention_count = len(interventions)
         wr.open_intervention_count = sum(1 for i in interventions if i.status != "completed")
         wr.max_urgency = max((i.urgency for i in interventions), default=None) if interventions else None
 
-        # podrobnější přehled stavů zásahů
         wr.interventions_proposed = 0
         wr.interventions_approved = 0
         wr.interventions_handover = 0
@@ -174,11 +164,36 @@ def project_detail(request, pk):
             elif iv.status == "completed":
                 wr.interventions_completed += 1
 
-    # flagy pro šablonu (tlačítka)
-    is_foreman = ProjectMembership.objects.filter(
-        user=request.user, project=project, role=ProjectMembership.Role.FOREMAN
-    ).exists()
-    is_member = ProjectMembership.objects.filter(user=request.user, project=project).exists()
+
+@login_required
+def project_detail(request, pk):
+    """Str nka vçech £kon… projektu + vyhled v n¡, filtry, str nkov n¡."""
+    project = get_object_or_404(Project, pk=pk)
+
+    # pr va
+    if not user_can_view_project(request.user, project.pk):
+        return redirect('work_record_list')
+
+    q, df, dt, has_assessment, has_open_interventions = _project_detail_filters(request)
+    qs = _project_detail_queryset(project, q, df, dt, has_assessment, has_open_interventions)
+
+    paginator = Paginator(qs, PROJECT_DETAIL_PAGE_SIZE)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    _decorate_workrecords(page_obj.object_list)
+
+    has_next = page_obj.has_next()
+    next_url = None
+    if has_next:
+        query = request.GET.copy()
+        query["page"] = page_obj.next_page_number()
+        next_url = f"{reverse('project_detail_items', args=[project.pk])}?{query.urlencode()}"
+
+    # flagy pro çablonu (tlaŸ¡tka)
+    is_member = is_project_member(request.user, project)
+    can_edit = can_edit_project(request.user, project)
+    can_lock = can_lock_project(request.user, project)
+    can_delete = can_delete_project(request.user, project)
 
     return render(
         request,
@@ -191,19 +206,52 @@ def project_detail(request, pk):
             "date_to": request.GET.get("date_to", ""),
             "has_assessment": has_assessment,
             "has_open_interventions": has_open_interventions,
-            "is_foreman": is_foreman,
+            "can_edit_project": can_edit,
+            "can_lock_project": can_lock,
+            "can_delete_project": can_delete,
             "is_member": is_member,
+            "has_next": has_next,
+            "next_url": next_url,
         },
     )
+
+
+@login_required
+def project_detail_items(request, pk):
+    project = get_object_or_404(Project, pk=pk)
+
+    if not user_can_view_project(request.user, project.pk):
+        return HttpResponse(status=403)
+
+    q, df, dt, has_assessment, has_open_interventions = _project_detail_filters(request)
+    qs = _project_detail_queryset(project, q, df, dt, has_assessment, has_open_interventions)
+
+    paginator = Paginator(qs, PROJECT_DETAIL_PAGE_SIZE)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    _decorate_workrecords(page_obj.object_list)
+
+    response = render(
+        request,
+        "tracker/project_detail_items.html",
+        {"work_records": page_obj.object_list},
+    )
+
+    response["X-Has-Next"] = "1" if page_obj.has_next() else "0"
+    if page_obj.has_next():
+        query = request.GET.copy()
+        query["page"] = page_obj.next_page_number()
+        response["X-Next-Url"] = f"{reverse('project_detail_items', args=[project.pk])}?{query.urlencode()}"
+
+    return response
+
 
 @login_required
 def edit_project(request, pk):
     project = get_object_or_404(Project, pk=pk)
 
     # Jen stavbyvedoucí
-    if not ProjectMembership.objects.filter(
-        user=request.user, project=project, role=ProjectMembership.Role.FOREMAN
-    ).exists():
+    if not can_edit_project(request.user, project):
         return redirect('work_record_list')
 
     project_form = ProjectEditForm(instance=project)
@@ -242,9 +290,7 @@ def edit_project(request, pk):
 def remove_member(request, pk, user_id):
     project = get_object_or_404(Project, pk=pk)
 
-    if not ProjectMembership.objects.filter(
-        user=request.user, project=project, role=ProjectMembership.Role.FOREMAN
-    ).exists():
+    if not can_edit_project(request.user, project):
         return redirect('work_record_list')
 
     ProjectMembership.objects.filter(user_id=user_id, project=project).delete()
@@ -276,9 +322,7 @@ def create_project(request):
 @login_required
 def close_project(request, pk):
     project = get_object_or_404(Project, pk=pk)
-    if not ProjectMembership.objects.filter(
-        user=request.user, project=project, role=ProjectMembership.Role.FOREMAN
-    ).exists():
+    if not can_lock_project(request.user, project):
         return redirect('work_record_list')
     project.is_closed = True
     project.save()
@@ -288,12 +332,62 @@ def close_project(request, pk):
 @login_required
 def activate_project(request, pk):
     project = get_object_or_404(Project, pk=pk)
-    if not ProjectMembership.objects.filter(
-        user=request.user, project=project, role=ProjectMembership.Role.FOREMAN
-    ).exists():
+    if not can_lock_project(request.user, project):
         return redirect('work_record_list')
     project.is_closed = False
     project.save()
+    return redirect('closed_projects_list')
+
+@login_required
+@require_http_methods(["POST"])
+def delete_project(request, pk):
+    project = get_object_or_404(Project, pk=pk)
+    if not can_delete_project(request.user, project):
+        return redirect('work_record_list')
+    if not project.is_closed:
+        messages.warning(request, "Projekt lze smazat pouze z uzavřených projektů.")
+        return redirect('project_detail', pk=pk)
+    project_name = project.name
+    project.delete()
+    messages.success(request, f"Projekt \"{project_name}\" byl smazán.")
+    return redirect('closed_projects_list')
+
+@login_required
+@require_http_methods(["POST"])
+def purge_project(request, pk):
+    project = get_object_or_404(Project, pk=pk)
+    if not can_purge_project(request.user, project):
+        return redirect('work_record_list')
+    if not project.is_closed:
+        messages.warning(request, "Projekt lze purgeovat pouze z uzavřených projektů.")
+        return redirect('project_detail', pk=pk)
+
+    confirm_text = (request.POST.get("confirm_text") or "").strip()
+    if confirm_text not in (project.name, "DELETE"):
+        messages.error(request, "Potvrzení nesouhlasí. Zadejte přesný název projektu nebo DELETE.")
+        return redirect('closed_projects_list')
+
+    work_records = WorkRecord.objects.filter(project=project).prefetch_related("photos")
+
+    try:
+        with transaction.atomic():
+            for work_record in work_records:
+                for photo in work_record.photos.all():
+                    if not photo.photo:
+                        continue
+                    try:
+                        photo.photo.delete(save=False)
+                    except Exception:
+                        logger.exception("Failed to delete photo file for PhotoDocumentation id=%s", photo.id)
+                        raise RuntimeError("photo_delete_failed")
+
+            work_records.delete()
+            project.delete()
+    except RuntimeError:
+        messages.error(request, "Mazání souborů selhalo. Projekt nebyl smazán.")
+        return redirect('closed_projects_list')
+
+    messages.success(request, f"Projekt \"{project.name}\" byl purged včetně úkonů a fotek.")
     return redirect('closed_projects_list')
 
 
@@ -308,9 +402,9 @@ def closed_projects_list(request):
 
     # flag pro šablonu (zobrazit tlačítka jen foremanovi)
     for p in projects:
-        p.is_foreman = ProjectMembership.objects.filter(
-            user=request.user, project=p, role=ProjectMembership.Role.FOREMAN
-        ).exists()
+        p.is_foreman = can_edit_project(request.user, p)
+        p.can_delete_project = can_delete_project(request.user, p)
+        p.can_purge_project = can_purge_project(request.user, p)
 
     return render(request, 'tracker/closed_projects_list.html', {'projects': projects})
 
@@ -334,15 +428,38 @@ def work_record_list(request):
     )
 
     for p in projects:
-        p.is_foreman = ProjectMembership.objects.filter(
-            user=request.user, project=p, role=ProjectMembership.Role.FOREMAN
-        ).exists()
-        p.is_member = ProjectMembership.objects.filter(
-            user=request.user, project=p
-        ).exists()
+        p.is_foreman = can_edit_project(request.user, p)
+        p.is_member = is_project_member(request.user, p)
+
+    unassigned_count = None
+    if request.user.is_superuser:
+        unassigned_count = (
+            WorkRecord.objects
+            .filter(project__isnull=True, tree_projects__isnull=True)
+            .distinct()
+            .count()
+        )
 
     return render(request, 'tracker/work_record_list.html', {
         'projects': projects,
+        'unassigned_count': unassigned_count,
+    })
+
+@login_required
+def unassigned_work_records_list(request):
+    if not request.user.is_superuser:
+        return redirect('work_record_list')
+
+    qs = (
+        WorkRecord.objects
+        .filter(project__isnull=True, tree_projects__isnull=True)
+        .order_by('-created_at')
+    )
+    paginator = Paginator(qs, 20)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    return render(request, 'tracker/unassigned_work_records_list.html', {
+        'page_obj': page_obj,
     })
 
 @login_required

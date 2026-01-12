@@ -1,373 +1,368 @@
 {% extends 'tracker/base.html' %}
-{% block title %}{{ project.name }} – úkony{% endblock %}
+{% block title %}{{ project.name }} - Úkony{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-  <div>
-    <h1 class="h4 m-0">{{ project.name }} – úkony</h1>
-    {% if project.description %}
-      <div class="text-muted small">{{ project.description }}</div>
-    {% endif %}
-  </div>
-  <div class="d-flex flex-wrap gap-2">
-    <a class="btn btn-outline-secondary btn-sm" href="{% url 'work_record_list' %}#project-{{ project.pk }}">
-      <i class="bi bi-arrow-left"></i> Zpět na projekty
-    </a>
-    {% if is_member %}
-      <a href="{% url 'create_work_record_for_project' project.pk %}" class="btn btn-primary btn-sm">
-        <i class="bi bi-plus-lg"></i> Přidat strom / úkon
-      </a>
-    {% endif %}
-    {% if is_foreman %}
-      <a href="{% url 'edit_project' project.pk %}" class="btn btn-outline-warning btn-sm">
-        <i class="bi bi-pencil"></i> Upravit projekt
-      </a>
-      {% if not project.is_closed %}
-        <a href="{% url 'close_project' project.pk %}" class="btn btn-outline-danger btn-sm">
-          <i class="bi bi-lock"></i> Uzavřít projekt
+<div class="sticky-top bg-white shadow-sm border-bottom mb-3">
+  <div class="py-2">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <div>
+        <h1 class="h4 m-0">{{ project.name }} - Úkony</h1>
+        {% if project.description %}
+          <div class="text-muted small">{{ project.description }}</div>
+        {% endif %}
+      </div>
+      <div class="d-flex flex-wrap gap-2 align-items-center">
+        <a class="btn btn-outline-secondary btn-sm" href="{% url 'work_record_list' %}#project-{{ project.pk }}">
+          <i class="bi bi-arrow-left"></i> Zpět na projekty
         </a>
-      {% else %}
-        <a href="{% url 'activate_project' project.pk %}" class="btn btn-outline-success btn-sm">
-          <i class="bi bi-unlock"></i> Aktivovat projekt
+        <a class="btn btn-outline-primary btn-sm" href="{% url 'map_project_redirect' project.pk %}">
+          <i class="bi bi-map"></i> Mapa projektu
         </a>
-      {% endif %}
-    {% endif %}
-  </div>
-</div>
+        {% if is_member %}
+          <a href="{% url 'create_work_record_for_project' project.pk %}" class="btn btn-primary btn-sm">
+            <i class="bi bi-plus-lg"></i> Přidat strom / úkon
+          </a>
+        {% endif %}
+        {% if can_edit_project %}
+          <a href="{% url 'edit_project' project.pk %}" class="btn btn-outline-warning btn-sm">
+            <i class="bi bi-pencil"></i> Upravit projekt
+          </a>
+          {% if can_lock_project %}
+            {% if not project.is_closed %}
+              <a href="{% url 'close_project' project.pk %}" class="btn btn-outline-danger btn-sm">
+                <i class="bi bi-lock"></i> Uzavřít projekt
+              </a>
+            {% else %}
+              <a href="{% url 'activate_project' project.pk %}" class="btn btn-outline-success btn-sm">
+                <i class="bi bi-unlock"></i> Aktivovat projekt
+              </a>
+            {% endif %}
+          {% endif %}
+        {% endif %}
 
-<div class="card border-0 shadow-sm mb-3">
-  <div class="card-body">
-    <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-      <form method="get" class="row g-2 flex-grow-1">
-        <div class="col-12 col-md-4">
+        <div class="dropdown">
+          <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="exportDropdown"
+                  data-bs-toggle="dropdown" aria-expanded="false">
+            Export
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="exportDropdown">
+            <li><h6 class="dropdown-header">Fotodokumentace</h6></li>
+            <li>
+              <button type="submit" form="project-actions-form" name="export_selected" value="1"
+                      class="dropdown-item">
+                Export fotodokumentace (vybrané)
+              </button>
+            </li>
+            <li>
+              <button type="submit" form="project-actions-form" name="export_all" value="1"
+                      class="dropdown-item">
+                Export fotodokumentace (celý projekt)
+              </button>
+            </li>
+            <li><hr class="dropdown-divider"></li>
+            <li><h6 class="dropdown-header">Data</h6></li>
+            <li>
+              <button type="submit" form="project-actions-form" name="export_selected" value="1"
+                      class="dropdown-item" formaction="{% url 'export_selected_csv' project.pk %}">
+                Export dat (CSV)
+              </button>
+            </li>
+            <li>
+              <button type="submit" form="project-actions-form" name="export_selected" value="1"
+                      class="dropdown-item" formaction="{% url 'export_selected_xml' project.pk %}">
+                Export dat (XML)
+              </button>
+            </li>
+            <li>
+              <button type="submit" form="project-actions-form" name="export_selected" value="1"
+                      class="dropdown-item" formaction="{% url 'export_selected_xlsx' project.pk %}">
+                Export dat (Excel)
+              </button>
+            </li>
+            <li>
+              <button type="submit" form="project-actions-form" name="export_all" value="1"
+                      class="dropdown-item" formaction="{% url 'export_selected_csv' project.pk %}">
+                Export dat (CSV) - celý projekt
+              </button>
+            </li>
+            <li>
+              <button type="submit" form="project-actions-form" name="export_all" value="1"
+                      class="dropdown-item" formaction="{% url 'export_selected_xml' project.pk %}">
+                Export dat (XML) - celý projekt
+              </button>
+            </li>
+            <li>
+              <button type="submit" form="project-actions-form" name="export_all" value="1"
+                      class="dropdown-item" formaction="{% url 'export_selected_xlsx' project.pk %}">
+                Export dat (Excel) - celý projekt
+              </button>
+            </li>
+          </ul>
+        </div>
+
+        <div class="dropdown">
+          <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="bulkDropdown"
+                  data-bs-toggle="dropdown" aria-expanded="false" data-bulk-toggle disabled>
+            Hromadné
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="bulkDropdown">
+            <li>
+              <button type="submit" form="project-actions-form" name="bulk_approve_interventions" value="1"
+                      class="dropdown-item" formaction="{% url 'bulk_approve_interventions' project.pk %}" data-bulk-action disabled>
+                Schválit navržené zásahy
+              </button>
+            </li>
+            <li>
+              <button type="submit" form="project-actions-form" name="bulk_handover_interventions" value="1"
+                      class="dropdown-item" formaction="{% url 'bulk_handover_interventions' project.pk %}" data-bulk-action disabled>
+                Předat zásahy ke kontrole
+              </button>
+            </li>
+            <li>
+              <button type="submit" form="project-actions-form" name="bulk_complete_interventions" value="1"
+                      class="dropdown-item" formaction="{% url 'bulk_complete_interventions' project.pk %}" data-bulk-action disabled>
+                Označit zásahy jako dokončené
+              </button>
+            </li>
+          </ul>
+        </div>
+
+        <span class="badge bg-secondary d-none" id="selected-count-badge" aria-live="polite">Vybráno: 0</span>
+      </div>
+    </div>
+
+    <form method="get" class="mt-2">
+      <div class="row g-2 align-items-end">
+        <div class="col-12 col-md-6">
           <input type="text"
                  name="q"
                  value="{{ q }}"
                  class="form-control"
-                 placeholder="Hledat v názvu/popisu…">
+                 placeholder="Hledat v názvu/popisu">
         </div>
-        <div class="col-6 col-md-2">
-          <input type="date"
-                 name="date_from"
-                 value="{{ date_from }}"
-                 class="form-control"
-                 placeholder="Od data">
-        </div>
-        <div class="col-6 col-md-2">
-          <input type="date"
-                 name="date_to"
-                 value="{{ date_to }}"
-                 class="form-control"
-                 placeholder="Do data">
-        </div>
-        <div class="col-6 col-md-2">
-          <select name="has_assessment" class="form-select">
-            <option value="">Hodnocení – všechna</option>
-            <option value="yes" {% if has_assessment == 'yes' %}selected{% endif %}>Jen s hodnocením</option>
-            <option value="no" {% if has_assessment == 'no' %}selected{% endif %}>Jen bez hodnocení</option>
-          </select>
-        </div>
-        <div class="col-6 col-md-2">
-          <select name="has_open_interventions" class="form-select">
-            <option value="">Zásahy – všechny</option>
-            <option value="none" {% if has_open_interventions == 'none' %}selected{% endif %}>
-              Bez zásahů
-            </option>
-            <option value="proposed" {% if has_open_interventions == 'proposed' %}selected{% endif %}>
-              S navrženými zásahy
-            </option>
-            <option value="approved" {% if has_open_interventions == 'approved' %}selected{% endif %}>
-              Se schválenými zásahy
-            </option>
-            <option value="handover" {% if has_open_interventions == 'handover' %}selected{% endif %}>
-              S předanými ke kontrole
-            </option>
-            <option value="completed" {% if has_open_interventions == 'completed' %}selected{% endif %}>
-              Jen s dokončenými zásahy
-            </option>
-          </select>
-        </div>
-        <div class="col-12 col-md-2 d-grid">
+        <div class="col-12 col-md-6 d-flex flex-wrap gap-2">
           <button class="btn btn-primary" type="submit">
             <i class="bi bi-funnel"></i> Filtrovat
           </button>
+          <a class="btn btn-outline-secondary" href="{% url 'project_detail' project.pk %}">
+            Zrušit filtr
+          </a>
+          <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse"
+                  data-bs-target="#advancedFilters" aria-expanded="false" aria-controls="advancedFilters">
+            Pokročilé filtry
+          </button>
         </div>
-      </form>
-      <a class="btn btn-outline-primary btn-sm" href="{% url 'map_project_redirect' project.pk %}">
-        <i class="bi bi-map"></i> Mapa projektu
-      </a>
-    </div>
+      </div>
+
+      <div class="collapse mt-2" id="advancedFilters">
+        <div class="row g-2">
+          <div class="col-6 col-md-2">
+            <input type="date"
+                   name="date_from"
+                   value="{{ date_from }}"
+                   class="form-control"
+                   placeholder="Od data">
+          </div>
+          <div class="col-6 col-md-2">
+            <input type="date"
+                   name="date_to"
+                   value="{{ date_to }}"
+                   class="form-control"
+                   placeholder="Do data">
+          </div>
+          <div class="col-12 col-md-3">
+            <select name="has_assessment" class="form-select">
+              <option value="">Hodnocení - všechna</option>
+              <option value="yes" {% if has_assessment == 'yes' %}selected{% endif %}>Jen s hodnocením</option>
+              <option value="no" {% if has_assessment == 'no' %}selected{% endif %}>Jen bez hodnocení</option>
+            </select>
+          </div>
+          <div class="col-12 col-md-5">
+            <select name="has_open_interventions" class="form-select">
+              <option value="">Zásahy - všechny</option>
+              <option value="none" {% if has_open_interventions == 'none' %}selected{% endif %}>
+                Bez zásahů
+              </option>
+              <option value="proposed" {% if has_open_interventions == 'proposed' %}selected{% endif %}>
+                S navrženými zásahy
+              </option>
+              <option value="approved" {% if has_open_interventions == 'approved' %}selected{% endif %}>
+                Se schválenými zásahy
+              </option>
+              <option value="handover" {% if has_open_interventions == 'handover' %}selected{% endif %}>
+                S předanými ke kontrole
+              </option>
+              <option value="completed" {% if has_open_interventions == 'completed' %}selected{% endif %}>
+                Jen s dokončenými zásahy
+              </option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </form>
   </div>
 </div>
 
-<form method="post" action="{% url 'export_selected_zip' project.pk %}">
+<form method="post" id="project-actions-form" action="{% url 'export_selected_zip' project.pk %}">
   {% csrf_token %}
 
-  <div class="d-flex justify-content-between align-items-center mb-2">
-    <div>
-      <input type="checkbox" id="selectAll" onclick="toggleAll(this)">
-      <label for="selectAll" class="ms-1 small">Vybrat vše</label>
-    </div>
-    <div class="d-flex gap-2 flex-wrap">
-      <button type="submit" name="export_selected" value="1" class="btn btn-outline-secondary btn-sm">
-        <i class="bi bi-download"></i> Export fotodokumentace (vybrane)
-      </button>
-      <button type="submit"
-              name="export_all"
-              value="1"
-              class="btn btn-outline-primary btn-sm">
-        <i class="bi bi-archive"></i> Export fotodokumentace (cely projekt)
-      </button>
-      <button type="submit"
-              name="export_selected"
-              value="1"
-              class="btn btn-outline-secondary btn-sm"
-              formaction="{% url 'export_selected_csv' project.pk %}">
-        <i class="bi bi-download"></i> Export dat (CSV)
-      </button>
-      <button type="submit"
-              name="export_selected"
-              value="1"
-              class="btn btn-outline-secondary btn-sm"
-              formaction="{% url 'export_selected_xml' project.pk %}">
-        <i class="bi bi-download"></i> Export dat (XML)
-      </button>
-      <button type="submit"
-              name="export_selected"
-              value="1"
-              class="btn btn-outline-secondary btn-sm"
-              formaction="{% url 'export_selected_xlsx' project.pk %}">
-        <i class="bi bi-download"></i> Export dat (Excel)
-      </button>
-      <button type="submit"
-              name="export_all"
-              value="1"
-              class="btn btn-outline-primary btn-sm"
-              formaction="{% url 'export_selected_csv' project.pk %}">
-        <i class="bi bi-archive"></i> Export dat (CSV) - cely projekt
-      </button>
-      <button type="submit"
-              name="export_all"
-              value="1"
-              class="btn btn-outline-primary btn-sm"
-              formaction="{% url 'export_selected_xml' project.pk %}">
-        <i class="bi bi-archive"></i> Export dat (XML) - cely projekt
-      </button>
-      <button type="submit"
-              name="export_all"
-              value="1"
-              class="btn btn-outline-primary btn-sm"
-              formaction="{% url 'export_selected_xlsx' project.pk %}">
-        <i class="bi bi-archive"></i> Export dat (Excel) - cely projekt
-      </button>
-      <span class="small text-muted align-self-center">ZIP obsahuje fotky a muze byt velky.</span>
-      <button type="submit"
-              name="bulk_approve_interventions"
-              value="1"
-              class="btn btn-outline-success btn-sm"
-              formaction="{% url 'bulk_approve_interventions' project.pk %}">
-        <i class="bi bi-check2-circle"></i> Schválit navržené zásahy
-      </button>
-      <button type="submit"
-              name="bulk_handover_interventions"
-              value="1"
-              class="btn btn-outline-warning btn-sm"
-              formaction="{% url 'bulk_handover_interventions' project.pk %}">
-        <i class="bi bi-send-check"></i> Předat zásahy ke kontrole
-      </button>
-      <button type="submit"
-              name="bulk_complete_interventions"
-              value="1"
-              class="btn btn-outline-info btn-sm"
-              formaction="{% url 'bulk_complete_interventions' project.pk %}">
-        <i class="bi bi-clipboard-check"></i> Označit zásahy jako dokončené
-      </button>
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+    <div class="form-check">
+      <input type="checkbox" id="selectAll" class="form-check-input" onclick="toggleAll(this)">
+      <label for="selectAll" class="form-check-label small">Vybrat vše</label>
     </div>
   </div>
 
-  <div class="vstack gap-2">
-    {% for wr in page_obj.object_list %}
-      <div class="card border-0 shadow-sm workrecord-row" data-href="{% url 'work_record_detail' wr.pk %}">
-        <div class="card-body d-flex flex-column flex-md-row justify-content-between align-items-start gap-2">
-          <div class="d-flex align-items-start gap-2 flex-grow-1">
-            <div class="pt-1">
-              <input type="checkbox"
-                     name="selected_records"
-                     value="{{ wr.id }}"
-                     class="form-check-input me-2">
-            </div>
-            <div class="min-w-0">
-              <div class="d-flex align-items-center gap-2 mb-1">
-                <span class="fw-semibold text-truncate">
-                  {{ wr.title|default:"Bez názvu" }}
-                </span>
-                <small class="text-muted">
-                  {{ wr.date|date:"d.m.Y" }}
-                </small>
-              </div>
-
-              {% if wr.taxon_czech or wr.taxon_latin or wr.taxon %}
-                <div class="small text-muted">
-                  Taxon:
-                  {% if wr.taxon_czech %}
-                    {{ wr.taxon_czech }}
-                  {% elif wr.taxon %}
-                    {{ wr.taxon }}
-                  {% else %}
-                    neurčený
-                  {% endif %}
-                  {% if wr.taxon_latin %}
-                    ({{ wr.taxon_latin }})
-                  {% endif %}
-                </div>
-              {% else %}
-                <div class="small text-muted">
-                  Taxon: neurčený
-                </div>
-              {% endif %}
-
-              {% if wr.latest_assessment %}
-                <div class="small text-muted">
-                  DBH: {{ wr.latest_assessment.dbh_cm|default:"-" }} cm,
-                  výška: {{ wr.latest_assessment.height_m|default:"-" }} m,
-                  vitalita: {{ wr.latest_assessment.vitality|default:"-" }},
-                  stabilita: {{ wr.latest_assessment.stability|default:"-" }}
-                </div>
-              {% else %}
-                <div class="small text-muted">
-                  Bez hodnocení.
-                </div>
-              {% endif %}
-
-              {% if wr.intervention_count > 0 %}
-                <div class="small mt-1">
-                  <div class="text-muted mb-1">
-                    Zásahy: {{ wr.intervention_count }} celkem
-                  </div>
-                  <div class="d-flex flex-wrap gap-1">
-                    {% if wr.interventions_proposed > 0 %}
-                      <span class="badge bg-secondary">Navrženo: {{ wr.interventions_proposed }}</span>
-                    {% endif %}
-                    {% if wr.interventions_approved > 0 %}
-                      <span class="badge bg-primary">Schváleno: {{ wr.interventions_approved }}</span>
-                    {% endif %}
-                    {% if wr.interventions_handover > 0 %}
-                      <span class="badge bg-warning text-dark">Ke kontrole: {{ wr.interventions_handover }}</span>
-                    {% endif %}
-                    {% if wr.interventions_completed > 0 %}
-                      <span class="badge bg-success">Dokončeno: {{ wr.interventions_completed }}</span>
-                    {% endif %}
-
-                    {% if wr.max_urgency is not None %}
-                      {% if wr.max_urgency == 0 or wr.max_urgency == 1 %}
-                        <span class="badge bg-danger ms-1">Vysoká naléhavost</span>
-                      {% else %}
-                        <span class="badge bg-secondary ms-1">Střední / nízká naléhavost</span>
-                      {% endif %}
-                    {% endif %}
-                  </div>
-                </div>
-              {% else %}
-                <div class="small mt-1 text-muted">
-                  Bez zásahů.
-                </div>
-              {% endif %}
-            </div>
-          </div>
-
-          <div class="d-flex align-items-center gap-2">
-            {% if wr.latitude and wr.longitude %}
-              <i class="bi bi-geo-alt-fill text-success" title="Má polohu"></i>
-            {% else %}
-              <i class="bi bi-geo text-muted" title="Bez polohy"></i>
-            {% endif %}
-            {% if wr.latitude and wr.longitude %}
-              <a href="{% url 'map_gl_pilot' %}?lat={{ wr.latitude }}&lon={{ wr.longitude }}&z=18&focus={{ wr.id }}"
-                 class="text-muted"
-                 title="Zobrazit v mapě">
-                <i class="bi bi-map"></i>
-              </a>
-            {% else %}
-              <a href="{% url 'map_gl_pilot' %}"
-                 class="text-muted"
-                 title="Otevřít mapu">
-                <i class="bi bi-map"></i>
-              </a>
-            {% endif %}
-            <a href="{% url 'work_record_detail' wr.pk %}#intervence_new"
-               class="btn btn-sm btn-outline-secondary">
-              Zásahy
-            </a>
-          </div>
-        </div>
-      </div>
-    {% empty %}
+  <div id="records-list" class="vstack gap-2">
+    {% if page_obj.object_list %}
+      {% include 'tracker/project_detail_items.html' with work_records=page_obj.object_list %}
+    {% else %}
       <div class="alert alert-info">
         Žádné úkony neodpovídají filtru.
       </div>
-    {% endfor %}
+    {% endif %}
   </div>
+
+  <div id="load-more-sentinel" data-next-url="{{ next_url }}" data-has-next="{% if has_next %}1{% else %}0{% endif %}"></div>
+  <div id="load-more-status" class="text-center text-muted py-3 d-none">
+    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+    Načítám další záznamy...
+  </div>
+  <div id="load-more-error" class="alert alert-warning d-none">Nastala chyba při načítání dalších záznamů.</div>
 </form>
-
-<nav class="mt-3">
-  <ul class="pagination">
-    {% if page_obj.has_previous %}
-      <li class="page-item">
-        <a class="page-link"
-           href="?page={{ page_obj.previous_page_number }}&q={{ q }}&date_from={{ date_from }}&date_to={{ date_to }}">
-          «
-        </a>
-      </li>
-    {% else %}
-      <li class="page-item disabled">
-        <span class="page-link">«</span>
-      </li>
-    {% endif %}
-
-    <li class="page-item disabled">
-      <span class="page-link">
-        Strana {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}
-      </span>
-    </li>
-
-    {% if page_obj.has_next %}
-      <li class="page-item">
-        <a class="page-link"
-           href="?page={{ page_obj.next_page_number }}&q={{ q }}&date_from={{ date_from }}&date_to={{ date_to }}">
-          »
-        </a>
-      </li>
-    {% else %}
-      <li class="page-item disabled">
-        <span class="page-link">»</span>
-      </li>
-    {% endif %}
-  </ul>
-</nav>
 
 <script>
 function toggleAll(source) {
   const checkboxes = document.querySelectorAll('input[name="selected_records"]');
   checkboxes.forEach(cb => cb.checked = source.checked);
+  updateBulkButtons();
 }
 
-// Klikatelné řádky – mobil i desktop
-document.querySelectorAll('.workrecord-row').forEach(row => {
-  let moved = false;
-
-  row.addEventListener('touchstart', () => moved = false, {passive: true});
-  row.addEventListener('touchmove', () => moved = true, {passive: true});
-  row.addEventListener('touchend', (e) => {
-    if (!moved && !e.target.closest('input, button, a')) {
-      window.location = row.dataset.href;
-    }
+function updateBulkButtons() {
+  const checkedCount = document.querySelectorAll('input[name="selected_records"]:checked').length;
+  const anyChecked = checkedCount > 0;
+  document.querySelectorAll('[data-bulk-action]').forEach(btn => {
+    btn.disabled = !anyChecked;
   });
+  const bulkToggle = document.querySelector('[data-bulk-toggle]');
+  if (bulkToggle) {
+    bulkToggle.disabled = !anyChecked;
+    bulkToggle.setAttribute('aria-disabled', !anyChecked ? 'true' : 'false');
+  }
+  const badge = document.getElementById('selected-count-badge');
+  if (badge) {
+    badge.textContent = `Vybráno: ${checkedCount}`;
+    badge.classList.toggle('d-none', !anyChecked);
+  }
+}
 
-  row.addEventListener('click', (e) => {
-    if (!e.target.closest('input, button, a')) {
-      window.location = row.dataset.href;
+function bindWorkrecordRows(rows) {
+  rows.forEach(row => {
+    if (row.dataset.bound) {
+      return;
     }
+    row.dataset.bound = '1';
+    let moved = false;
+
+    row.addEventListener('touchstart', () => moved = false, {passive: true});
+    row.addEventListener('touchmove', () => moved = true, {passive: true});
+    row.addEventListener('touchend', (e) => {
+      if (!moved && !e.target.closest('input, button, a')) {
+        window.location = row.dataset.href;
+      }
+    });
+
+    row.addEventListener('click', (e) => {
+      if (!e.target.closest('input, button, a')) {
+        window.location = row.dataset.href;
+      }
+    });
   });
+}
+
+function setupInfiniteScroll() {
+  const list = document.getElementById('records-list');
+  const sentinel = document.getElementById('load-more-sentinel');
+  const status = document.getElementById('load-more-status');
+  const error = document.getElementById('load-more-error');
+
+  if (!list || !sentinel) {
+    return;
+  }
+
+  let nextUrl = sentinel.dataset.nextUrl || '';
+  let hasNext = sentinel.dataset.hasNext === '1';
+  let loading = false;
+
+  const showStatus = (show) => {
+    status.classList.toggle('d-none', !show);
+  };
+
+  const showError = (show) => {
+    error.classList.toggle('d-none', !show);
+  };
+
+  const loadMore = async () => {
+    if (loading || !hasNext || !nextUrl) {
+      return;
+    }
+    loading = true;
+    showStatus(true);
+    showError(false);
+
+    try {
+      const resp = await fetch(nextUrl, {headers: {'X-Requested-With': 'fetch'}});
+      if (!resp.ok) {
+        throw new Error('load failed');
+      }
+      const html = await resp.text();
+      const container = document.createElement('div');
+      container.innerHTML = html;
+      const newRows = Array.from(container.querySelectorAll('.workrecord-row'));
+      while (container.firstChild) {
+        list.appendChild(container.firstChild);
+      }
+      bindWorkrecordRows(newRows);
+      updateBulkButtons();
+
+      const hasNextHeader = resp.headers.get('X-Has-Next');
+      hasNext = hasNextHeader === '1';
+      nextUrl = resp.headers.get('X-Next-Url') || '';
+      sentinel.dataset.nextUrl = nextUrl;
+      sentinel.dataset.hasNext = hasNext ? '1' : '0';
+
+      if (!hasNext) {
+        observer.disconnect();
+      }
+    } catch (err) {
+      showError(true);
+    } finally {
+      loading = false;
+      showStatus(false);
+    }
+  };
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        loadMore();
+      }
+    });
+  }, {rootMargin: '200px'});
+
+  if (hasNext) {
+    observer.observe(sentinel);
+  }
+}
+
+document.addEventListener('change', (e) => {
+  if (e.target && e.target.name === 'selected_records') {
+    updateBulkButtons();
+  }
 });
+
+bindWorkrecordRows(document.querySelectorAll('.workrecord-row'));
+updateBulkButtons();
+setupInfiniteScroll();
 </script>
 {% endblock %}

@@ -19,7 +19,6 @@ from django.views.generic import RedirectView
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.contrib.auth import views as auth_views
 from tracker import views
 from tracker import views_tiles
 
@@ -27,9 +26,9 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('tiles-debug/whereis/<path:filename>', views_tiles.tiles_debug_whereis, name='tiles-debug-whereis'),
     path('tiles/<path:filename>', views_tiles.pmtiles_range_serve, name='pmtiles-range-serve'),
-    path('tracker/', include('tracker.urls')),  # Všechny cesty pro tracker
+    path('tracker/', include('tracker.urls')),
+    path('accounts/', include('allauth.urls')),  # Všechny cesty pro tracker
     path('', RedirectView.as_view(url='tracker/list/')),  # Přesměrování z kořenové adresy
-    path('accounts/login/', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),
     path('', views.home, name='home'),
     
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)  # Přidání cesty pro soubory v MEDIA_ROOT
