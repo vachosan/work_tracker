@@ -150,6 +150,8 @@ if USE_S3_MEDIA:
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # Sites / allauth
+# Domain spravujte v Django Admin → Sites: /admin/sites/site/1/change/ (např. moraviatrees.cz, název ArboMap)
+# Po migracích spusťte: python manage.py ensure_site
 SITE_ID = 1
 
 # Auth backends
@@ -166,6 +168,7 @@ ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = False
 ACCOUNT_PREVENT_ENUMERATION = False
+ACCOUNT_EMAIL_SUBJECT_PREFIX = "[ArboMap] "
 ACCOUNT_FORMS = {
     "signup": "tracker.forms.CustomSignupForm",
     "login": "tracker.forms.CustomLoginForm",
@@ -173,8 +176,19 @@ ACCOUNT_FORMS = {
 }
 ACCOUNT_ADAPTER = "tracker.adapters.CustomAccountAdapter"
 
-# Email (dev)
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+# Email
+# Mailtrap SMTP tip: EMAIL_HOST=live.smtp.mailtrap.io, EMAIL_HOST_USER=api, EMAIL_HOST_PASSWORD=<api_token>
+if os.environ.get("EMAIL_HOST"):
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_HOST = os.environ["EMAIL_HOST"]
+    EMAIL_PORT = int(os.environ.get("EMAIL_PORT", 587))
+    EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+    EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+    EMAIL_USE_TLS = str(os.environ.get("EMAIL_USE_TLS", "1")).lower() in ("1", "true", "yes")
+    DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "webmaster@localhost")
+    SERVER_EMAIL = os.environ.get("SERVER_EMAIL", "webmaster@localhost")
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 # Auth redirects
 LOGIN_URL = "/accounts/login/"
