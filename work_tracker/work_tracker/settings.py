@@ -6,16 +6,16 @@ import environ
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Env
-env = environ.Env(
-    DEBUG=(bool, True),
-)
-environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
+env = environ.Env(DEBUG=(bool, False))
+ENV_FILE = BASE_DIR.parent / ".env"
+if ENV_FILE.exists():
+    env.read_env(str(ENV_FILE))
 
 USE_S3_MEDIA = env("USE_S3_MEDIA", default="0") == "1"
 
 # Security
 SECRET_KEY = env("SECRET_KEY", default="dev-insecure-change-me")
-DEBUG = env("DEBUG")  # nastavíš v .env (True/False)
+DEBUG = env.bool("DEBUG", default=False)  # nastav v .env (True/False)
 MAPY_API_KEY = env("MAPY_API_KEY", default="")
 
 ALLOWED_HOSTS = [
