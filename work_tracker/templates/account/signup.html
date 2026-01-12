@@ -6,7 +6,11 @@
     <h1 class="h4 mb-3">Registrace</h1>
     <form method="post" action="{% url 'account_signup' %}">
       {% csrf_token %}
-      {{ form.non_field_errors }}
+      {% if form.non_field_errors %}
+        <div class="alert alert-danger" role="alert">
+          {{ form.non_field_errors }}
+        </div>
+      {% endif %}
       <div class="mb-3">
         <label class="form-label" for="{{ form.username.id_for_label }}">{{ form.username.label }}</label>
         {{ form.username }}
@@ -31,6 +35,9 @@
     </form>
     <div class="mt-3 small">
       Máš účet? <a href="{% url 'account_login' %}">Přihlásit se</a>
+    </div>
+    <div class="mt-1 small">
+      <a href="{% url 'account_reset_password' %}">Zapomněli jste heslo?</a>
     </div>
   </div>
 </div>

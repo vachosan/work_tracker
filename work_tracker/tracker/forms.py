@@ -207,6 +207,14 @@ class CustomSignupForm(SignupForm):
         for name, field in self.fields.items():
             field.widget.attrs.setdefault("class", "form-control")
 
+    def clean_email(self):
+        email = self.cleaned_data.get("email", "")
+        if User.objects.filter(email__iexact=email).exists():
+            raise forms.ValidationError(
+                "Registraci nelze dokončit. Pokud už účet máte, použijte obnovu hesla."
+            )
+        return email
+
 
 class CustomLoginForm(LoginForm):
     def __init__(self, *args, **kwargs):

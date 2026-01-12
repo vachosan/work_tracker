@@ -165,6 +165,7 @@ ACCOUNT_EMAIL_REQUIRED = True
 ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_EMAIL_VERIFICATION = "mandatory"
 ACCOUNT_LOGIN_ON_EMAIL_CONFIRMATION = False
+ACCOUNT_PREVENT_ENUMERATION = False
 ACCOUNT_FORMS = {
     "signup": "tracker.forms.CustomSignupForm",
     "login": "tracker.forms.CustomLoginForm",
