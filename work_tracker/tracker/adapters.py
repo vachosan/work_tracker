@@ -5,6 +5,15 @@ from allauth.account.models import EmailAddress
 
 
 class CustomAccountAdapter(DefaultAccountAdapter):
+    def send_mail(self, template_prefix, email, context):
+        user = context.get("user")
+        if user:
+            user_label = user.get_username() or getattr(user, "email", "") or "(neznámý uživatel)"
+        else:
+            user_label = "(neznámý uživatel)"
+        context["user_label"] = user_label
+        return super().send_mail(template_prefix, email, context)
+
     def save_user(self, request, user, form, commit=True):
         user = super().save_user(request, user, form, commit=commit)
         if form is not None:

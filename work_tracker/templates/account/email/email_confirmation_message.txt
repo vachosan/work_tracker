@@ -1,0 +1,11 @@
+Dobrý den,
+
+někdo (uživatel {{ user_label }}) použil tuto e-mailovou adresu pro účet na webu {{ current_site.name }} ({{ current_site.domain }}).
+
+Pokud jste to byli vy, potvrďte prosím e-mail kliknutím na tento odkaz:
+{{ activate_url }}
+
+Pokud jste se neregistrovali vy, tento e-mail můžete ignorovat.
+
+Děkujeme
+Tým {{ current_site.name }}
