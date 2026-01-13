@@ -129,7 +129,9 @@ def _project_detail_queryset(project, q, df, dt, has_assessment, has_open_interv
         qs = qs.filter(interventions__status="completed").distinct()
 
     latest_assessments_qs = TreeAssessment.objects.order_by("-assessed_at", "-id")
-    interventions_qs = TreeIntervention.objects.order_by("urgency", "due_date", "id")
+    interventions_qs = TreeIntervention.objects.select_related("intervention_type").order_by(
+        "urgency", "due_date", "id"
+    )
 
     return (
         qs.select_related("project")
@@ -141,9 +143,24 @@ def _project_detail_queryset(project, q, df, dt, has_assessment, has_open_interv
     )
 
 
-def _decorate_workrecords(work_records):
+def _decorate_interventions_for_user(user, interventions):
+    for intervention in interventions:
+        intervention.allowed_mark_done = can_transition_intervention(
+            user, intervention, "done_pending_owner"
+        )
+        intervention.allowed_confirm = can_transition_intervention(
+            user, intervention, "completed"
+        )
+        intervention.allowed_return = can_transition_intervention(
+            user, intervention, "proposed"
+        )
+    return interventions
+
+
+def _decorate_workrecords(work_records, user=None):
     for wr in work_records:
         interventions = list(getattr(wr, "prefetched_interventions", []))
+        wr.interventions_list = interventions
         wr.intervention_count = len(interventions)
         wr.open_intervention_count = sum(1 for i in interventions if i.status != "completed")
         wr.max_urgency = max((i.urgency for i in interventions), default=None) if interventions else None
@@ -161,6 +178,9 @@ def _decorate_workrecords(work_records):
             elif iv.status == "completed":
                 wr.interventions_completed += 1
 
+        if user and interventions:
+            _decorate_interventions_for_user(user, interventions)
+
 
 @login_required
 def project_detail(request, pk):
@@ -177,7 +197,7 @@ def project_detail(request, pk):
     paginator = Paginator(qs, PROJECT_DETAIL_PAGE_SIZE)
     page_obj = paginator.get_page(request.GET.get("page"))
 
-    _decorate_workrecords(page_obj.object_list)
+    _decorate_workrecords(page_obj.object_list, request.user)
 
     has_next = page_obj.has_next()
     next_url = None
@@ -226,7 +246,7 @@ def project_detail_items(request, pk):
     paginator = Paginator(qs, PROJECT_DETAIL_PAGE_SIZE)
     page_obj = paginator.get_page(request.GET.get("page"))
 
-    _decorate_workrecords(page_obj.object_list)
+    _decorate_workrecords(page_obj.object_list, request.user)
 
     response = render(
         request,
@@ -579,9 +599,12 @@ def work_record_detail(request, pk):
 
     photos = work_record.photos.all()
     valid_photos = [photo for photo in photos if photo.photo]
-    interventions = work_record.interventions.select_related("intervention_type").order_by(
-        "status", "urgency", "due_date", "id"
+    interventions = list(
+        work_record.interventions.select_related("intervention_type").order_by(
+            "status", "urgency", "due_date", "id"
+        )
     )
+    _decorate_interventions_for_user(request.user, interventions)
 
     return render(request, 'tracker/work_record_detail.html', {
         'work_record': work_record,
