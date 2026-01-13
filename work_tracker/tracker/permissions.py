@@ -57,3 +57,43 @@ def get_project_or_404_for_user(user, project_id):
 def get_visible_workrecords_qs(user):
     # všechny záznamy z projektů, kam má user přístup
     return user_projects_qs(user).values_list("id", flat=True)
+
+
+def user_is_owner(user, project):
+    if user.is_superuser:
+        return True
+    if not project:
+        return False
+    return ProjectMembership.objects.filter(
+        user=user,
+        project=project,
+        role=ProjectMembership.Role.OWNER,
+    ).exists()
+
+
+def _get_project_from_intervention(intervention):
+    if not intervention:
+        return None
+    project = getattr(intervention, "project", None)
+    if project:
+        return project
+    tree = getattr(intervention, "tree", None)
+    if tree:
+        return getattr(tree, "project", None)
+    return None
+
+
+def can_confirm_intervention(user, project_or_intervention):
+    if user.is_superuser:
+        return True
+    if isinstance(project_or_intervention, Project):
+        project = project_or_intervention
+    else:
+        project = _get_project_from_intervention(project_or_intervention)
+    if not project:
+        return False
+    return ProjectMembership.objects.filter(
+        user=user,
+        project=project,
+        role=ProjectMembership.Role.OWNER,
+    ).exists()
