@@ -442,13 +442,9 @@ class ProjectTree(models.Model):
 
 
 INTERVENTION_STATUS_CHOICES = [
-    ("draft", "Návrh"),
-    ("pending_approval", "Ke schválení"),
-    ("approved", "Schváleno"),
-    ("in_progress", "Probíhá"),
-    ("pending_check", "Ke kontrole"),
-    ("completed", "Dokončeno"),
-    ("rework_required", "Reklamace"),
+    ("proposed", "Navrženo"),
+    ("done_pending_owner", "Hotovo – čeká na potvrzení"),
+    ("completed", "Potvrzeno"),
 ]
 
 URGENCY_CHOICES = [
@@ -487,13 +483,13 @@ class InterventionType(models.Model):
 
 class TreeIntervention(models.Model):
     def mark_approved(self):
-        self.status = "approved"
+        self.status = "done_pending_owner"
         if getattr(self, "approved_at", None) is None:
             self.approved_at = timezone.now()
         self.save()
 
     def mark_handed_over_for_check(self):
-        self.status = "pending_check"
+        self.status = "done_pending_owner"
         if getattr(self, "handed_over_for_check_at", None) is None:
             self.handed_over_for_check_at = timezone.now()
         self.save()
@@ -528,9 +524,10 @@ class TreeIntervention(models.Model):
     status = models.CharField(
         max_length=32,
         choices=INTERVENTION_STATUS_CHOICES,
-        default="draft",
+        default="proposed",
         verbose_name="Stav zásahu",
     )
+    status_note = models.TextField(blank=True, verbose_name="Poznámka ke stavu")
     due_date = models.DateField(
         null=True,
         blank=True,

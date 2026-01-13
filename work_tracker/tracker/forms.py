@@ -161,7 +161,6 @@ class TreeInterventionForm(forms.ModelForm):
             'intervention_type',
             'description',
             'urgency',
-            'status',
             'due_date',
             'assigned_to',
         ]
@@ -171,7 +170,6 @@ class TreeInterventionForm(forms.ModelForm):
         labels = {
             'description': 'Popis zásahu / poznámka',
             'urgency': 'Naléhavost',
-            'status': 'Stav zásahu',
             'assigned_to': 'Zodpovědný',
         }
         help_texts = {

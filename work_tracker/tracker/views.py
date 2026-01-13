@@ -67,6 +67,7 @@ from .permissions import (
     can_lock_project,
     can_delete_project,
     can_purge_project,
+    can_transition_intervention,
 )
 
 # ------------------ Auth / základní stránky ------------------
@@ -119,13 +120,11 @@ def _project_detail_queryset(project, q, df, dt, has_assessment, has_open_interv
     if has_open_interventions == "none":
         qs = qs.filter(interventions__isnull=True)
     elif has_open_interventions == "proposed":
-        qs = qs.filter(
-            interventions__status__in=["draft", "pending_approval"]
-        ).distinct()
+        qs = qs.filter(interventions__status="proposed").distinct()
     elif has_open_interventions == "approved":
-        qs = qs.filter(interventions__status="approved").distinct()
+        qs = qs.filter(interventions__status="done_pending_owner").distinct()
     elif has_open_interventions == "handover":
-        qs = qs.filter(interventions__status="pending_check").distinct()
+        qs = qs.filter(interventions__status="done_pending_owner").distinct()
     elif has_open_interventions == "completed":
         qs = qs.filter(interventions__status="completed").distinct()
 
@@ -155,11 +154,9 @@ def _decorate_workrecords(work_records):
         wr.interventions_completed = 0
 
         for iv in interventions:
-            if iv.status in ["draft", "pending_approval"]:
+            if iv.status == "proposed":
                 wr.interventions_proposed += 1
-            elif iv.status == "approved":
-                wr.interventions_approved += 1
-            elif iv.status == "pending_check":
+            elif iv.status == "done_pending_owner":
                 wr.interventions_handover += 1
             elif iv.status == "completed":
                 wr.interventions_completed += 1
@@ -645,6 +642,41 @@ def tree_intervention_update(request, pk):
 
 @login_required
 @require_http_methods(["POST"])
+def tree_intervention_transition(request, pk):
+    intervention = get_object_or_404(
+        TreeIntervention.objects.select_related("tree__project"),
+        pk=pk,
+    )
+    tree = intervention.tree
+    if tree.project_id and not user_can_view_project(request.user, tree.project_id):
+        return redirect("work_record_list")
+
+    target = (request.POST.get("target") or request.POST.get("action") or "").strip()
+    note = (request.POST.get("note") or "").strip()
+
+    if target not in ("proposed", "done_pending_owner", "completed"):
+        return HttpResponseBadRequest("Invalid target")
+
+    requires_note = target == "proposed" and intervention.status in ("done_pending_owner", "completed")
+    if requires_note and not note:
+        messages.error(request, "Poznámka je povinná.")
+        return redirect(request.META.get("HTTP_REFERER") or reverse("work_record_detail", args=[tree.pk]))
+
+    if not can_transition_intervention(request.user, intervention, target):
+        return HttpResponse(status=403)
+
+    intervention.status = target
+    if note:
+        intervention.status_note = note
+        intervention.save(update_fields=["status", "status_note"])
+    else:
+        intervention.save(update_fields=["status"])
+
+    return redirect(request.META.get("HTTP_REFERER") or reverse("work_record_detail", args=[tree.pk]))
+
+
+@login_required
+@require_http_methods(["POST"])
 def tree_intervention_api(request, tree_id):
     tree = get_object_or_404(WorkRecord, pk=tree_id)
     if tree.project_id and not user_can_view_project(request.user, tree.project_id):
@@ -707,7 +739,7 @@ def tree_intervention_api(request, tree_id):
     action = request.POST.get('action')
     if action == "handover":
         try:
-            intervention_id = int(request.POST.get('id') or 0)
+            intervention_id = int(request.POST.get("id") or 0)
         except (TypeError, ValueError):
             return JsonResponse({'status': 'error', 'msg': 'Neplatné ID zásahu.'}, status=400)
 
@@ -716,10 +748,15 @@ def tree_intervention_api(request, tree_id):
             pk=intervention_id,
             tree=tree,
         )
-        if intervention.status not in ("approved", "in_progress"):
+        if intervention.status != "proposed":
             return JsonResponse({'status': 'error', 'msg': 'Tento zásah nelze předat ke kontrole.'}, status=400)
+        if not can_transition_intervention(request.user, intervention, "done_pending_owner"):
+            return JsonResponse({'status': 'error', 'msg': 'Nemáte oprávnění.'}, status=403)
 
-        intervention.mark_handed_over_for_check()
+        intervention.status = "done_pending_owner"
+        if getattr(intervention, "handed_over_for_check_at", None) is None:
+            intervention.handed_over_for_check_at = timezone.now()
+        intervention.save(update_fields=["status", "handed_over_for_check_at"])
         return JsonResponse({'status': 'ok', 'intervention': serialize_intervention(intervention)})
 
     form = TreeInterventionForm(request.POST)
@@ -1227,7 +1264,7 @@ def bulk_approve_interventions(request, pk):
     work_records = project.trees.filter(id__in=selected_ids)
     interventions_qs = TreeIntervention.objects.filter(
         tree__in=work_records,
-        status__in=["draft", "pending_approval"],
+        status__in=["proposed"],
     )
     interventions = list(interventions_qs)
 
@@ -1236,16 +1273,12 @@ def bulk_approve_interventions(request, pk):
         return redirect("project_detail", pk=pk)
 
     for intervention in interventions:
-        if hasattr(intervention, "mark_approved"):
-            intervention.mark_approved()
-        else:
-            from django.utils import timezone
-
-            intervention.status = "approved"
-            if getattr(intervention, "approved_at", None) is None:
-                intervention.approved_at = timezone.now()
-            intervention.save()
-
+        if not can_transition_intervention(request.user, intervention, "done_pending_owner"):
+            return HttpResponse(status=403)
+        intervention.status = "done_pending_owner"
+        if getattr(intervention, "approved_at", None) is None:
+            intervention.approved_at = timezone.now()
+        intervention.save(update_fields=["status", "approved_at"])
     messages.success(
         request,
         f"Schváleno {len(interventions)} navržených zásahů.",
@@ -1918,7 +1951,7 @@ def bulk_handover_interventions(request, pk):
     work_records = project.trees.filter(id__in=selected_ids)
     interventions_qs = TreeIntervention.objects.filter(
         tree__in=work_records,
-        status__in=["approved", "in_progress"],
+        status__in=["proposed"],
     )
     interventions = list(interventions_qs)
 
@@ -1927,16 +1960,12 @@ def bulk_handover_interventions(request, pk):
         return redirect("project_detail", pk=pk)
 
     for intervention in interventions:
-        if hasattr(intervention, "mark_handed_over_for_check"):
-            intervention.mark_handed_over_for_check()
-        else:
-            from django.utils import timezone
-
-            intervention.status = "pending_check"
-            if getattr(intervention, "handed_over_for_check_at", None) is None:
-                intervention.handed_over_for_check_at = timezone.now()
-            intervention.save()
-
+        if not can_transition_intervention(request.user, intervention, "done_pending_owner"):
+            return HttpResponse(status=403)
+        intervention.status = "done_pending_owner"
+        if getattr(intervention, "handed_over_for_check_at", None) is None:
+            intervention.handed_over_for_check_at = timezone.now()
+        intervention.save(update_fields=["status", "handed_over_for_check_at"])
     messages.success(
         request,
         f"Předáno ke kontrole {len(interventions)} zásahů.",
@@ -1962,7 +1991,7 @@ def bulk_complete_interventions(request, pk):
     work_records = project.trees.filter(id__in=selected_ids)
     interventions_qs = TreeIntervention.objects.filter(
         tree__in=work_records,
-        status__in=["pending_check", "approved", "in_progress"],
+        status__in=["done_pending_owner"],
     )
     interventions = list(interventions_qs)
 
@@ -1971,9 +2000,10 @@ def bulk_complete_interventions(request, pk):
         return redirect("project_detail", pk=pk)
 
     for intervention in interventions:
+        if not can_transition_intervention(request.user, intervention, "completed"):
+            return HttpResponse(status=403)
         intervention.status = "completed"
-        intervention.save()
-
+        intervention.save(update_fields=["status"])
     messages.success(
         request,
         f"Označeno {len(interventions)} zásahů jako dokončené.",

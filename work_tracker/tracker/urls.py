@@ -12,6 +12,7 @@ urlpatterns = [
     path('trees/<int:tree_id>/interventions/new/', views.tree_intervention_create, name='tree_intervention_create'),
     path('api/trees/<int:tree_id>/interventions/', views.tree_intervention_api, name='tree_intervention_api'),
     path('interventions/<int:pk>/edit/', views.tree_intervention_update, name='tree_intervention_update'),
+    path('interventions/<int:pk>/transition/', views.tree_intervention_transition, name='tree_intervention_transition'),
     path('<int:pk>/', views.work_record_detail, name='work_record_detail'),
     path('<int:pk>/edit/', views.edit_work_record, name='edit_work_record'),
     path('photo/<int:pk>/delete/', views.delete_photo, name='delete_photo'),

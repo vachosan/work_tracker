@@ -97,3 +97,23 @@ def can_confirm_intervention(user, project_or_intervention):
         project=project,
         role=ProjectMembership.Role.OWNER,
     ).exists()
+
+
+def can_edit_intervention(user, intervention):
+    if user.is_superuser:
+        return True
+    project = _get_project_from_intervention(intervention)
+    if not project:
+        return False
+    return is_project_member(user, project)
+
+
+def can_transition_intervention(user, intervention, target):
+    current = getattr(intervention, "status", None)
+    if current == "proposed" and target == "done_pending_owner":
+        return can_edit_intervention(user, intervention)
+    if current == "done_pending_owner" and target == "completed":
+        return can_confirm_intervention(user, intervention)
+    if current in ("done_pending_owner", "completed") and target == "proposed":
+        return can_confirm_intervention(user, intervention)
+    return False
