@@ -695,11 +695,17 @@ def tree_intervention_transition(request, pk):
         return HttpResponse(status=403)
 
     intervention.status = target
+    update_fields = ["status"]
     if note:
         intervention.status_note = note
-        intervention.save(update_fields=["status", "status_note"])
-    else:
-        intervention.save(update_fields=["status"])
+        update_fields.append("status_note")
+    if target == "done_pending_owner" and getattr(intervention, "handed_over_for_check_at", None) is None:
+        intervention.handed_over_for_check_at = timezone.now()
+        update_fields.append("handed_over_for_check_at")
+    if target == "completed" and getattr(intervention, "approved_at", None) is None:
+        intervention.approved_at = timezone.now()
+        update_fields.append("approved_at")
+    intervention.save(update_fields=update_fields)
 
     return redirect(request.META.get("HTTP_REFERER") or reverse("work_record_detail", args=[tree.pk]))
 

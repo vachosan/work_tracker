@@ -296,7 +296,7 @@
               <th>Název</th>
               <th>Naléhavost</th>
               <th>Stav / akce</th>
-              <th>Termín</th>
+              <th>Vytvořeno</th>
               <th>Popis</th>
             </tr>
           </thead>
@@ -354,10 +354,10 @@
                   </div>
                 </td>
                 <td>
-                  {% if intervention.due_date %}
-                    {{ intervention.due_date|date:"d.m.Y" }}
+                  {% if intervention.created_at %}
+                    Vytvořeno: {{ intervention.created_at|date:"d.m.Y H:i" }}
                   {% else %}
-                    <span class="text-muted">nezadáno</span>
+                    <span class="text-muted">-</span>
                   {% endif %}
                 </td>
                 <td>
