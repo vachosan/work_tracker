@@ -229,6 +229,7 @@ def project_detail(request, pk):
             "is_member": is_member,
             "has_next": has_next,
             "next_url": next_url,
+            "project_return_url": request.get_full_path(),
         },
     )
 
@@ -251,7 +252,11 @@ def project_detail_items(request, pk):
     response = render(
         request,
         "tracker/project_detail_items.html",
-        {"work_records": page_obj.object_list},
+        {
+            "work_records": page_obj.object_list,
+            "project": project,
+            "project_return_url": f"{reverse('project_detail', args=[project.pk])}?{request.GET.urlencode()}" if request.GET else reverse('project_detail', args=[project.pk]),
+        },
     )
 
     response["X-Has-Next"] = "1" if page_obj.has_next() else "0"
@@ -587,6 +592,19 @@ def work_record_detail(request, pk):
     if work_record.project_id and not user_can_view_project(request.user, work_record.project_id):
         return redirect('work_record_list')
 
+    project_param = request.GET.get("project")
+    return_url = request.GET.get("return")
+    active_project_id = None
+    if project_param:
+        try:
+            active_project_id = int(project_param)
+        except (TypeError, ValueError):
+            active_project_id = None
+    if active_project_id is None:
+        active_project_id = request.session.get("active_project_id")
+    if not return_url:
+        return_url = request.session.get("active_project_return")
+
     if request.method == 'POST':
         photo_form = PhotoDocumentationForm(request.POST, request.FILES)
         if photo_form.is_valid():
@@ -617,6 +635,8 @@ def work_record_detail(request, pk):
         'interventions': interventions,
         'current_interventions': current_interventions,
         'history_interventions': history_interventions,
+        'active_project_id': active_project_id,
+        'return_url': return_url,
     })
 
 
@@ -1513,6 +1533,15 @@ def workrecords_geojson(request):
 @login_required
 def map_gl_pilot(request):
     """Temporary pilot page to verify MapLibre GL rendering."""
+    project_param = request.GET.get("project")
+    if project_param:
+        try:
+            project_id = int(project_param)
+        except (TypeError, ValueError):
+            project_id = None
+        if project_id:
+            request.session["active_project_id"] = project_id
+            request.session["active_project_return"] = request.get_full_path()
     context = _build_map_mapui_context(request)
     return render(request, "tracker/map_gl_pilot.html", context)
 
@@ -1523,12 +1552,19 @@ def map_project_redirect(request, pk):
     if not user_can_view_project(request.user, project.pk):
         return redirect("work_record_list")
 
+    passthrough_params = {}
+    for key in ("focus", "lat", "lon", "z"):
+        value = request.GET.get(key)
+        if value:
+            passthrough_params[key] = value
+
+
     coords_qs = project.trees.filter(
         latitude__isnull=False,
         longitude__isnull=False,
     )
     coords_count = coords_qs.count()
-    base_params = {"project": project.pk}
+    base_params = {"project": project.pk, **passthrough_params}
     if coords_count == 0:
         messages.warning(request, "Projekt nemá žádné stromy se souřadnicemi.")
         target = f"{reverse('map_gl_pilot')}?{urlencode(base_params)}"
@@ -1538,7 +1574,10 @@ def map_project_redirect(request, pk):
         if single:
             lat = single["latitude"]
             lon = single["longitude"]
-            params = {"lat": lat, "lon": lon, "z": 18, **base_params}
+            params = dict(base_params)
+            params.setdefault("lat", lat)
+            params.setdefault("lon", lon)
+            params.setdefault("z", 18)
             return redirect(f"{reverse('map_gl_pilot')}?{urlencode(params)}")
 
     coords = coords_qs.aggregate(
@@ -1551,7 +1590,8 @@ def map_project_redirect(request, pk):
     target = reverse("map_gl_pilot")
     if all(value is not None for value in coords.values()):
         bbox = f"{coords['min_lon']},{coords['min_lat']},{coords['max_lon']},{coords['max_lat']}"
-        params = {"bbox": bbox, **base_params}
+        params = dict(base_params)
+        params.setdefault("bbox", bbox)
         return redirect(f"{target}?{urlencode(params)}")
     return redirect(f"{target}?{urlencode(base_params)}")
 

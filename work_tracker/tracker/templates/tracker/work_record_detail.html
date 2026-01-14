@@ -12,25 +12,30 @@
   {% endwith %}
 
   <div class="d-flex gap-2 flex-shrink-0">
-    {% if work_record.latitude and work_record.longitude %}
+    {% if active_project_id %}
+      <a href="{% url 'map_project_redirect' active_project_id %}?focus={{ work_record.id }}{% if work_record.latitude and work_record.longitude %}&lat={{ work_record.latitude }}&lon={{ work_record.longitude }}&z=18{% endif %}"
+         class="btn btn-outline-success btn-icon-square" title="Mapa projektu">
+        <i class="bi bi-geo-alt"></i>
+      </a>
+    {% elif work_record.latitude and work_record.longitude %}
       <a href="{% url 'map_gl_pilot' %}?lat={{ work_record.latitude }}&lon={{ work_record.longitude }}&z=18&focus={{ work_record.id }}"
-         class="btn btn-outline-success btn-icon-square" title="Zobrazit v mapě">
+         class="btn btn-outline-success btn-icon-square" title="Zobrazit v mapØ">
         <i class="bi bi-geo-alt"></i>
       </a>
     {% else %}
-      <a href="{% url 'map_gl_pilot' %}"
-         class="btn btn-outline-success btn-icon-square" title="Přidat polohu">
+      <a href="{% url 'map_gl_pilot' %}?focus={{ work_record.id }}"
+         class="btn btn-outline-success btn-icon-square" title="Pýidat polohu">
         <i class="bi bi-geo"></i>
       </a>
     {% endif %}
-    {% if work_record.project %}
-      <a href="{% url 'project_detail' work_record.project.pk %}"
-         class="btn btn-outline-secondary btn-icon-square" title="Zpět na projekt">
+    {% if active_project_id %}
+      <a href="{% url 'project_detail' active_project_id %}"
+         class="btn btn-outline-secondary btn-icon-square" title="ZpØt na projekt">
         <i class="bi bi-arrow-left"></i>
       </a>
     {% else %}
       <a href="{% url 'work_record_list' %}"
-         class="btn btn-outline-secondary btn-icon-square" title="Zpět na seznam">
+         class="btn btn-outline-secondary btn-icon-square" title="ZpØt na seznam">
         <i class="bi bi-arrow-left"></i>
       </a>
     {% endif %}

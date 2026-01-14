@@ -389,6 +389,19 @@ document.addEventListener('DOMContentLoaded', function () {
   const newRecordCancelBtn = document.getElementById('newRecordCancelBtn');
   const newRecordCloseBtn = document.getElementById('newRecordCloseBtn');
   const newRecordToggleDesc = document.getElementById('newRecordToggleDesc');
+  const projectParam = new URLSearchParams(window.location.search).get('project');
+
+  function buildReturnParam() {
+    return encodeURIComponent(window.location.pathname + window.location.search);
+  }
+
+  function buildDetailUrl(recordId) {
+    const base = `/tracker/${recordId}/`;
+    const params = [];
+    if (projectParam) params.push(`project=${encodeURIComponent(projectParam)}`);
+    params.push(`return=${buildReturnParam()}`);
+    return `${base}?${params.join('&')}`;
+  }
 
   // Deep-link params
   const urlParams = new URLSearchParams(window.location.search);
@@ -402,7 +415,7 @@ document.addEventListener('DOMContentLoaded', function () {
   function updateBackLink(rid) {
     const id = rid || activeRecordId;
     if (!backLink) return;
-    backLink.href = id ? `/tracker/${id}/` : `{% url 'work_record_list' %}`;
+    backLink.href = id ? buildDetailUrl(id) : `{% url 'work_record_list' %}`;
   }
   updateBackLink(activeRecordId);
 
@@ -551,7 +564,7 @@ document.addEventListener('DOMContentLoaded', function () {
           }
           if (typeof updateMarkers === 'function') updateMarkers(projectSelect ? projectSelect.value : '');
           map.setView([Number(selectedLat), Number(selectedLon)], Math.max(map.getZoom(), 18));
-          window.location.href = `/tracker/${recIdNum}/`;
+          window.location.href = buildDetailUrl(recIdNum);
         } else {
           alert('Chyba: ' + data.msg);
         }
@@ -641,7 +654,7 @@ document.addEventListener('DOMContentLoaded', function () {
           const m = L.marker([r.lat, r.lon], { icon: wrIcon });
           m.recordId = Number(r.id);
           const titleText = (r.title && r.title.trim()) ? r.title : '(bez názvu)';
-          const detailUrl = `/tracker/${r.id}/`;
+          const detailUrl = buildDetailUrl(r.id);
           const photosForDisplay = Array.isArray(r.photos) ? r.photos.slice(0, 2) : [];
           const photosHtml = photosForDisplay.length
             ? `<div class="wr-photos">${photosForDisplay.map((photoObj, idx) => `<img class="wr-photo-thumb" src="${photoObj.thumb}" alt="Foto ${titleText}" loading="lazy" data-full="${photoObj.full}" data-record-id="${r.id}" data-photo-index="${idx}">`).join('')}</div>`

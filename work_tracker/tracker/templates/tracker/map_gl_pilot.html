@@ -453,7 +453,13 @@
     const focusWorkRecordById = (recordId) => {
       if (!recordId) return false;
       const target = workrecordFeatures.find((feature) => Number(feature.id) === Number(recordId));
-      if (!target) return false;
+      if (!target) {
+        if (window.openWorkRecordPanel) {
+          window.openWorkRecordPanel(recordId);
+          return true;
+        }
+        return false;
+      }
       map.easeTo({
         center: target.coordinates,
         zoom: Math.max(map.getZoom(), 18),

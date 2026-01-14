@@ -180,8 +180,29 @@
     return '<div class="text-muted small mt-2 mb-0">Bez fotodokumentace</div>';
   }
 
+  function buildReturnUrlParam() {
+    try {
+      if (!window.location) return '';
+      const currentUrl = window.location.pathname + window.location.search;
+      return encodeURIComponent(currentUrl);
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function buildDetailUrl(recordId) {
+    const detailUrl = '/tracker/' + recordId + '/';
+    const projectId = getProjectContextId();
+    const returnParam = buildReturnUrlParam();
+    if (!projectId && !returnParam) return detailUrl;
+    const params = [];
+    if (projectId) params.push('project=' + encodeURIComponent(projectId));
+    if (returnParam) params.push('return=' + returnParam);
+    return detailUrl + '?' + params.join('&');
+  }
+
   function buildPopupHtml(record, state, opts) {
-    const detailUrl = '/tracker/' + record.id + '/';
+    const detailUrl = buildDetailUrl(record.id);
     const displayLabel = getRecordDisplayLabel(record);
     const taxon = record.taxon || '';
     const options = opts || {};

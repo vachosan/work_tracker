@@ -66,6 +66,19 @@ document.addEventListener('DOMContentLoaded', function () {
   const bottomPanel = document.getElementById('bottom-panel');
   const treePanel = document.getElementById('tree-panel');
   let activeTreePanelRecordId = null;
+  const projectParam = new URLSearchParams(window.location.search).get('project');
+
+  function buildReturnParam() {
+    return encodeURIComponent(window.location.pathname + window.location.search);
+  }
+
+  function buildDetailUrl(recordId) {
+    const base = `/tracker/${recordId}/`;
+    const params = [];
+    if (projectParam) params.push(`project=${encodeURIComponent(projectParam)}`);
+    params.push(`return=${buildReturnParam()}`);
+    return `${base}?${params.join('&')}`;
+  }
 
   function openBottomPanel() {
     if (bottomPanel) bottomPanel.classList.add('open');
@@ -217,7 +230,7 @@ document.addEventListener('DOMContentLoaded', function () {
   function updateBackLink(rid) {
     const id = rid || activeRecordId;
     if (!backLink) return;
-    backLink.href = id ? `/tracker/${id}/` : `{% url 'work_record_list' %}`;
+    backLink.href = id ? buildDetailUrl(id) : `{% url 'work_record_list' %}`;
   }
   updateBackLink(activeRecordId);
 
@@ -386,7 +399,7 @@ document.addEventListener('DOMContentLoaded', function () {
           }
           if (typeof updateMarkers === 'function') updateMarkers(projectSelect ? projectSelect.value : '');
           map.setView([Number(selectedLat), Number(selectedLon)], Math.max(map.getZoom(), 18));
-          window.location.href = `/tracker/${recIdNum}/`;
+          window.location.href = buildDetailUrl(recIdNum);
         } else {
           alert('Chyba: ' + data.msg);
         }
@@ -445,7 +458,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   function buildPopupHtml(record, state = {}) {
-    const detailUrl = `/tracker/${record.id}/`;
+    const detailUrl = buildDetailUrl(record.id);
     const displayLabel = getRecordDisplayLabel(record);
     const taxonHtml = (record.taxon && record.taxon.trim())
       ? `<div class="wr-desc"><small class="text-muted">Taxon: ${record.taxon.trim()}</small></div>`
