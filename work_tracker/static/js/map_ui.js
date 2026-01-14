@@ -933,22 +933,39 @@
     let html = '';
     html += '<div class="mb-1"><strong>Existující zásahy</strong></div>';
     html += '<div><table class="table table-sm mb-1"><thead><tr>';
-    html += '<th>Kód</th><th>Název</th><th>Stav</th><th>Vytvořeno</th><th></th>';
+    html += '<th>Kód</th><th class="d-none d-sm-table-cell">Název</th><th>Stav</th><th class="d-none d-md-table-cell">Vytvořeno</th><th>Akce</th>';
     html += '</tr></thead><tbody>';
     items.forEach(function (item) {
       const created = item.created_at || '';
       const handed = item.handed_over_for_check_at || null;
+      const transitionUrl = item.transition_url || '';
       let label = '';
       if (handed) {
         label = 'Předáno ke kontrole';
       } else if (created) {
         label = 'Vytvořeno';
       }
+      let statusBadge =
+        '<span class="badge bg-light text-dark intervention-status-badge">' +
+        (item.status || '') +
+        '</span>';
+      if (item.status_code === 'proposed') {
+        statusBadge = '<span class="badge bg-secondary intervention-status-badge">Navrženo</span>';
+      } else if (item.status_code === 'done_pending_owner') {
+        statusBadge =
+          '<span class="badge bg-warning text-dark intervention-status-badge">Hotovo – čeká na potvrzení</span>';
+      } else if (item.status_code === 'completed') {
+        statusBadge = '<span class="badge bg-success intervention-status-badge">Potvrzeno</span>';
+      }
       html += '<tr>';
-      html += '<td>' + (item.code || '') + '</td>';
-      html += '<td>' + (item.name || '') + '</td>';
-      html += '<td>' + (item.status || '') + '</td>';
-      html += '<td>';
+      html += '<td>' + (item.code || '');
+      if (item.name) {
+        html += '<div class="text-muted small d-sm-none">' + item.name + '</div>';
+      }
+      html += '</td>';
+      html += '<td class="d-none d-sm-table-cell">' + (item.name || '') + '</td>';
+      html += '<td>' + statusBadge + '</td>';
+      html += '<td class="d-none d-md-table-cell">';
       if (label || created || handed) {
         const ts = handed || created;
         html += '<div class="small text-muted">';
@@ -959,14 +976,27 @@
         html += '<span class="text-muted">-</span>';
       }
       html += '</td>';
-      html += '<td class="text-end">';
-      if (item.status_code === 'approved' || item.status_code === 'in_progress') {
+      html += '<td class="text-end"><div class="d-flex flex-wrap gap-1 justify-content-end interventions-actions">';
+      const actions = item.allowed_actions || {};
+      if (actions.mark_done) {
         html +=
-          '<button type="button" class="btn btn-outline-secondary btn-sm" data-action="handover" data-intervention-id="' +
+          '<button type="button" class="btn btn-outline-success btn-sm me-1 py-0 px-2" data-action="transition" data-target="done_pending_owner" data-transition-url="' + transitionUrl + '" data-intervention-id="' +
           item.id +
-          '" title="Předat ke kontrole"><i class="bi bi-send-check"></i></button>';
+          '">Označit hotovo</button>';
       }
-      html += '</td>';
+      if (actions.confirm) {
+        html +=
+          '<button type="button" class="btn btn-outline-primary btn-sm me-1 py-0 px-2" data-action="transition" data-target="completed" data-transition-url="' + transitionUrl + '" data-intervention-id="' +
+          item.id +
+          '">Potvrdit</button>';
+      }
+      if (actions.return) {
+        html +=
+          '<button type="button" class="btn btn-outline-warning btn-sm py-0 px-2" data-action="transition" data-target="proposed" data-transition-url="' + transitionUrl + '" data-intervention-id="' +
+          item.id +
+          '">Vrátit</button>';
+      }
+      html += '</div></td>';
       html += '</tr>';
     });
     html += '</tbody></table></div>';
@@ -998,36 +1028,37 @@
       });
   }
 
-  function handoverIntervention(recordId, interventionId, buttonEl) {
-    const url = buildInterventionApiUrl(recordId);
-    if (!url) return;
+  function transitionIntervention(recordId, transitionUrl, target, note, buttonEl) {
+    if (!transitionUrl) {
+      setInterventionMessage('Nepodařilo se změnit stav zásahu.', true);
+      return;
+    }
     const payload = new URLSearchParams();
-    payload.set('action', 'handover');
-    payload.set('id', String(interventionId));
+    payload.set('target', target);
+    if (note) payload.set('note', note);
     if (buttonEl) buttonEl.disabled = true;
     const headers = {
       'X-Requested-With': 'XMLHttpRequest',
       'Content-Type': 'application/x-www-form-urlencoded',
     };
     if (cfg.csrfToken) headers['X-CSRFToken'] = cfg.csrfToken;
-    fetch(url, {
+    fetch(transitionUrl, {
       method: 'POST',
       headers: headers,
       body: payload.toString(),
     })
       .then(function (resp) {
-        return resp.json().then(function (body) {
-          return { status: resp.status, body: body };
-        });
-      })
-      .then(function (result) {
-        if (result.status >= 400 || !result.body || result.body.status !== 'ok') {
-          throw result.body;
+        if (!resp.ok) {
+          return resp.text().then(function (text) {
+            console.error('transition failed', { status: resp.status, body: text });
+            setInterventionMessage('Nepodařilo se změnit stav zásahu.', true);
+            throw new Error('transition failed');
+          });
         }
         loadInterventionsForRecord(recordId);
       })
       .catch(function () {
-        setInterventionMessage('Nepodařilo se předat zásah ke kontrole.', true);
+        setInterventionMessage('Nepodařilo se změnit stav zásahu.', true);
       })
       .finally(function () {
         if (buttonEl) buttonEl.disabled = false;
@@ -1059,6 +1090,8 @@
     if (!interventionForm) return;
     const action = interventionForm.action;
     const payload = new FormData(interventionForm);
+    payload.delete('due_date');
+    payload.delete('assigned_to');
     const recordId = interventionTreeIdInput ? interventionTreeIdInput.value : null;
     if (interventionTreeIdInput && recordId) {
       payload.set('tree_id', recordId);
@@ -1098,6 +1131,9 @@
           else current.unshift(data.intervention);
           setInterventions(rid, current);
           renderInterventionList(current);
+          if (!data.intervention.allowed_actions) {
+            loadInterventionsForRecord(rid);
+          }
         } else if (rid) {
           loadInterventionsForRecord(rid);
         }
@@ -1355,12 +1391,18 @@
     }
     if (interventionListContainer) {
       interventionListContainer.addEventListener('click', function (e) {
-        const btn = e.target.closest('[data-action="handover"]');
+        const btn = e.target.closest('[data-action="transition"]');
         if (!btn) return;
         const recordId = interventionTreeIdInput ? interventionTreeIdInput.value : null;
-        const interventionId = btn.getAttribute('data-intervention-id');
-        if (!recordId || !interventionId) return;
-        handoverIntervention(recordId, interventionId, btn);
+        const transitionUrl = btn.getAttribute('data-transition-url');
+        const target = btn.getAttribute('data-target');
+        if (!recordId || !transitionUrl || !target) return;
+        let note = '';
+        if (target === 'proposed') {
+          note = window.prompt('Poznámka k vrácení');
+          if (!note) return;
+        }
+        transitionIntervention(recordId, transitionUrl, target, note, btn);
       });
     }
 

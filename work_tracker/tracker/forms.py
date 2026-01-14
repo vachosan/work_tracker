@@ -149,11 +149,6 @@ class TreeInterventionForm(forms.ModelForm):
         label="Typ zásahu",
         empty_label="Vyberte typ zásahu",
     )
-    due_date = forms.DateField(
-        required=False,
-        widget=forms.DateInput(attrs={'type': 'date'}),
-        label="Termín zásahu",
-    )
 
     class Meta:
         model = TreeIntervention
@@ -161,8 +156,6 @@ class TreeInterventionForm(forms.ModelForm):
             'intervention_type',
             'description',
             'urgency',
-            'due_date',
-            'assigned_to',
         ]
         widgets = {
             'description': forms.Textarea(attrs={'rows': 4, 'placeholder': 'Popis zásahu (volitelný)'}),
@@ -170,17 +163,12 @@ class TreeInterventionForm(forms.ModelForm):
         labels = {
             'description': 'Popis zásahu / poznámka',
             'urgency': 'Naléhavost',
-            'assigned_to': 'Zodpovědný',
-        }
-        help_texts = {
-            'assigned_to': 'Volitelně vyber osobu, která bude zásah řešit.',
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         queryset = InterventionType.objects.filter(is_active=True).order_by('order', 'name')
         self.fields['intervention_type'].queryset = queryset
-        self.fields['assigned_to'].queryset = User.objects.filter(is_active=True).order_by('username')
 
     @property
     def intervention_type_note_data(self):

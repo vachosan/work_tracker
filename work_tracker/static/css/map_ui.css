@@ -296,3 +296,21 @@
     opacity: 0;
     display: none;
   }
+  .interventions-actions .btn {
+    white-space: nowrap;
+  }
+  .intervention-status-badge {
+    white-space: normal;
+    line-height: 1.15;
+    text-align: center;
+  }
+  .intervention-modal-card {
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .intervention-scroll {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }

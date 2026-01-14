@@ -734,6 +734,11 @@ def tree_intervention_api(request, tree_id):
         return JsonResponse({'status': 'error', 'msg': 'Nemáte oprávnění.'}, status=403)
 
     def serialize_intervention(obj):
+        allowed_actions = {
+            "mark_done": can_transition_intervention(request.user, obj, "done_pending_owner"),
+            "confirm": can_transition_intervention(request.user, obj, "completed"),
+            "return": can_transition_intervention(request.user, obj, "proposed"),
+        }
         return {
             'id': obj.pk,
             'code': obj.intervention_type.code if obj.intervention_type else '',
@@ -741,12 +746,14 @@ def tree_intervention_api(request, tree_id):
             'urgency': obj.get_urgency_display(),
             'status': obj.get_status_display(),
             'status_code': obj.status,
+            'transition_url': reverse('tree_intervention_transition', args=[obj.pk]),
             'created_at': obj.created_at.isoformat() if obj.created_at else None,
             'handed_over_for_check_at': (
                 obj.handed_over_for_check_at.isoformat()
                 if getattr(obj, "handed_over_for_check_at", None)
                 else None
             ),
+            'allowed_actions': allowed_actions,
         }
 
     if request.method == "GET":
