@@ -49,13 +49,13 @@
             <li><h6 class="dropdown-header">Fotodokumentace</h6></li>
             <li>
               <button type="submit" form="project-actions-form" name="export_selected" value="1"
-                      class="dropdown-item">
+                      class="dropdown-item" formaction="{% url 'export_selected_zip' project.pk %}">
                 Export fotodokumentace (vybrané)
               </button>
             </li>
             <li>
               <button type="submit" form="project-actions-form" name="export_all" value="1"
-                      class="dropdown-item">
+                      class="dropdown-item" formaction="{% url 'export_selected_zip' project.pk %}">
                 Export fotodokumentace (celý projekt)
               </button>
             </li>
@@ -108,19 +108,19 @@
           <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="bulkDropdown">
             <li>
               <button type="submit" form="project-actions-form" name="bulk_approve_interventions" value="1"
-                      class="dropdown-item" formaction="{% url 'bulk_approve_interventions' project.pk %}" data-bulk-action disabled>
+                      class="dropdown-item" formaction="{% url 'bulk_approve_interventions' project.pk %}" formmethod="post" data-bulk-action disabled>
                 Schválit navržené zásahy
               </button>
             </li>
             <li>
               <button type="submit" form="project-actions-form" name="bulk_handover_interventions" value="1"
-                      class="dropdown-item" formaction="{% url 'bulk_handover_interventions' project.pk %}" data-bulk-action disabled>
+                      class="dropdown-item" formaction="{% url 'bulk_handover_interventions' project.pk %}" formmethod="post" data-bulk-action disabled>
                 Předat zásahy ke kontrole
               </button>
             </li>
             <li>
               <button type="submit" form="project-actions-form" name="bulk_complete_interventions" value="1"
-                      class="dropdown-item" formaction="{% url 'bulk_complete_interventions' project.pk %}" data-bulk-action disabled>
+                      class="dropdown-item" formaction="{% url 'bulk_complete_interventions' project.pk %}" formmethod="post" data-bulk-action disabled>
                 Označit zásahy jako dokončené
               </button>
             </li>
@@ -205,31 +205,31 @@
 
 <form method="post" id="project-actions-form" action="{% url 'export_selected_zip' project.pk %}">
   {% csrf_token %}
-
-  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-    <div class="form-check">
-      <input type="checkbox" id="selectAll" class="form-check-input" onclick="toggleAll(this)">
-      <label for="selectAll" class="form-check-label small">Vybrat vše</label>
-    </div>
-  </div>
-
-  <div id="records-list" class="vstack gap-2">
-    {% if page_obj.object_list %}
-      {% include 'tracker/project_detail_items.html' with work_records=page_obj.object_list %}
-    {% else %}
-      <div class="alert alert-info">
-        Žádné úkony neodpovídají filtru.
-      </div>
-    {% endif %}
-  </div>
-
-  <div id="load-more-sentinel" data-next-url="{{ next_url }}" data-has-next="{% if has_next %}1{% else %}0{% endif %}"></div>
-  <div id="load-more-status" class="text-center text-muted py-3 d-none">
-    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-    Načítám další záznamy...
-  </div>
-  <div id="load-more-error" class="alert alert-warning d-none">Nastala chyba při načítání dalších záznamů.</div>
 </form>
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+  <div class="form-check">
+    <input type="checkbox" id="selectAll" class="form-check-input" onclick="toggleAll(this)">
+    <label for="selectAll" class="form-check-label small">Vybrat vše</label>
+  </div>
+</div>
+
+<div id="records-list" class="vstack gap-2">
+  {% if page_obj.object_list %}
+    {% include 'tracker/project_detail_items.html' with work_records=page_obj.object_list %}
+  {% else %}
+    <div class="alert alert-info">
+      Žádné úkony neodpovídají filtru.
+    </div>
+  {% endif %}
+</div>
+
+<div id="load-more-sentinel" data-next-url="{{ next_url }}" data-has-next="{% if has_next %}1{% else %}0{% endif %}"></div>
+<div id="load-more-status" class="text-center text-muted py-3 d-none">
+  <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+  Načítám další záznamy...
+</div>
+<div id="load-more-error" class="alert alert-warning d-none">Nastala chyba při načítání dalších záznamů.</div>
 
 <script>
 function toggleAll(source) {

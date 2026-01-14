@@ -930,76 +930,119 @@
         '<p class="text-muted mb-1">Zatím nejsou zadány žádné zásahy.</p>';
       return;
     }
-    let html = '';
-    html += '<div class="mb-1"><strong>Existující zásahy</strong></div>';
-    html += '<div><table class="table table-sm mb-1"><thead><tr>';
-    html += '<th>Kód</th><th class="d-none d-sm-table-cell">Název</th><th>Stav</th><th class="d-none d-md-table-cell">Vytvořeno</th><th>Akce</th>';
-    html += '</tr></thead><tbody>';
-    items.forEach(function (item) {
-      const created = item.created_at || '';
-      const handed = item.handed_over_for_check_at || null;
-      const transitionUrl = item.transition_url || '';
-      let label = '';
-      if (handed) {
-        label = 'Předáno ke kontrole';
-      } else if (created) {
-        label = 'Vytvořeno';
-      }
-      let statusBadge =
-        '<span class="badge bg-light text-dark intervention-status-badge">' +
-        (item.status || '') +
-        '</span>';
-      if (item.status_code === 'proposed') {
-        statusBadge = '<span class="badge bg-secondary intervention-status-badge">Navrženo</span>';
-      } else if (item.status_code === 'done_pending_owner') {
-        statusBadge =
-          '<span class="badge bg-warning text-dark intervention-status-badge">Hotovo – čeká na potvrzení</span>';
-      } else if (item.status_code === 'completed') {
-        statusBadge = '<span class="badge bg-success intervention-status-badge">Potvrzeno</span>';
-      }
-      html += '<tr>';
-      html += '<td>' + (item.code || '');
-      if (item.name) {
-        html += '<div class="text-muted small d-sm-none">' + item.name + '</div>';
-      }
-      html += '</td>';
-      html += '<td class="d-none d-sm-table-cell">' + (item.name || '') + '</td>';
-      html += '<td>' + statusBadge + '</td>';
-      html += '<td class="d-none d-md-table-cell">';
-      if (label || created || handed) {
-        const ts = handed || created;
-        html += '<div class="small text-muted">';
-        if (label) html += label + ': ';
-        html += ts ? new Date(ts).toLocaleString('cs-CZ') : '-';
-        html += '</div>';
-      } else {
-        html += '<span class="text-muted">-</span>';
-      }
-      html += '</td>';
-      html += '<td class="text-end"><div class="d-flex flex-wrap gap-1 justify-content-end interventions-actions">';
-      const actions = item.allowed_actions || {};
-      if (actions.mark_done) {
-        html +=
-          '<button type="button" class="btn btn-outline-success btn-sm me-1 py-0 px-2" data-action="transition" data-target="done_pending_owner" data-transition-url="' + transitionUrl + '" data-intervention-id="' +
-          item.id +
-          '">Označit hotovo</button>';
-      }
-      if (actions.confirm) {
-        html +=
-          '<button type="button" class="btn btn-outline-primary btn-sm me-1 py-0 px-2" data-action="transition" data-target="completed" data-transition-url="' + transitionUrl + '" data-intervention-id="' +
-          item.id +
-          '">Potvrdit</button>';
-      }
-      if (actions.return) {
-        html +=
-          '<button type="button" class="btn btn-outline-warning btn-sm py-0 px-2" data-action="transition" data-target="proposed" data-transition-url="' + transitionUrl + '" data-intervention-id="' +
-          item.id +
-          '">Vrátit</button>';
-      }
-      html += '</div></td>';
-      html += '</tr>';
+    const currentItems = items.filter(function (item) {
+      return item.status_code === 'proposed' || item.status_code === 'done_pending_owner';
     });
-    html += '</tbody></table></div>';
+    const historyItems = items.filter(function (item) {
+      return item.status_code === 'completed';
+    });
+
+    function renderSection(list, isHistory) {
+      let sectionHtml = '';
+      if (isHistory) {
+        sectionHtml += '<details class="mb-1">';
+        sectionHtml +=
+          '<summary class="small text-muted">Historie (' + list.length + ')</summary>';
+      } else {
+        sectionHtml += '<div class="mb-1"><strong>Aktuální zásahy</strong></div>';
+      }
+
+      if (!list.length) {
+        if (!isHistory) {
+          sectionHtml += '<p class="text-muted mb-1">Zatím nejsou zadány žádné zásahy.</p>';
+        }
+        if (isHistory) {
+          sectionHtml += '</details>';
+        }
+        return sectionHtml;
+      }
+
+      sectionHtml += '<div><table class="table table-sm mb-1"><thead><tr>';
+      sectionHtml +=
+        '<th>Kód</th><th class="d-none d-sm-table-cell">Název</th><th>Stav</th><th class="d-none d-md-table-cell">Vytvořeno</th><th>Akce</th>';
+      sectionHtml += '</tr></thead><tbody>';
+      list.forEach(function (item) {
+        const created = item.created_at || '';
+        const handed = item.handed_over_for_check_at || null;
+        const transitionUrl = item.transition_url || '';
+        let label = '';
+        if (handed) {
+          label = 'Předáno ke kontrole';
+        } else if (created) {
+          label = 'Vytvořeno';
+        }
+        let statusBadge =
+          '<span class="badge bg-light text-dark intervention-status-badge">' +
+          (item.status || '') +
+          '</span>';
+        if (item.status_code === 'proposed') {
+          statusBadge =
+            '<span class="badge bg-secondary intervention-status-badge">Navrženo</span>';
+        } else if (item.status_code === 'done_pending_owner') {
+          statusBadge =
+            '<span class="badge bg-warning text-dark intervention-status-badge">Hotovo – čeká na potvrzení</span>';
+        } else if (item.status_code === 'completed') {
+          statusBadge =
+            '<span class="badge bg-success intervention-status-badge">Potvrzeno</span>';
+        }
+        sectionHtml += '<tr>';
+        sectionHtml += '<td>' + (item.code || '');
+        if (item.name) {
+          sectionHtml += '<div class="text-muted small d-sm-none">' + item.name + '</div>';
+        }
+        if (item.status_note) {
+          sectionHtml += '<div class="text-muted small">Pozn.: ' + item.status_note + '</div>';
+        }
+        sectionHtml += '</td>';
+        sectionHtml += '<td class="d-none d-sm-table-cell">' + (item.name || '') + '</td>';
+        sectionHtml += '<td>' + statusBadge + '</td>';
+        sectionHtml += '<td class="d-none d-md-table-cell">';
+        if (label || created || handed) {
+          const ts = handed || created;
+          sectionHtml += '<div class="small text-muted">';
+          if (label) sectionHtml += label + ': ';
+          sectionHtml += ts ? new Date(ts).toLocaleString('cs-CZ') : '-';
+          sectionHtml += '</div>';
+        } else {
+          sectionHtml += '<span class="text-muted">-</span>';
+        }
+        sectionHtml += '</td>';
+        sectionHtml +=
+          '<td class="text-end"><div class="d-flex flex-wrap gap-1 justify-content-end interventions-actions">';
+        const actions = item.allowed_actions || {};
+        if (!isHistory && actions.mark_done) {
+          sectionHtml +=
+            '<button type="button" class="btn btn-outline-success btn-sm me-1 py-0 px-2" data-action="transition" data-target="done_pending_owner" data-transition-url="' + transitionUrl + '" data-intervention-id="' +
+            item.id +
+            '">Označit hotovo</button>';
+        }
+        if (!isHistory && actions.confirm) {
+          sectionHtml +=
+            '<button type="button" class="btn btn-outline-primary btn-sm me-1 py-0 px-2" data-action="transition" data-target="completed" data-transition-url="' + transitionUrl + '" data-intervention-id="' +
+            item.id +
+            '">Potvrdit</button>';
+        }
+        if (!isHistory && actions.return) {
+          sectionHtml +=
+            '<button type="button" class="btn btn-outline-warning btn-sm py-0 px-2" data-action="transition" data-target="proposed" data-transition-url="' + transitionUrl + '" data-intervention-id="' +
+            item.id +
+            '">Vrátit</button>';
+        }
+        sectionHtml += '</div></td>';
+        sectionHtml += '</tr>';
+      });
+      sectionHtml += '</tbody></table></div>';
+      if (isHistory) {
+        sectionHtml += '</details>';
+      }
+      return sectionHtml;
+    }
+
+    let html = '';
+    html += renderSection(currentItems, false);
+    if (historyItems.length) {
+      html += renderSection(historyItems, true);
+    }
     interventionListContainer.innerHTML = html;
   }
 

@@ -287,7 +287,7 @@
     </a>
   </div>
   <div class="card-body small">
-    {% if interventions %}
+    {% if current_interventions %}
       <div class="table-responsive">
         <table class="table table-sm mb-0">
           <thead>
@@ -301,7 +301,7 @@
             </tr>
           </thead>
           <tbody>
-            {% for intervention in interventions %}
+            {% for intervention in current_interventions %}
               <tr>
                 <td>{{ intervention.intervention_type.code }}</td>
                 <td>{{ intervention.intervention_type.name }}</td>
@@ -310,11 +310,14 @@
                   {% if intervention.status == 'proposed' %}
                     <span class="badge bg-secondary">Navrženo</span>
                   {% elif intervention.status == 'done_pending_owner' %}
-                    <span class="badge bg-warning text-dark">Hotovo – čeká na potvrzení</span>
+                    <span class="badge bg-warning text-dark">Hotovo - čeká na potvrzení</span>
                   {% elif intervention.status == 'completed' %}
                     <span class="badge bg-success">Potvrzeno</span>
                   {% else %}
                     <span class="badge bg-light text-dark">{{ intervention.get_status_display }}</span>
+                  {% endif %}
+                  {% if intervention.status_note %}
+                    <div class="small text-muted">Pozn.: {{ intervention.status_note }}</div>
                   {% endif %}
 
                   <div class="d-flex flex-wrap gap-1 mt-2">
@@ -370,71 +373,59 @@
     {% else %}
       <p class="text-muted mb-0">Zatím nejsou naplánované žádné zásahy.</p>
     {% endif %}
-  </div>
-</div>
-
-<div id="intervence_new" class="card border-0 shadow-sm mb-4">
-  <div class="card-header d-flex justify-content-between align-items-center py-2">
-    <div>
-      <h2 class="h6 mb-0">Zásahy</h2>
-      <small class="text-muted">Seznam navržených zásahů, které můžete upravit nebo potvrdit.</small>
-    </div>
-    <a class="btn btn-sm btn-outline-primary" href="{% url 'tree_intervention_create' work_record.pk %}">
-      <i class="bi bi-tools"></i> Přidat zásah
-    </a>
-  </div>
-  <div class="card-body small">
-    {% if interventions %}
-      <div class="table-responsive">
-        <table class="table table-sm mb-0">
-          <thead>
-            <tr>
-              <th>Kód</th>
-              <th>Název</th>
-              <th>Naléhavost</th>
-              <th>Stav</th>
-              <th>Vytvořeno / předáno ke kontrole</th>
-              <th>Popis</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for intervention in interventions %}
+    {% if history_interventions %}
+      <details class="mt-3">
+        <summary class="small text-muted">Historie ({{ history_interventions|length }})</summary>
+        <div class="table-responsive mt-2">
+          <table class="table table-sm mb-0">
+            <thead>
               <tr>
-                <td>{{ intervention.intervention_type.code }}</td>
-                <td>{{ intervention.intervention_type.name }}</td>
-                <td>{{ intervention.get_urgency_display }}</td>
-                <td>{{ intervention.get_status_display }}</td>
-                <td>
-                  {% if intervention.handed_over_for_check_at %}
-                    <span class="text-muted">Předáno ke kontrole: {{ intervention.handed_over_for_check_at|date:"d.m.Y H:i" }}</span>
-                  {% else %}
-                    <span class="text-muted">Vytvořeno: {{ intervention.created_at|date:"d.m.Y H:i" }}</span>
-                  {% endif %}
-                </td>
-                <td>
-                  {{ intervention.description|default:"-" }}
-                  <br>
-                  <a href="{% url 'tree_intervention_update' intervention.pk %}" class="small">Upravit</a>
-                </td>
+                <th>Kód</th>
+                <th>Název</th>
+                <th>Naléhavost</th>
+                <th>Stav</th>
+                <th>Vytvořeno / předáno / potvrzeno</th>
+                <th>Popis</th>
               </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% else %}
-      <p class="text-muted mb-0">Zat¡m nejsou napl novan‚ § dn‚ z sahy.</p>
+            </thead>
+            <tbody>
+              {% for intervention in history_interventions %}
+                <tr>
+                  <td>{{ intervention.intervention_type.code }}</td>
+                  <td>{{ intervention.intervention_type.name }}</td>
+                  <td>{{ intervention.get_urgency_display }}</td>
+                  <td>
+                    <span class="badge bg-success">Potvrzeno</span>
+                    {% if intervention.status_note %}
+                      <div class="small text-muted">Pozn.: {{ intervention.status_note }}</div>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <div class="small text-muted">Vytvořeno: {{ intervention.created_at|date:"d.m.Y H:i" }}</div>
+                    {% if intervention.handed_over_for_check_at %}
+                      <div class="small text-muted">Předáno: {{ intervention.handed_over_for_check_at|date:"d.m.Y H:i" }}</div>
+                    {% endif %}
+                    {% if intervention.approved_at %}
+                      <div class="small text-muted">Potvrzeno: {{ intervention.approved_at|date:"d.m.Y H:i" }}</div>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {{ intervention.description|default:"-" }}
+                    <br>
+                    <a href="{% url 'tree_intervention_update' intervention.pk %}" class="small">Upravit</a>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
     {% endif %}
+                    
   </div>
 </div>
 
-<script>
-  document.addEventListener('DOMContentLoaded', function () {
-    var oldCard = document.getElementById('intervence');
-    if (oldCard) {
-      oldCard.style.display = 'none';
-    }
-  });
-</script>
+
 
 <h2 class="h5 mb-3">Fotodokumentace</h2>
 {% if photos %}

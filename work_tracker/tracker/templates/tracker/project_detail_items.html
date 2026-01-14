@@ -6,7 +6,8 @@
           <input type="checkbox"
                  name="selected_records"
                  value="{{ wr.id }}"
-                 class="form-check-input me-2">
+                 class="form-check-input me-2"
+                 form="project-actions-form">
         </div>
         <div class="min-w-0">
           <div class="d-flex align-items-center gap-2 mb-1">
@@ -81,50 +82,73 @@
             </div>
             {% if wr.interventions_list %}
               <div class="small mt-2">
+                <div class="mb-1 fw-semibold">Aktuální zásahy</div>
                 {% for intervention in wr.interventions_list %}
-                  <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
-                    {% if intervention.status == 'proposed' %}
-                      <span class="badge bg-secondary">Navrženo</span>
-                    {% elif intervention.status == 'done_pending_owner' %}
-                      <span class="badge bg-warning text-dark">Hotovo – čeká na potvrzení</span>
-                    {% elif intervention.status == 'completed' %}
-                      <span class="badge bg-success">Potvrzeno</span>
-                    {% else %}
-                      <span class="badge bg-light text-dark">{{ intervention.get_status_display }}</span>
-                    {% endif %}
-                    <span class="text-muted">
-                      {{ intervention.intervention_type.code }} - {{ intervention.intervention_type.name }}
-                    </span>
-                    {% if intervention.allowed_mark_done %}
-                      <form method="post" action="{% url 'tree_intervention_transition' intervention.pk %}">
-                        {% csrf_token %}
-                        <input type="hidden" name="target" value="done_pending_owner">
-                        <button type="submit" class="btn btn-sm btn-outline-success">
-                          Označit hotovo
-                        </button>
-                      </form>
-                    {% endif %}
-                    {% if intervention.allowed_confirm %}
-                      <form method="post" action="{% url 'tree_intervention_transition' intervention.pk %}">
-                        {% csrf_token %}
-                        <input type="hidden" name="target" value="completed">
-                        <button type="submit" class="btn btn-sm btn-outline-primary">
-                          Potvrdit
-                        </button>
-                      </form>
-                    {% endif %}
-                    {% if intervention.allowed_return %}
-                      <form method="post" action="{% url 'tree_intervention_transition' intervention.pk %}" class="d-flex gap-1 align-items-center">
-                        {% csrf_token %}
-                        <input type="hidden" name="target" value="proposed">
-                        <input type="text" name="note" class="form-control form-control-sm" placeholder="Poznámka" required>
-                        <button type="submit" class="btn btn-sm btn-outline-warning">
-                          Vrátit
-                        </button>
-                      </form>
-                    {% endif %}
-                  </div>
+                  {% if intervention.status != 'completed' %}
+                    <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
+                      {% if intervention.status == 'proposed' %}
+                        <span class="badge bg-secondary">Navrženo</span>
+                      {% elif intervention.status == 'done_pending_owner' %}
+                        <span class="badge bg-warning text-dark">Hotovo - čeká na potvrzení</span>
+                      {% else %}
+                        <span class="badge bg-light text-dark">{{ intervention.get_status_display }}</span>
+                      {% endif %}
+                      <span class="text-muted">
+                        {{ intervention.intervention_type.code }} - {{ intervention.intervention_type.name }}
+                      </span>
+                      {% if intervention.status_note %}
+                        <span class="text-muted small">Pozn.: {{ intervention.status_note }}</span>
+                      {% endif %}
+                      {% if intervention.allowed_mark_done %}
+                        <form method="post" action="{% url 'tree_intervention_transition' intervention.pk %}">
+                          {% csrf_token %}
+                          <input type="hidden" name="target" value="done_pending_owner">
+                          <button type="submit" class="btn btn-sm btn-outline-success">
+                            Označit hotovo
+                          </button>
+                        </form>
+                      {% endif %}
+                      {% if intervention.allowed_confirm %}
+                        <form method="post" action="{% url 'tree_intervention_transition' intervention.pk %}">
+                          {% csrf_token %}
+                          <input type="hidden" name="target" value="completed">
+                          <button type="submit" class="btn btn-sm btn-outline-primary">
+                            Potvrdit
+                          </button>
+                        </form>
+                      {% endif %}
+                      {% if intervention.allowed_return %}
+                        <form method="post" action="{% url 'tree_intervention_transition' intervention.pk %}" class="d-flex gap-1 align-items-center">
+                          {% csrf_token %}
+                          <input type="hidden" name="target" value="proposed">
+                          <input type="text" name="note" class="form-control form-control-sm" placeholder="Poznámka" required>
+                          <button type="submit" class="btn btn-sm btn-outline-warning">
+                            Vrátit
+                          </button>
+                        </form>
+                      {% endif %}
+                    </div>
+                  {% endif %}
                 {% endfor %}
+
+                {% if wr.interventions_completed > 0 %}
+                  <details class="mt-2">
+                    <summary class="small text-muted">Historie ({{ wr.interventions_completed }})</summary>
+                    {% for intervention in wr.interventions_list %}
+                      {% if intervention.status == 'completed' %}
+                        <div class="d-flex align-items-center flex-wrap gap-2 mb-1">
+                          <span class="badge bg-success">Potvrzeno</span>
+                          <span class="text-muted">
+                            {{ intervention.intervention_type.code }} - {{ intervention.intervention_type.name }}
+                          </span>
+                          {% if intervention.status_note %}
+                            <span class="text-muted small">Pozn.: {{ intervention.status_note }}</span>
+                          {% endif %}
+                        </div>
+                      {% endif %}
+                    {% endfor %}
+                  </details>
+                {% endif %}
               </div>
             {% endif %}
 

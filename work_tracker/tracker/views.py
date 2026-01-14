@@ -605,12 +605,18 @@ def work_record_detail(request, pk):
         )
     )
     _decorate_interventions_for_user(request.user, interventions)
+    current_interventions = [
+        item for item in interventions if item.status in ("proposed", "done_pending_owner")
+    ]
+    history_interventions = [item for item in interventions if item.status == "completed"]
 
     return render(request, 'tracker/work_record_detail.html', {
         'work_record': work_record,
         'photo_form': photo_form,
         'photos': valid_photos,
         'interventions': interventions,
+        'current_interventions': current_interventions,
+        'history_interventions': history_interventions,
     })
 
 
@@ -746,6 +752,7 @@ def tree_intervention_api(request, tree_id):
             'urgency': obj.get_urgency_display(),
             'status': obj.get_status_display(),
             'status_code': obj.status,
+            'status_note': obj.status_note or '',
             'transition_url': reverse('tree_intervention_transition', args=[obj.pk]),
             'created_at': obj.created_at.isoformat() if obj.created_at else None,
             'handed_over_for_check_at': (
