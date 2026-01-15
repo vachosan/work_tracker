@@ -81,6 +81,8 @@
     const CROWN_FILL_LAYER_ID = 'tree_crowns_fill';
     const CROWN_LINE_LAYER_ID = 'tree_crowns_line';
     const labelOverlay = document.getElementById('wr-label-overlay');
+    // Cache DOM nodes by feature id to avoid duplicate label elements.
+    const labelNodeCache = new Map();
     let workrecordFeatures = [];
     let workrecordFeatureCollection = null;
     let contextFeatures = [];
@@ -97,11 +99,20 @@
     const CONTEXT_POINT_OPACITY = 0.7;
     const CROWN_DIAMETER_KEYS = ['crown_diameter_m', 'crown_width_m', 'diameter_crown', 'crown_diameter'];
     const CROWN_STEPS = 64;
+    const WORKRECORDS_DEBOUNCE_MS = 200;
+    // DEBUG_FETCH = true logs workrecords/context fetch URL + bbox, feature counts, and aborts.
+    const DEBUG_FETCH = false;
 
     const toNumber = (value) => {
       if (value === null || value === '') return null;
       const num = Number(value);
       return Number.isFinite(num) ? num : null;
+    };
+    const logFetchDebug = (...args) => {
+      if (!DEBUG_FETCH) return;
+      if (console && console.debug) {
+        console.debug(...args);
+      }
     };
     const params = new URLSearchParams(window.location.search);
     const projectParam = params.get('project');
@@ -533,13 +544,32 @@
       const bbox = `${sw.lng},${sw.lat},${ne.lng},${ne.lat}`;
       return `${WORKRECORDS_GEOJSON_URL}?bbox=${encodeURIComponent(bbox)}`;
     };
+    const formatCoord = (value) => {
+      if (!Number.isFinite(value)) return null;
+      return Number(value.toFixed(6));
+    };
+
     const buildWorkrecordsUrl = () => {
       const bounds = map.getBounds && map.getBounds();
       if (!bounds) return WORKRECORDS_GEOJSON_URL_WITH_PARAMS;
       const sw = bounds.getSouthWest();
       const ne = bounds.getNorthEast();
       if (!sw || !ne) return WORKRECORDS_GEOJSON_URL_WITH_PARAMS;
-      const bbox = `${sw.lng},${sw.lat},${ne.lng},${ne.lat}`;
+      // MapLibre bounds are in WGS84 degrees (lon/lat).
+      if (sw.lng > ne.lng) {
+        // Antimeridian crossing - skip bbox to avoid sending an invalid extent.
+        return WORKRECORDS_GEOJSON_URL_WITH_PARAMS;
+      }
+      const bboxValues = [
+        formatCoord(sw.lng),
+        formatCoord(sw.lat),
+        formatCoord(ne.lng),
+        formatCoord(ne.lat),
+      ];
+      if (bboxValues.some((value) => value === null)) {
+        return WORKRECORDS_GEOJSON_URL_WITH_PARAMS;
+      }
+      const bbox = bboxValues.join(',');
       const baseUrl = new URL(WORKRECORDS_GEOJSON_URL_WITH_PARAMS, window.location.origin);
       baseUrl.searchParams.set('bbox', bbox);
       return baseUrl.toString();
@@ -565,11 +595,11 @@
       if (map.getLayer(CONTEXT_LAYER_ID)) {
         map.setLayoutProperty(CONTEXT_LAYER_ID, 'visibility', 'visible');
       }
-      fetch(url)
-        .then(resp => resp.json())
-        .then(fc => {
-          const features = Array.isArray(fc && fc.features) ? fc.features : [];
-          contextFeatures = features
+        fetch(url)
+          .then(resp => resp.json())
+          .then(fc => {
+            const features = Array.isArray(fc && fc.features) ? fc.features : [];
+            contextFeatures = features
             .map(feature => {
               if (!feature || !feature.geometry || !feature.properties) return null;
               const coords = feature.geometry.coordinates;
@@ -581,10 +611,10 @@
               };
             })
             .filter(Boolean);
-          source.setData(fc);
-          renderLabelOverlay();
-        })
-        .catch(err => console.error('Context GeoJSON error', err));
+            source.setData(fc);
+            renderLabelOverlay();
+          })
+          .catch(err => logFetchDebug('context fetch error', err));
     };
     const scheduleContextRefresh = () => {
       if (!projectParam) return;
@@ -596,13 +626,15 @@
       }, 200);
     };
     let workrecordsRefreshTimer = null;
+    let workrecordsFetchSeq = 0;
+    let workrecordsAbortController = null;
     const scheduleWorkrecordsRefresh = () => {
       if (workrecordsRefreshTimer) {
         clearTimeout(workrecordsRefreshTimer);
       }
       workrecordsRefreshTimer = setTimeout(() => {
         refreshProjectWorkrecords();
-      }, 200);
+      }, WORKRECORDS_DEBOUNCE_MS);
     };
 
     const clearLabelOverlay = () => {
@@ -612,6 +644,7 @@
       } else {
         labelOverlay.innerHTML = '';
       }
+      labelNodeCache.clear();
     };
 
     const setLayerVisibility = (layerId, visible) => {
@@ -631,6 +664,7 @@
       const bounds = map.getBounds();
       const fragment = document.createDocumentFragment();
       let rendered = 0;
+      const activeIds = new Set();
       const buildLabelNodes = (features, maxCount) => {
         const nodes = [];
         let count = 0;
@@ -644,12 +678,29 @@
           }
           const labelText = feature.label || (feature.id ? `WR ${feature.id}` : '');
           if (!labelText) continue;
+          const hasId = feature.id !== null && feature.id !== undefined;
+          const idKey = hasId ? String(feature.id) : null;
+          if (idKey && activeIds.has(idKey)) {
+            continue;
+          }
           const point = map.project([lng, lat]);
-          const el = document.createElement('div');
-          el.className = 'wr-label';
-          el.textContent = labelText;
+          const el = idKey && labelNodeCache.has(idKey)
+            ? labelNodeCache.get(idKey)
+            : document.createElement('div');
+          if (idKey && !labelNodeCache.has(idKey)) {
+            labelNodeCache.set(idKey, el);
+          }
+          if (!el.classList.contains('wr-label')) {
+            el.className = 'wr-label';
+          }
+          if (el.textContent !== labelText) {
+            el.textContent = labelText;
+          }
           el.style.transform = `translate(${point.x}px, ${point.y}px) translate(-50%, -130%)`;
           nodes.push(el);
+          if (idKey) {
+            activeIds.add(idKey);
+          }
           count += 1;
           if (count >= maxCount) break;
         }
@@ -670,6 +721,14 @@
       for (const node of projectNodes) {
         fragment.appendChild(node);
       }
+      for (const [idKey, node] of labelNodeCache.entries()) {
+        if (!activeIds.has(idKey)) {
+          if (node.parentNode) {
+            node.parentNode.removeChild(node);
+          }
+          labelNodeCache.delete(idKey);
+        }
+      }
       if (typeof labelOverlay.replaceChildren === 'function') {
         labelOverlay.replaceChildren(fragment);
       } else {
@@ -678,9 +737,16 @@
       }
     };
 
-    map.on('move', renderLabelOverlay);
-    map.on('zoom', renderLabelOverlay);
-    map.on('rotate', renderLabelOverlay);
+    const bindLabelOverlayHandlers = () => {
+      // Guard against duplicate handler binds on soft reloads.
+      map.off('move', renderLabelOverlay);
+      map.off('zoom', renderLabelOverlay);
+      map.off('rotate', renderLabelOverlay);
+      map.on('move', renderLabelOverlay);
+      map.on('zoom', renderLabelOverlay);
+      map.on('rotate', renderLabelOverlay);
+    };
+    bindLabelOverlayHandlers();
 
       map.on('load', () => {
         applyInitialView();
@@ -823,13 +889,29 @@
       }
 
       const refreshProjectWorkrecords = () => {
+        if (!map || !map.getSource('workrecords')) {
+          logFetchDebug('workrecords refresh skipped (source missing)');
+          scheduleWorkrecordsRefresh();
+          return Promise.resolve();
+        }
         const url = buildWorkrecordsUrl();
-        return fetch(url)
+        const requestId = ++workrecordsFetchSeq;
+        if (workrecordsAbortController) {
+          workrecordsAbortController.abort();
+          logFetchDebug('workrecords fetch aborted', { requestId: requestId - 1 });
+        }
+        workrecordsAbortController = new AbortController();
+        logFetchDebug('workrecords fetch', { requestId, url });
+        return fetch(url, { signal: workrecordsAbortController.signal })
           .then(resp => resp.json())
           .then(fc => {
+            if (requestId !== workrecordsFetchSeq) {
+              logFetchDebug('workrecords fetch ignored (stale)', { requestId });
+              return;
+            }
             const features = Array.isArray(fc && fc.features) ? fc.features : [];
-            console.log('GeoJSON features:', features.length);
-            console.log('Sample labels:', features.slice(0, 3).map(f => f && f.properties ? f.properties.label : null));
+            logFetchDebug('workrecords features', features.length);
+            logFetchDebug('workrecords sample labels', features.slice(0, 3).map(f => f && f.properties ? f.properties.label : null));
             workrecordFeatures = features
               .map(feature => {
                 if (!feature || !feature.geometry || !feature.properties) return null;
@@ -851,7 +933,13 @@
             renderLabelOverlay();
             applyInitialFocus();
           })
-          .catch(err => console.error('GeoJSON debug error', err));
+          .catch(err => {
+            if (err && err.name === 'AbortError') {
+              logFetchDebug('workrecords fetch aborted', { requestId });
+              return;
+            }
+            console.error('workrecords fetch error', err);
+          });
       };
       window.refreshProjectWorkrecords = refreshProjectWorkrecords;
 
@@ -876,6 +964,9 @@
           },
         });
         scheduleContextRefresh();
+        // Guard against duplicate refresh handlers.
+        map.off('moveend', scheduleContextRefresh);
+        map.off('zoomend', scheduleContextRefresh);
         map.on('moveend', scheduleContextRefresh);
         map.on('zoomend', scheduleContextRefresh);
       }
@@ -892,14 +983,15 @@
         data: { type: 'FeatureCollection', features: [] },
       });
 
+      // Add crowns before marker layers so markers stay on top.
       map.addLayer({
         id: CROWN_FILL_LAYER_ID,
         type: 'fill',
         source: CROWN_SOURCE_ID,
+        // Match HTML label overlay visibility to keep crowns in sync with labels.
         minzoom: LABEL_MIN_ZOOM,
         paint: {
           'fill-color': '#22c55e',
-          // Keep crowns hidden when label overlay is hidden (same zoom threshold).
           'fill-opacity': 0.2,
         },
       });
@@ -908,6 +1000,7 @@
         id: CROWN_LINE_LAYER_ID,
         type: 'line',
         source: CROWN_SOURCE_ID,
+        // Match HTML label overlay visibility to keep crowns in sync with labels.
         minzoom: LABEL_MIN_ZOOM,
         paint: {
           'line-color': '#16a34a',
@@ -917,6 +1010,9 @@
       });
 
       refreshProjectWorkrecords();
+      // Guard against duplicate refresh handlers.
+      map.off('moveend', scheduleWorkrecordsRefresh);
+      map.off('zoomend', scheduleWorkrecordsRefresh);
       map.on('moveend', scheduleWorkrecordsRefresh);
       map.on('zoomend', scheduleWorkrecordsRefresh);
 
