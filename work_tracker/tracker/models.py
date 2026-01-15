@@ -1,5 +1,11 @@
+import json
+import logging
 import string
 from decimal import Decimal, ROUND_HALF_UP
+from functools import lru_cache
+from urllib.error import URLError
+from urllib.parse import urlencode
+from urllib.request import urlopen
 
 from django.db import models
 from django.db.models.signals import post_save
@@ -8,6 +14,7 @@ from django.utils import timezone
 from django.conf import settings
 
 # models module for ArboMap tracker app
+logger = logging.getLogger(__name__)
 
 PHYSIOLOGICAL_AGE_CHOICES = [
     (1, "1 – mladý jedinec ve fázi ujímání"),
@@ -143,6 +150,14 @@ class WorkRecord(models.Model):
         blank=True,
         help_text="Zeměpisná délka (longitude, např. 18.676)",
     )
+    parcel_number = models.CharField(max_length=64, blank=True, null=True)
+    cadastral_area_code = models.CharField(max_length=32, blank=True, null=True)
+    cadastral_area_name = models.CharField(max_length=128, blank=True, null=True)
+    municipality_code = models.CharField(max_length=32, blank=True, null=True)
+    municipality_name = models.CharField(max_length=128, blank=True, null=True)
+    lv_number = models.CharField(max_length=32, blank=True, null=True)
+    cad_lookup_status = models.CharField(max_length=16, blank=True, null=True)
+    cad_lookup_at = models.DateTimeField(blank=True, null=True)
 
     # start_time = models.DateTimeField(default=timezone.now)
     # end_time = models.DateTimeField(null=True, blank=True)
@@ -567,6 +582,318 @@ class TreeIntervention(models.Model):
         return " · ".join(parts)
 
 
+def get_workrecord_lonlat(record: "WorkRecord"):
+    if record.latitude is None or record.longitude is None:
+        return None
+    try:
+        return float(record.longitude), float(record.latitude)
+    except (TypeError, ValueError):
+        return None
+
+
+CUZK_CP_WFS_ENDPOINT = "https://services.cuzk.gov.cz/wfs/inspire-cp-wfs.asp"
+# TODO: Verify typename + available fields from GetCapabilities:
+# https://services.cuzk.gov.cz/wfs/inspire-cp-wfs.asp?service=WFS&request=GetCapabilities
+CUZK_CP_WFS_TYPENAME = "CP:CadastralParcel"
+
+
+def _debug_log(message: str, **extra):
+    if not settings.DEBUG:
+        return
+    logger.debug(message, extra=extra if extra else None)
+
+
+def _http_get(url: str, timeout_s: int = 3, retries: int = 1) -> tuple[int, str | None, bytes]:
+    last_err = None
+    for attempt in range(retries + 1):
+        try:
+            with urlopen(url, timeout=timeout_s) as resp:
+                status = resp.getcode()
+                content_type = resp.headers.get("Content-Type")
+                return status, content_type, resp.read()
+        except URLError as err:
+            last_err = err
+            _debug_log("cad_lookup http error", url=url, attempt=attempt, error=str(err))
+            if attempt >= retries:
+                raise
+    if last_err:
+        raise last_err
+    raise URLError("cad_lookup http error")
+
+
+def _build_wfs_url(bbox: tuple[float, float, float, float], version: str) -> str:
+    minx, miny, maxx, maxy = bbox
+    params = {
+        "SERVICE": "WFS",
+        "REQUEST": "GetFeature",
+        "VERSION": version,
+        "TYPENAMES": CUZK_CP_WFS_TYPENAME,
+        "SRSNAME": "EPSG:4326",
+        "BBOX": f"{minx},{miny},{maxx},{maxy},EPSG:4326",
+    }
+    if version == "2.0.0":
+        params["COUNT"] = 1
+    else:
+        params["MAXFEATURES"] = 1
+    return f"{CUZK_CP_WFS_ENDPOINT}?{urlencode(params)}"
+
+
+def _log_cad_response(url: str, status: int, content_type: str | None, payload: bytes) -> None:
+    text = payload.decode("utf-8", errors="replace")
+    root_tag = None
+    try:
+        from xml.etree import ElementTree as ET
+
+        root = ET.fromstring(payload)
+        root_tag = root.tag.split("}")[-1]
+    except Exception:
+        root = None
+
+    is_exception = root_tag in ("ServiceExceptionReport", "ExceptionReport")
+    is_feature_collection = root_tag == "FeatureCollection"
+
+    if is_exception:
+        preview = text[:500]
+        logger.warning(
+            "cad_lookup service exception url=%s status=%s content_type=%s preview=%s",
+            url,
+            status,
+            content_type,
+            preview,
+        )
+        return
+
+    if is_feature_collection and settings.DEBUG:
+        logger.debug(
+            "cad_lookup ok url=%s status=%s content_type=%s preview=%s",
+            url,
+            status,
+            content_type,
+            "FeatureCollection received",
+        )
+
+
+def _normalize_value(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _flatten_props(props: dict) -> dict:
+    flat = {}
+    for key, value in props.items():
+        if isinstance(value, dict):
+            for subkey, subval in value.items():
+                flat[f"{key}.{subkey}"] = subval
+                if subkey not in flat:
+                    flat[subkey] = subval
+        else:
+            flat[key] = value
+    return flat
+
+
+def _pick_value(flat_props: dict, keys: list[str]):
+    lower_map = {str(k).lower(): v for k, v in flat_props.items()}
+    for key in keys:
+        val = lower_map.get(key.lower())
+        val = _normalize_value(val)
+        if val:
+            return val
+    return None
+
+
+def _extract_parcel_fields_from_props(props: dict) -> dict:
+    flat = _flatten_props(props)
+    result = {
+        "parcel_number": _pick_value(
+            flat,
+            [
+                "parcel_number",
+                "parcelnumber",
+                "parcel",
+                "label",
+                "nationalcadastralreference",
+                "national_cadastral_reference",
+                "localid",
+                "inspireid.localid",
+            ],
+        ),
+        "cadastral_area_code": _pick_value(
+            flat,
+            [
+                "cadastralareacode",
+                "katastruzemikod",
+                "cadastrecode",
+                "cadastralarea",
+            ],
+        ),
+        "cadastral_area_name": _pick_value(
+            flat,
+            [
+                "cadastralareaname",
+                "katastruzeminazev",
+                "cadastre",
+            ],
+        ),
+        "municipality_code": _pick_value(
+            flat,
+            [
+                "municipalitycode",
+                "obeckod",
+                "municipality",
+            ],
+        ),
+        "municipality_name": _pick_value(
+            flat,
+            [
+                "municipalityname",
+                "obecnazev",
+            ],
+        ),
+        "lv_number": _pick_value(
+            flat,
+            [
+                "lv",
+                "lvnumber",
+                "listvlastnictvi",
+                "landregisternumber",
+            ],
+        ),
+    }
+    return {key: value for key, value in result.items() if value}
+
+
+def _parse_wfs_payload(payload: bytes) -> tuple[dict, bool]:
+    try:
+        from xml.etree import ElementTree as ET
+
+        root = ET.fromstring(payload)
+    except Exception:
+        return {}, False
+
+    feature = None
+    for elem in root.iter():
+        if elem.tag.split("}")[-1].lower() == "cadastralparcel":
+            feature = elem
+            break
+    if feature is None:
+        return {}, False
+
+    local_id = None
+    namespace = None
+    national_ref = None
+    tags_of_interest = []
+
+    for elem in feature.iter():
+        tag = elem.tag.split("}")[-1]
+        text = elem.text.strip() if elem.text else ""
+        if not text:
+            continue
+        tag_lower = tag.lower()
+        if tag_lower == "localid" and local_id is None:
+            local_id = text
+        elif tag_lower == "namespace" and namespace is None:
+            namespace = text
+        if "nationalcadastralreference" in tag_lower and national_ref is None:
+            national_ref = text
+        if "cadastral" in tag_lower or "reference" in tag_lower:
+            tags_of_interest.append(f"{tag}={text}")
+
+    if settings.DEBUG:
+        logger.debug(
+            "cad_lookup wfs feature localId=%s namespace=%s nationalRef=%s",
+            local_id,
+            namespace,
+            national_ref,
+        )
+        logger.debug(
+            "cad_lookup wfs tags %s",
+            json.dumps(tags_of_interest, ensure_ascii=True),
+        )
+
+    parcel_number = national_ref or local_id
+    fields = {
+        "parcel_number": parcel_number,
+        "inspire_local_id": local_id,
+        "inspire_namespace": namespace,
+        "national_cadastral_reference": national_ref,
+    }
+    return {key: value for key, value in fields.items() if value}, True
+
+
+@lru_cache(maxsize=2048)
+def _cached_cad_lookup(lon_round: float, lat_round: float) -> dict:
+    lon = float(lon_round)
+    lat = float(lat_round)
+    delta = 0.0002
+    bbox = (lon - delta, lat - delta, lon + delta, lat + delta)
+
+    url = _build_wfs_url(bbox, "2.0.0")
+    _debug_log("cad_lookup request", url=url)
+    try:
+        status, content_type, payload = _http_get(url, timeout_s=3, retries=1)
+        _log_cad_response(url, status, content_type, payload)
+        fields, found = _parse_wfs_payload(payload)
+        if found:
+            fields["cad_lookup_status"] = "ok"
+            return fields
+    except Exception as err:
+        _debug_log("cad_lookup wfs 2.0.0 failed", error=str(err))
+
+    url = _build_wfs_url(bbox, "1.1.0")
+    _debug_log("cad_lookup request", url=url)
+    status, content_type, payload = _http_get(url, timeout_s=3, retries=1)
+    _log_cad_response(url, status, content_type, payload)
+    fields, found = _parse_wfs_payload(payload)
+    if found:
+        fields["cad_lookup_status"] = "ok"
+        return fields
+
+    return {"cad_lookup_status": "not_found"}
+
+
+def _assign_cadastre_attributes(tree: "WorkRecord") -> None:
+    if tree.parcel_number:
+        return
+    lonlat = get_workrecord_lonlat(tree)
+    if not lonlat:
+        _debug_log("cad_lookup skipped (missing coords)", tree_id=tree.pk)
+        return
+    lon, lat = lonlat
+    try:
+        result = _cached_cad_lookup(round(lon, 6), round(lat, 6))
+    except Exception as err:
+        _debug_log("cad_lookup error", tree_id=tree.pk, error=str(err))
+        tree.cad_lookup_status = "error"
+        tree.cad_lookup_at = timezone.now()
+        tree.save(update_fields=["cad_lookup_status", "cad_lookup_at"])
+        return
+
+    update_fields = []
+    for key in (
+        "parcel_number",
+        "cadastral_area_code",
+        "cadastral_area_name",
+        "municipality_code",
+        "municipality_name",
+        "lv_number",
+        "cad_lookup_status",
+    ):
+        value = result.get(key)
+        if value:
+            setattr(tree, key, value)
+            update_fields.append(key)
+    if result.get("cad_lookup_status"):
+        tree.cad_lookup_status = result["cad_lookup_status"]
+        update_fields.append("cad_lookup_status")
+    tree.cad_lookup_at = timezone.now()
+    update_fields.append("cad_lookup_at")
+
+    # MVP without GeoDjango; later we can replace this with local parcel polygons + spatial joins.
+    tree.save(update_fields=list(dict.fromkeys(update_fields)))
+
+
 def _add_tree_to_system_dataset(tree: "WorkRecord") -> None:
     from .datasets import get_system_dataset
 
@@ -582,4 +909,15 @@ def _ensure_tree_in_system_dataset(sender, instance, created, **kwargs):
         _add_tree_to_system_dataset(instance)
     except Exception:
         # Prevent dataset linkage failures from blocking tree creation.
+        pass
+
+
+@receiver(post_save, sender=WorkRecord)
+def _assign_cadastre_on_create(sender, instance, created, **kwargs):
+    if not created:
+        return
+    try:
+        _assign_cadastre_attributes(instance)
+    except Exception:
+        # Do not block creation if cadastral lookup fails.
         pass
