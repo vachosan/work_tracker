@@ -533,6 +533,17 @@
       const bbox = `${sw.lng},${sw.lat},${ne.lng},${ne.lat}`;
       return `${WORKRECORDS_GEOJSON_URL}?bbox=${encodeURIComponent(bbox)}`;
     };
+    const buildWorkrecordsUrl = () => {
+      const bounds = map.getBounds && map.getBounds();
+      if (!bounds) return WORKRECORDS_GEOJSON_URL_WITH_PARAMS;
+      const sw = bounds.getSouthWest();
+      const ne = bounds.getNorthEast();
+      if (!sw || !ne) return WORKRECORDS_GEOJSON_URL_WITH_PARAMS;
+      const bbox = `${sw.lng},${sw.lat},${ne.lng},${ne.lat}`;
+      const baseUrl = new URL(WORKRECORDS_GEOJSON_URL_WITH_PARAMS, window.location.origin);
+      baseUrl.searchParams.set('bbox', bbox);
+      return baseUrl.toString();
+    };
     let contextRefreshTimer = null;
     const refreshContextSource = () => {
       if (!projectParam) return;
@@ -582,6 +593,15 @@
       }
       contextRefreshTimer = setTimeout(() => {
         refreshContextSource();
+      }, 200);
+    };
+    let workrecordsRefreshTimer = null;
+    const scheduleWorkrecordsRefresh = () => {
+      if (workrecordsRefreshTimer) {
+        clearTimeout(workrecordsRefreshTimer);
+      }
+      workrecordsRefreshTimer = setTimeout(() => {
+        refreshProjectWorkrecords();
       }, 200);
     };
 
@@ -803,7 +823,8 @@
       }
 
       const refreshProjectWorkrecords = () => {
-        return fetch(WORKRECORDS_GEOJSON_URL_WITH_PARAMS)
+        const url = buildWorkrecordsUrl();
+        return fetch(url)
           .then(resp => resp.json())
           .then(fc => {
             const features = Array.isArray(fc && fc.features) ? fc.features : [];
@@ -875,8 +896,10 @@
         id: CROWN_FILL_LAYER_ID,
         type: 'fill',
         source: CROWN_SOURCE_ID,
+        minzoom: LABEL_MIN_ZOOM,
         paint: {
           'fill-color': '#22c55e',
+          // Keep crowns hidden when label overlay is hidden (same zoom threshold).
           'fill-opacity': 0.2,
         },
       });
@@ -885,6 +908,7 @@
         id: CROWN_LINE_LAYER_ID,
         type: 'line',
         source: CROWN_SOURCE_ID,
+        minzoom: LABEL_MIN_ZOOM,
         paint: {
           'line-color': '#16a34a',
           'line-width': 1,
@@ -893,6 +917,8 @@
       });
 
       refreshProjectWorkrecords();
+      map.on('moveend', scheduleWorkrecordsRefresh);
+      map.on('zoomend', scheduleWorkrecordsRefresh);
 
       map.addLayer({
         id: 'workrecord-clusters',
