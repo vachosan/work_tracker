@@ -1,6 +1,8 @@
 import json
 import logging
+import re
 import string
+import unicodedata
 from decimal import Decimal, ROUND_HALF_UP
 from functools import lru_cache
 from urllib.error import URLError
@@ -595,6 +597,17 @@ CUZK_CP_WFS_ENDPOINT = "https://services.cuzk.gov.cz/wfs/inspire-cp-wfs.asp"
 # TODO: Verify typename + available fields from GetCapabilities:
 # https://services.cuzk.gov.cz/wfs/inspire-cp-wfs.asp?service=WFS&request=GetCapabilities
 CUZK_CP_WFS_TYPENAME = "CP:CadastralParcel"
+RUIAN_REST_BASE = (
+    "https://ags.cuzk.gov.cz/arcgis/rest/services/"
+    "RUIAN/Prohlizeci_sluzba_nad_daty_RUIAN/MapServer"
+)
+_RUIAN_LAYER_INFO_LOGGED = False
+_RUIAN_LAYER_ID_CACHE = None
+_RUIAN_LAYER_NAME_CACHE = None
+_RUIAN_FIELDS_CACHE = {}
+_RUIAN_OBEC_FIELDS_CACHE = {}
+_RUIAN_OBEC_FIELDS_PRINTED = False
+RUIAN_OBEC_LAYER_ID = 12
 
 
 def _debug_log(message: str, **extra):
@@ -822,6 +835,348 @@ def _parse_wfs_payload(payload: bytes) -> tuple[dict, bool]:
     return {key: value for key, value in fields.items() if value}, True
 
 
+def _lookup_attr(attributes: dict, field_name: str):
+    if not attributes or not field_name:
+        return None
+    for key, value in attributes.items():
+        if key.lower() == field_name.lower():
+            return value
+    return None
+
+
+def _normalize_ruian_name(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value)
+    cleaned = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    cleaned = re.sub(r"[^a-zA-Z0-9]+", " ", cleaned)
+    return cleaned.lower().strip()
+
+
+def resolve_ruian_ku_layer() -> int | None:
+    global _RUIAN_LAYER_ID_CACHE, _RUIAN_LAYER_NAME_CACHE
+    if _RUIAN_LAYER_ID_CACHE is not None:
+        return _RUIAN_LAYER_ID_CACHE
+    url = f"{RUIAN_REST_BASE}?f=pjson"
+    try:
+        status, content_type, payload = _http_get(url, timeout_s=3, retries=1)
+    except Exception as err:
+        _debug_log("cad_ku_layer_list failed", error=str(err))
+        return None
+    if status and status >= 400:
+        _debug_log("cad_ku_layer_list http error", status=status)
+        return None
+    try:
+        data = json.loads(payload.decode("utf-8"))
+    except Exception as err:
+        _debug_log("cad_ku_layer_list json error", error=str(err))
+        return None
+    layers = data.get("layers") or []
+    print("CAD_KU: available layers:")
+    for layer in layers[:200]:
+        if isinstance(layer, dict) and "id" in layer and "name" in layer:
+            print(f"  {layer['id']}: {layer['name']}")
+    for layer in layers:
+        name = layer.get("name") if isinstance(layer, dict) else None
+        layer_id = layer.get("id") if isinstance(layer, dict) else None
+        if name is None or layer_id is None:
+            continue
+        name_norm = _normalize_ruian_name(str(name))
+        tokens = set(name_norm.split())
+        has_katastr = "katastr" in name_norm
+        has_uzemi = "uzemi" in name_norm or "u" in tokens and "zemi" in tokens
+        has_ku_token = "ku" in tokens or "k u" in name_norm or "k u" in name_norm
+        is_match = (has_katastr and has_uzemi) or has_ku_token
+        if is_match:
+            _RUIAN_LAYER_ID_CACHE = int(layer_id)
+            _RUIAN_LAYER_NAME_CACHE = str(name)
+            print("CAD_KU: resolved layer", _RUIAN_LAYER_ID_CACHE, _RUIAN_LAYER_NAME_CACHE)
+            if settings.DEBUG:
+                _debug_log("cad_ku_layer resolved", name=name, layer_id=layer_id)
+            return _RUIAN_LAYER_ID_CACHE
+    for layer in layers:
+        name = layer.get("name") if isinstance(layer, dict) else None
+        layer_id = layer.get("id") if isinstance(layer, dict) else None
+        if name is None or layer_id is None:
+            continue
+        name_norm = _normalize_ruian_name(str(name))
+        if "katastr" in name_norm and "parcela" not in name_norm:
+            _RUIAN_LAYER_ID_CACHE = int(layer_id)
+            _RUIAN_LAYER_NAME_CACHE = str(name)
+            print("CAD_KU: resolved layer", _RUIAN_LAYER_ID_CACHE, _RUIAN_LAYER_NAME_CACHE)
+            if settings.DEBUG:
+                _debug_log("cad_ku_layer resolved", name=name, layer_id=layer_id)
+            return _RUIAN_LAYER_ID_CACHE
+    return None
+
+
+def resolve_fields(layer_id: int) -> dict:
+    cached = _RUIAN_FIELDS_CACHE.get(layer_id)
+    if cached:
+        return cached
+    url = f"{RUIAN_REST_BASE}/{layer_id}?f=pjson"
+    try:
+        status, content_type, payload = _http_get(url, timeout_s=3, retries=1)
+    except Exception as err:
+        _debug_log("cad_ku_fields failed", layer_id=layer_id, error=str(err))
+        return {}
+    if status and status >= 400:
+        _debug_log("cad_ku_fields http error", layer_id=layer_id, status=status)
+        return {}
+    try:
+        data = json.loads(payload.decode("utf-8"))
+    except Exception as err:
+        _debug_log("cad_ku_fields json error", layer_id=layer_id, error=str(err))
+        return {}
+    fields = data.get("fields") or []
+    if settings.DEBUG and layer_id == 7:
+        global _RUIAN_OBEC_FIELDS_PRINTED
+        if not _RUIAN_OBEC_FIELDS_PRINTED:
+            obec_candidates = []
+            for field in fields:
+                name = field.get("name") if isinstance(field, dict) else None
+                if name and "obec" in _normalize_ruian_name(str(name)):
+                    obec_candidates.append(name)
+            print("CAD_KU: obec field candidates (layer 7):", obec_candidates)
+            _RUIAN_OBEC_FIELDS_PRINTED = True
+    result = {}
+    for field in fields:
+        name = field.get("name") if isinstance(field, dict) else None
+        ftype = field.get("type") if isinstance(field, dict) else None
+        if not name:
+            continue
+        name_norm = _normalize_ruian_name(str(name))
+        if not result.get("ku_code"):
+            if name_norm == "kod":
+                result["ku_code"] = name
+            elif "kod" in name_norm and ("ku" in name_norm or "katastr" in name_norm):
+                result["ku_code"] = name
+            elif "kod" in name_norm and ftype and "integer" in ftype.lower():
+                result.setdefault("ku_code", name)
+        if not result.get("ku_name"):
+            if name_norm == "nazev":
+                result["ku_name"] = name
+            elif "nazev" in name_norm and ("ku" in name_norm or "katastr" in name_norm):
+                result["ku_name"] = name
+        if name_norm == "obec":
+            if ftype and "integer" in str(ftype).lower():
+                if not result.get("municipality_code"):
+                    result["municipality_code"] = name
+            else:
+                if not result.get("municipality_name"):
+                    result["municipality_name"] = name
+        if not result.get("municipality_name") and "obec" in name_norm and "nazev" in name_norm:
+            result["municipality_name"] = name
+        if not result.get("municipality_code") and "obec" in name_norm and "kod" in name_norm:
+            result["municipality_code"] = name
+    _RUIAN_FIELDS_CACHE[layer_id] = result
+    if settings.DEBUG:
+        _debug_log(
+            "cad_ku_fields resolved",
+            layer_id=layer_id,
+            fields=result,
+        )
+    return result
+
+
+def resolve_obec_fields(layer_id: int) -> dict:
+    cached = _RUIAN_OBEC_FIELDS_CACHE.get(layer_id)
+    if cached:
+        return cached
+    url = f"{RUIAN_REST_BASE}/{layer_id}?f=pjson"
+    try:
+        status, content_type, payload = _http_get(url, timeout_s=3, retries=1)
+    except Exception as err:
+        _debug_log("cad_obec_fields failed", layer_id=layer_id, error=str(err))
+        return {}
+    if status and status >= 400:
+        _debug_log("cad_obec_fields http error", layer_id=layer_id, status=status)
+        return {}
+    try:
+        data = json.loads(payload.decode("utf-8"))
+    except Exception as err:
+        _debug_log("cad_obec_fields json error", layer_id=layer_id, error=str(err))
+        return {}
+    fields = data.get("fields") or []
+    result = {}
+    for field in fields:
+        name = field.get("name") if isinstance(field, dict) else None
+        if not name:
+            continue
+        name_norm = _normalize_ruian_name(str(name))
+        if not result.get("municipality_name") and "nazev" in name_norm:
+            result["municipality_name"] = name
+        if not result.get("municipality_code") and "kod" in name_norm:
+            result["municipality_code"] = name
+    _RUIAN_OBEC_FIELDS_CACHE[layer_id] = result
+    return result
+
+
+@lru_cache(maxsize=2048)
+def fetch_municipality_by_name(name: str) -> dict:
+    if not name:
+        return {}
+    fields = resolve_obec_fields(RUIAN_OBEC_LAYER_ID)
+    if not fields.get("municipality_name"):
+        return {}
+    safe_name = name.replace("'", "''")
+    where_value = f"'{safe_name}'"
+    params = {
+        "where": f"{fields['municipality_name']}={where_value}",
+        "outFields": ",".join(
+            value
+            for value in (
+                fields.get("municipality_name"),
+                fields.get("municipality_code"),
+            )
+            if value
+        ),
+        "returnGeometry": "false",
+        "f": "pjson",
+    }
+    url = f"{RUIAN_REST_BASE}/{RUIAN_OBEC_LAYER_ID}/query?{urlencode(params)}"
+    _debug_log("cad_obec_lookup request", url=url)
+    try:
+        status, content_type, payload = _http_get(url, timeout_s=3, retries=1)
+    except Exception as err:
+        _debug_log("cad_obec_lookup error", error=str(err))
+        return {}
+    if status and status >= 400:
+        _debug_log("cad_obec_lookup http error", status=status)
+        return {}
+    try:
+        data = json.loads(payload.decode("utf-8"))
+    except Exception as err:
+        _debug_log("cad_obec_lookup json error", error=str(err))
+        return {}
+    features = data.get("features") or []
+    if not features:
+        return {}
+    attributes = features[0].get("attributes") if isinstance(features[0], dict) else None
+    if not attributes:
+        return {}
+    result = {
+        "municipality_name": _lookup_attr(attributes, fields.get("municipality_name")),
+        "municipality_code": _lookup_attr(attributes, fields.get("municipality_code")),
+    }
+    return {key: value for key, value in result.items() if value}
+
+
+def _log_ruian_layer_info_once() -> None:
+    global _RUIAN_LAYER_INFO_LOGGED
+    if _RUIAN_LAYER_INFO_LOGGED or not settings.DEBUG:
+        return
+    url = f"{RUIAN_REST_BASE}/{RUIAN_KU_LAYER_ID}?f=pjson"
+    try:
+        status, content_type, payload = _http_get(url, timeout_s=3, retries=0)
+    except Exception as err:
+        _debug_log("cad_ku_layer_info failed", error=str(err))
+        _RUIAN_LAYER_INFO_LOGGED = True
+        return
+    _debug_log(
+        "cad_ku_layer_info",
+        status=status,
+        content_type=content_type,
+        preview=payload[:500].decode("utf-8", errors="replace"),
+    )
+    _RUIAN_LAYER_INFO_LOGGED = True
+
+
+@lru_cache(maxsize=2048)
+def fetch_ku_detail_rest(kod_ku: str) -> dict:
+    print("CAD_KU: resolving layer/fields...")
+    layer_id = resolve_ruian_ku_layer()
+    print("CAD_KU: layer_id=", layer_id, "layer_name=", _RUIAN_LAYER_NAME_CACHE)
+    if layer_id is None:
+        _log_ruian_layer_info_once()
+        return {}
+    fields = resolve_fields(layer_id)
+    print("CAD_KU: fields=", fields)
+    if not fields.get("ku_code") or not fields.get("ku_name"):
+        _log_ruian_layer_info_once()
+        return {}
+    where_value = int(kod_ku) if re.match(r"^\d+$", str(kod_ku)) else f"'{kod_ku}'"
+    out_fields = [
+        fields.get("ku_name"),
+        fields.get("municipality_name"),
+        fields.get("municipality_code"),
+    ]
+    deduped_fields = []
+    seen = set()
+    for field in out_fields:
+        if not field or field in seen:
+            continue
+        seen.add(field)
+        deduped_fields.append(field)
+    params = {
+        "where": f"{fields['ku_code']}={where_value}",
+        "outFields": ",".join(deduped_fields),
+        "returnGeometry": "false",
+        "f": "pjson",
+    }
+    url = f"{RUIAN_REST_BASE}/{layer_id}/query?{urlencode(params)}"
+    print("CAD_KU: query_url=", url)
+    _debug_log("cad_ku_lookup request", url=url)
+    try:
+        status, content_type, payload = _http_get(url, timeout_s=3, retries=1)
+    except Exception as err:
+        _debug_log("cad_ku_lookup error", kod=kod_ku, error=str(err))
+        _log_ruian_layer_info_once()
+        return {}
+    preview = payload[:300].decode("utf-8", errors="replace")
+    print("CAD_KU: http status=", status, "content_type=", content_type)
+    print("CAD_KU: response preview=", preview)
+    if status and status >= 400:
+        _debug_log("cad_ku_lookup http error", kod=kod_ku, status=status)
+        _log_ruian_layer_info_once()
+        return {}
+    try:
+        data = json.loads(payload.decode("utf-8"))
+    except Exception as err:
+        _debug_log("cad_ku_lookup json error", kod=kod_ku, error=str(err))
+        _log_ruian_layer_info_once()
+        return {}
+
+    if settings.DEBUG and data.get("error"):
+        _debug_log("cad_ku_lookup error response", kod=kod_ku, error=data.get("error"))
+        print("CAD_KU: error=", data.get("error"))
+
+    features = data.get("features") or []
+    print("CAD_KU: features=", len(features))
+    if not features:
+        if settings.DEBUG:
+            _debug_log("cad_ku_lookup empty", layer_id=layer_id, where=params.get("where"))
+        return {}
+    attributes = features[0].get("attributes") if isinstance(features[0], dict) else None
+    if not attributes:
+        return {}
+    result = {
+        "cadastral_area_name": _lookup_attr(attributes, fields.get("ku_name")),
+        "municipality_name": _lookup_attr(attributes, fields.get("municipality_name")),
+        "municipality_code": _lookup_attr(attributes, fields.get("municipality_code")),
+    }
+    if not result.get("municipality_name") and result.get("cadastral_area_name"):
+        obec_detail = fetch_municipality_by_name(result["cadastral_area_name"])
+        if obec_detail.get("municipality_name"):
+            result["municipality_name"] = obec_detail.get("municipality_name")
+        if obec_detail.get("municipality_code"):
+            result["municipality_code"] = obec_detail.get("municipality_code")
+    result = {key: value for key, value in result.items() if value}
+    if result:
+        print(
+            "CAD_KU: parsed",
+            result.get("cadastral_area_name"),
+            result.get("municipality_name"),
+            result.get("municipality_code"),
+        )
+    if result:
+        _debug_log(
+            "cad_ku_lookup ok",
+            kod=kod_ku,
+            ku=result.get("cadastral_area_name"),
+            obec=result.get("municipality_name"),
+        )
+    return result
+
+
 @lru_cache(maxsize=2048)
 def _cached_cad_lookup(lon_round: float, lat_round: float) -> dict:
     lon = float(lon_round)
@@ -892,6 +1247,31 @@ def _assign_cadastre_attributes(tree: "WorkRecord") -> None:
 
     # MVP without GeoDjango; later we can replace this with local parcel polygons + spatial joins.
     tree.save(update_fields=list(dict.fromkeys(update_fields)))
+
+    if tree.parcel_number:
+        match = re.match(r"^(\d{6})-", tree.parcel_number)
+        ku_code = match.group(1) if match else None
+        if ku_code and not tree.cadastral_area_code:
+            tree.cadastral_area_code = ku_code
+            tree.save(update_fields=["cadastral_area_code"])
+        if ku_code and (not tree.cadastral_area_name or not tree.municipality_name):
+            print(
+                f"CAD_KU: start wr={tree.id} parcel={tree.parcel_number} "
+                f"ku_code={tree.cadastral_area_code} status={tree.cad_lookup_status}"
+            )
+            ku_detail = fetch_ku_detail_rest(ku_code)
+            ku_updates = []
+            if not tree.cadastral_area_name and ku_detail.get("cadastral_area_name"):
+                tree.cadastral_area_name = ku_detail["cadastral_area_name"]
+                ku_updates.append("cadastral_area_name")
+            if not tree.municipality_name and ku_detail.get("municipality_name"):
+                tree.municipality_name = ku_detail["municipality_name"]
+                ku_updates.append("municipality_name")
+            if not tree.municipality_code and ku_detail.get("municipality_code"):
+                tree.municipality_code = ku_detail["municipality_code"]
+                ku_updates.append("municipality_code")
+            if ku_updates:
+                tree.save(update_fields=ku_updates)
 
 
 def _add_tree_to_system_dataset(tree: "WorkRecord") -> None:
