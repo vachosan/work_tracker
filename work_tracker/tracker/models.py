@@ -1,5 +1,5 @@
-import json
 import logging
+import math
 import string
 from decimal import Decimal, ROUND_HALF_UP
 from functools import lru_cache
@@ -594,7 +594,7 @@ def get_workrecord_lonlat(record: "WorkRecord"):
 CUZK_CP_WFS_ENDPOINT = "https://services.cuzk.gov.cz/wfs/inspire-cp-wfs.asp"
 # TODO: Verify typename + available fields from GetCapabilities:
 # https://services.cuzk.gov.cz/wfs/inspire-cp-wfs.asp?service=WFS&request=GetCapabilities
-CUZK_CP_WFS_TYPENAME = "CP:CadastralParcel"
+CUZK_CP_WFS_TYPENAME = "cp:CadastralParcel"
 
 
 def _debug_log(message: str, **extra):
@@ -623,6 +623,7 @@ def _http_get(url: str, timeout_s: int = 3, retries: int = 1) -> tuple[int, str 
 
 def _build_wfs_url(bbox: tuple[float, float, float, float], version: str) -> str:
     minx, miny, maxx, maxy = bbox
+    count = 1
     params = {
         "SERVICE": "WFS",
         "REQUEST": "GetFeature",
@@ -632,9 +633,9 @@ def _build_wfs_url(bbox: tuple[float, float, float, float], version: str) -> str
         "BBOX": f"{minx},{miny},{maxx},{maxy},EPSG:4326",
     }
     if version == "2.0.0":
-        params["COUNT"] = 1
+        params["COUNT"] = count
     else:
-        params["MAXFEATURES"] = 1
+        params["MAXFEATURES"] = count
     return f"{CUZK_CP_WFS_ENDPOINT}?{urlencode(params)}"
 
 
@@ -772,18 +773,17 @@ def _parse_wfs_payload(payload: bytes) -> tuple[dict, bool]:
     except Exception:
         return {}, False
 
-    feature = None
+    features = []
     for elem in root.iter():
         if elem.tag.split("}")[-1].lower() == "cadastralparcel":
-            feature = elem
-            break
-    if feature is None:
+            features.append(elem)
+    if not features:
         return {}, False
 
+    feature = features[0]
     local_id = None
     namespace = None
     national_ref = None
-    tags_of_interest = []
 
     for elem in feature.iter():
         tag = elem.tag.split("}")[-1]
@@ -797,20 +797,6 @@ def _parse_wfs_payload(payload: bytes) -> tuple[dict, bool]:
             namespace = text
         if "nationalcadastralreference" in tag_lower and national_ref is None:
             national_ref = text
-        if "cadastral" in tag_lower or "reference" in tag_lower:
-            tags_of_interest.append(f"{tag}={text}")
-
-    if settings.DEBUG:
-        logger.debug(
-            "cad_lookup wfs feature localId=%s namespace=%s nationalRef=%s",
-            local_id,
-            namespace,
-            national_ref,
-        )
-        logger.debug(
-            "cad_lookup wfs tags %s",
-            json.dumps(tags_of_interest, ensure_ascii=True),
-        )
 
     parcel_number = national_ref or local_id
     fields = {
@@ -822,17 +808,143 @@ def _parse_wfs_payload(payload: bytes) -> tuple[dict, bool]:
     return {key: value for key, value in fields.items() if value}, True
 
 
+def _wgs84_to_sjtsk(lon: float, lat: float) -> tuple[float, float]:
+    a_wgs = 6378137.0
+    f_wgs = 1 / 298.257223563
+    e2_wgs = 2 * f_wgs - f_wgs * f_wgs
+
+    lat_rad = math.radians(lat)
+    lon_rad = math.radians(lon)
+    sin_lat = math.sin(lat_rad)
+    cos_lat = math.cos(lat_rad)
+    sin_lon = math.sin(lon_rad)
+    cos_lon = math.cos(lon_rad)
+
+    n_wgs = a_wgs / math.sqrt(1 - e2_wgs * sin_lat * sin_lat)
+    x = n_wgs * cos_lat * cos_lon
+    y = n_wgs * cos_lat * sin_lon
+    z = n_wgs * (1 - e2_wgs) * sin_lat
+
+    dx, dy, dz = 589.0, 76.0, 480.0
+    x -= dx
+    y -= dy
+    z -= dz
+
+    a = 6377397.155
+    f = 1 / 299.1528128
+    e2 = 2 * f - f * f
+
+    p = math.sqrt(x * x + y * y)
+    lat_b = math.atan2(z, p * (1 - e2))
+    for _ in range(10):
+        sin_lat_b = math.sin(lat_b)
+        n_b = a / math.sqrt(1 - e2 * sin_lat_b * sin_lat_b)
+        lat_b = math.atan2(z + e2 * n_b * sin_lat_b, p)
+    lon_b = math.atan2(y, x)
+
+    phi0 = 0.863937979737193
+    lam0 = 0.4334234309119251
+    k0 = 0.9999
+    es = 0.006674372230614
+    e = math.sqrt(es)
+    s0 = 1.37008346281555
+    uq = 1.04216856380474
+
+    alpha = math.sqrt(1.0 + (es * math.cos(phi0) ** 4) / (1.0 - es))
+    u0 = math.asin(math.sin(phi0) / alpha)
+    g = ((1 + e * math.sin(phi0)) / (1 - e * math.sin(phi0))) ** (alpha * e / 2.0)
+    k = (
+        math.tan(u0 / 2.0 + math.pi / 4.0)
+        / (math.tan(phi0 / 2.0 + math.pi / 4.0) ** alpha)
+        * g
+    )
+    n0 = math.sqrt(1 - es) / (1 - es * math.sin(phi0) ** 2)
+    n = math.sin(s0)
+    rho0 = k0 * n0 / math.tan(s0)
+    ad = math.pi / 2.0 - uq
+
+    gfi = ((1 + e * math.sin(lat_b)) / (1 - e * math.sin(lat_b))) ** (alpha * e / 2.0)
+    u = 2.0 * (
+        math.atan(k * (math.tan(lat_b / 2.0 + math.pi / 4.0) ** alpha) / gfi)
+        - math.pi / 4.0
+    )
+    deltav = -(lon_b - lam0) * alpha
+    s = math.asin(math.cos(ad) * math.sin(u) + math.sin(ad) * math.cos(u) * math.cos(deltav))
+    cos_s = math.cos(s)
+    if abs(cos_s) < 1e-12:
+        return 0.0, 0.0
+    d = math.asin(math.cos(u) * math.sin(deltav) / cos_s)
+    eps = n * d
+    rho = rho0 * (math.tan(s0 / 2.0 + math.pi / 4.0) ** n) / (
+        math.tan(s / 2.0 + math.pi / 4.0) ** n
+    )
+    xk = rho * math.cos(eps)
+    yk = rho * math.sin(eps)
+
+    xk, yk = yk, xk
+    xk = -xk
+    yk = -yk
+
+    xk *= a
+    yk *= a
+    return xk, yk
+
+
+def _cad_lookup_by_point(lon: float, lat: float) -> dict:
+    x, y = _wgs84_to_sjtsk(lon, lat)
+    point = (
+        "<gml:Point xmlns:gml='http://www.opengis.net/gml/3.2' "
+        "srsName='urn:ogc:def:crs:EPSG::5514'>"
+        f"<gml:pos>{x} {y}</gml:pos>"
+        "</gml:Point>"
+    )
+    params = {
+        "service": "WFS",
+        "request": "GetFeature",
+        "version": "2.0.0",
+        "storedquery_id": "GetFeatureByPoint",
+        "FEATURE_TYPE": CUZK_CP_WFS_TYPENAME,
+        "DISTANCE": "0",
+        "POINT": point,
+    }
+    url = f"{CUZK_CP_WFS_ENDPOINT}?{urlencode(params)}"
+    _debug_log("cad_lookup request", url=url, mode="point", lon=lon, lat=lat)
+    status, content_type, payload = _http_get(url, timeout_s=3, retries=1)
+    _debug_log(
+        "cad_lookup response",
+        url=url,
+        mode="point",
+        status=status,
+        content_type=content_type,
+        size=len(payload),
+    )
+    _log_cad_response(url, status, content_type, payload)
+    fields, found = _parse_wfs_payload(payload)
+    if found:
+        fields["cad_lookup_status"] = "ok"
+        return fields
+    return {"cad_lookup_status": "not_found"}
+
+
 @lru_cache(maxsize=2048)
 def _cached_cad_lookup(lon_round: float, lat_round: float) -> dict:
     lon = float(lon_round)
     lat = float(lat_round)
-    delta = 0.0002
+    delta = 0.000001
     bbox = (lon - delta, lat - delta, lon + delta, lat + delta)
 
     url = _build_wfs_url(bbox, "2.0.0")
-    _debug_log("cad_lookup request", url=url)
+    _debug_log("cad_lookup request", url=url, version="2.0.0", bbox=bbox)
     try:
         status, content_type, payload = _http_get(url, timeout_s=3, retries=1)
+        _debug_log(
+            "cad_lookup response",
+            url=url,
+            version="2.0.0",
+            status=status,
+            content_type=content_type,
+            size=len(payload),
+        )
         _log_cad_response(url, status, content_type, payload)
         fields, found = _parse_wfs_payload(payload)
         if found:
@@ -842,8 +954,16 @@ def _cached_cad_lookup(lon_round: float, lat_round: float) -> dict:
         _debug_log("cad_lookup wfs 2.0.0 failed", error=str(err))
 
     url = _build_wfs_url(bbox, "1.1.0")
-    _debug_log("cad_lookup request", url=url)
+    _debug_log("cad_lookup request", url=url, version="1.1.0", bbox=bbox)
     status, content_type, payload = _http_get(url, timeout_s=3, retries=1)
+    _debug_log(
+        "cad_lookup response",
+        url=url,
+        version="1.1.0",
+        status=status,
+        content_type=content_type,
+        size=len(payload),
+    )
     _log_cad_response(url, status, content_type, payload)
     fields, found = _parse_wfs_payload(payload)
     if found:
@@ -862,7 +982,7 @@ def _assign_cadastre_attributes(tree: "WorkRecord") -> None:
         return
     lon, lat = lonlat
     try:
-        result = _cached_cad_lookup(round(lon, 6), round(lat, 6))
+        result = _cad_lookup_by_point(lon, lat)
     except Exception as err:
         _debug_log("cad_lookup error", tree_id=tree.pk, error=str(err))
         tree.cad_lookup_status = "error"
