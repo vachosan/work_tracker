@@ -448,6 +448,14 @@
     };
 
     const cuzkOrthoTiles = 'https://ags.cuzk.gov.cz/arcgis1/rest/services/ORTOFOTO_WM/MapServer/tile/{z}/{y}/{x}';
+    // CUZK services: WMS/WMTS/WFS INSPIRE CP -> https://services.cuzk.gov.cz/
+    const CUZK_KATASTR_WMS_BASE = 'https://services.cuzk.gov.cz/wms/wms.asp?';
+    // Layer name verified in GetCapabilities: https://services.cuzk.gov.cz/wms/wms.asp?service=WMS&request=GetCapabilities
+    const CUZK_KATASTR_LAYER_NAME = 'KN';
+    const CUZK_KATASTR_OPACITY = 0.6;
+    // TODO: Future parcel data hook (INSPIRE CP WFS).
+    // Endpoint: https://services.cuzk.gov.cz/wfs/inspire-cp-wfs.asp
+    // Output is GML; plan server-side conversion to GeoJSON + DB caching.
 
     const style = {
       version: 8,
@@ -468,6 +476,16 @@
           maxzoom: 14,
           attribution: '© OpenMapTiles © OpenStreetMap contributors',
         },
+        'cuzk-katastr': {
+          type: 'raster',
+          tiles: [
+            `${CUZK_KATASTR_WMS_BASE}service=WMS&request=GetMap&version=1.3.0&layers=${CUZK_KATASTR_LAYER_NAME}&styles=&format=image/png&transparent=true&width=256&height=256&crs=EPSG:3857&bbox={bbox-epsg-3857}`,
+          ],
+          tileSize: 256,
+          minzoom: 6,
+          maxzoom: 20,
+          attribution: '&copy; CUZK',
+        },
       },
       layers: [
         {
@@ -480,10 +498,18 @@
           type: 'raster',
           source: 'cuzk-ortho',
         },
+        {
+          id: 'cuzk-katastr',
+          type: 'raster',
+          source: 'cuzk-katastr',
+          paint: { 'raster-opacity': CUZK_KATASTR_OPACITY },
+          layout: { visibility: 'none' },
+        },
       ],
     };
 
     const streetNamesCheckbox = document.getElementById('streetNamesCheckbox');
+    const katastrCheckbox = document.getElementById('katastrCheckbox');
     const protocol = new pmtiles.Protocol();
     maplibregl.addProtocol('pmtiles', protocol.tile);
     const map = new maplibregl.Map({
@@ -886,6 +912,14 @@
       applyStreetNamesVisibility();
       if (streetNamesCheckbox) {
         streetNamesCheckbox.addEventListener('change', applyStreetNamesVisibility);
+      }
+      const applyKatastrVisibility = () => {
+        const visible = katastrCheckbox && katastrCheckbox.checked;
+        setLayerVisibility('cuzk-katastr', visible);
+      };
+      applyKatastrVisibility();
+      if (katastrCheckbox) {
+        katastrCheckbox.addEventListener('change', applyKatastrVisibility);
       }
 
       const refreshProjectWorkrecords = () => {
