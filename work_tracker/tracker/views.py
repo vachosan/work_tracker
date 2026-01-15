@@ -23,7 +23,7 @@ from django.core.files import File
 from django.core.files.base import ContentFile
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Max, Min, F, Count, Q, Prefetch, Exists, OuterRef
+from django.db.models import Max, Min, F, Count, Q, Prefetch, Exists, OuterRef, Subquery
 from django.http import (
     StreamingHttpResponse,
     FileResponse,
@@ -1454,6 +1454,14 @@ def workrecords_geojson(request):
     """
     GeoJSON feed with coordinates of WorkRecords (pilot usage for MapLibre map).
     """
+    def to_float(value):
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
     project_param = request.GET.get("project")
     if project_param:
         try:
@@ -1479,6 +1487,14 @@ def workrecords_geojson(request):
             .distinct()
             .only("id", "latitude", "longitude", "external_tree_id", "title")
         )
+
+    latest_assessment = TreeAssessment.objects.filter(work_record=OuterRef("pk")).order_by(
+        "-assessed_at",
+        "-id",
+    )
+    qs = qs.annotate(
+        crown_width_m=Subquery(latest_assessment.values("crown_width_m")[:1])
+    )
 
     # TODO: this pilot endpoint will be replaced by the registry-driven map feed later.
     bbox_param = request.GET.get("bbox")
@@ -1517,6 +1533,7 @@ def workrecords_geojson(request):
                 "properties": {
                     "id": wr.id,
                     "label": label,
+                    "crown_width_m": to_float(getattr(wr, "crown_width_m", None)),
                 },
             }
         )

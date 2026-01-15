@@ -42,6 +42,7 @@
 
 <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@3.0.6/dist/pmtiles.js"></script>
+<script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
 <script>
   window.workTrackerMapUiConfig = {
     workRecordDetailApiBase: "{% url 'workrecord_detail_api' 0 %}".replace(/0\/?$/, ""),
@@ -76,6 +77,9 @@
     const CONTEXT_ZOOM = 18;
     const CONTEXT_SOURCE_ID = 'workrecords-context';
     const CONTEXT_LAYER_ID = 'workrecords-context-points';
+    const CROWN_SOURCE_ID = 'tree_crowns';
+    const CROWN_FILL_LAYER_ID = 'tree_crowns_fill';
+    const CROWN_LINE_LAYER_ID = 'tree_crowns_line';
     const labelOverlay = document.getElementById('wr-label-overlay');
     let workrecordFeatures = [];
     let workrecordFeatureCollection = null;
@@ -91,6 +95,8 @@
     const PROJECT_POINT_COLOR = '#f97316';
     const CONTEXT_POINT_COLOR = '#888';
     const CONTEXT_POINT_OPACITY = 0.7;
+    const CROWN_DIAMETER_KEYS = ['crown_diameter_m', 'crown_width_m', 'diameter_crown', 'crown_diameter'];
+    const CROWN_STEPS = 64;
 
     const toNumber = (value) => {
       if (value === null || value === '') return null;
@@ -336,6 +342,7 @@
             if (src && typeof src.setData === 'function') {
               src.setData(workrecordFeatureCollection);
             }
+            updateTreeCrownsSource(workrecordFeatureCollection);
             renderLabelOverlay();
             if (window.openWorkRecordPanel) {
               window.openWorkRecordPanel(data.record.id);
@@ -386,6 +393,47 @@
         return clone;
       }
       return value;
+    };
+
+    const getCrownDiameterM = (properties) => {
+      if (!properties) return null;
+      for (const key of CROWN_DIAMETER_KEYS) {
+        const value = toNumber(properties[key]);
+        if (value && value > 0) return value;
+      }
+      return null;
+    };
+
+    const crownsToGeoJSON = (pointsGeoJSON) => {
+      const empty = { type: 'FeatureCollection', features: [] };
+      if (!pointsGeoJSON || pointsGeoJSON.type !== 'FeatureCollection') return empty;
+      if (!window.turf || typeof window.turf.circle !== 'function') return empty;
+      const features = [];
+      for (const feature of pointsGeoJSON.features || []) {
+        if (!feature || !feature.geometry || feature.geometry.type !== 'Point') continue;
+        const coords = feature.geometry.coordinates;
+        if (!Array.isArray(coords) || coords.length < 2) continue;
+        const crownDiameterM = getCrownDiameterM(feature.properties);
+        if (!crownDiameterM) continue;
+        const radiusKm = (crownDiameterM / 2) / 1000;
+        // Use polygons so MapLibre can render a crown radius in meters.
+        const circle = window.turf.circle([coords[0], coords[1]], radiusKm, {
+          steps: CROWN_STEPS,
+          units: 'kilometers',
+        });
+        circle.properties = {
+          id: feature.properties && feature.properties.id,
+          crown_diameter_m: crownDiameterM,
+        };
+        features.push(circle);
+      }
+      return { type: 'FeatureCollection', features };
+    };
+
+    const updateTreeCrownsSource = (pointsGeoJSON) => {
+      const source = map.getSource(CROWN_SOURCE_ID);
+      if (!source || typeof source.setData !== 'function') return;
+      source.setData(crownsToGeoJSON(pointsGeoJSON));
     };
 
     const cuzkOrthoTiles = 'https://ags.cuzk.gov.cz/arcgis1/rest/services/ORTOFOTO_WM/MapServer/tile/{z}/{y}/{x}';
@@ -778,6 +826,7 @@
             if (src && typeof src.setData === 'function') {
               src.setData(fc);
             }
+            updateTreeCrownsSource(fc);
             renderLabelOverlay();
             applyInitialFocus();
           })
@@ -817,6 +866,32 @@
         clusterRadius: 25,
         clusterMaxZoom: 15,
       });
+      map.addSource(CROWN_SOURCE_ID, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+
+      map.addLayer({
+        id: CROWN_FILL_LAYER_ID,
+        type: 'fill',
+        source: CROWN_SOURCE_ID,
+        paint: {
+          'fill-color': '#22c55e',
+          'fill-opacity': 0.2,
+        },
+      });
+
+      map.addLayer({
+        id: CROWN_LINE_LAYER_ID,
+        type: 'line',
+        source: CROWN_SOURCE_ID,
+        paint: {
+          'line-color': '#16a34a',
+          'line-width': 1,
+          'line-opacity': 0.7,
+        },
+      });
+
       refreshProjectWorkrecords();
 
       map.addLayer({
