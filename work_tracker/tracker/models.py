@@ -130,7 +130,7 @@ class WorkRecord(models.Model):
     taxon_gbif_key = models.IntegerField(null=True, blank=True)
     description = models.TextField(blank=True)
     date = models.DateField(default=timezone.now)
-    created_at = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(auto_now_add=True)
     project = models.ForeignKey(
         "Project",
         on_delete=models.SET_NULL,
@@ -1004,6 +1004,11 @@ def _assign_cadastre_attributes(tree: "WorkRecord") -> None:
         if value:
             setattr(tree, key, value)
             update_fields.append(key)
+    if tree.parcel_number and not tree.cadastral_area_code and "-" in tree.parcel_number:
+        prefix = tree.parcel_number.split("-", 1)[0]
+        if prefix.isdigit():
+            tree.cadastral_area_code = prefix
+            update_fields.append("cadastral_area_code")
     if result.get("cad_lookup_status"):
         tree.cad_lookup_status = result["cad_lookup_status"]
         update_fields.append("cad_lookup_status")

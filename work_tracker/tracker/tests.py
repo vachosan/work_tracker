@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
@@ -76,3 +78,32 @@ class WorkrecordsGeojsonTests(TestCase):
         self.assertIn(self.in_project.pk, ids)
         self.assertNotIn(self.other_project.pk, ids)
         self.assertNotIn(self.orphan.pk, ids)
+
+
+class CadastreAreaCodeDerivationTests(TestCase):
+    def _create_with_parcel(self, parcel_number):
+        with patch(
+            "tracker.models._cad_lookup_by_point",
+            return_value={"parcel_number": parcel_number, "cad_lookup_status": "ok"},
+        ):
+            record = WorkRecord.objects.create(
+                title="WR", latitude=49.0, longitude=17.0
+            )
+        record.refresh_from_db()
+        return record
+
+    def test_cadastral_area_code_derived_from_parcel_number(self):
+        record = self._create_with_parcel("710504-241/1")
+        self.assertEqual(record.cadastral_area_code, "710504")
+        record = self._create_with_parcel("713520-300/2")
+        self.assertEqual(record.cadastral_area_code, "713520")
+
+    def test_cadastral_area_code_not_set_for_invalid_parcel_number(self):
+        record = self._create_with_parcel("")
+        self.assertFalse(record.cadastral_area_code)
+        record = self._create_with_parcel("invalid")
+        self.assertFalse(record.cadastral_area_code)
+
+    def test_cadastral_area_code_accepts_numeric_prefix(self):
+        record = self._create_with_parcel("123-")
+        self.assertEqual(record.cadastral_area_code, "123")

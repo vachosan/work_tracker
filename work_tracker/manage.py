@@ -2,10 +2,18 @@
 """Django's command-line utility for administrative tasks."""
 import os
 import sys
+import warnings
 
 
 def main():
     """Run administrative tasks."""
+    if "test" in sys.argv:
+        warnings.filterwarnings(
+            "ignore",
+            message=r"^DateTimeField WorkRecord\.created_at received a naive datetime",
+            category=RuntimeWarning,
+            module=r"django\.db\.models\.fields",
+        )
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'work_tracker.settings')
     try:
         from django.core.management import execute_from_command_line
