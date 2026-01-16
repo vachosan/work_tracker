@@ -35,3 +35,13 @@ work_tracker/media/
 *.pmtiles
 tiles-build/
 **/tiles-build/
+
+# RUIAN downloads / cache
+**/ruian_cache/
+**/ruian_extracted/
+**/extracted/
+**/*.zip
+
+# (pokud máš konkrétní cache dir)
+tracker/data/ruian_cache/
+tracker/data/ruian_extracted/
