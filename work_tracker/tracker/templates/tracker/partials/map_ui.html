@@ -1,11 +1,15 @@
-<!-- Top bar overlay -->
-<div id="map-topbar">
-  <a id="mapBackLink" href="{% url 'work_record_list' %}" class="btn btn-light btn-sm rounded-pill shadow-sm">
+<!-- Minimal header overlay -->
+<div id="map-mini-header">
+  <a id="mapBackLink" href="{% url 'work_record_list' %}" class="map-mini-link" aria-label="Zpět">
     <i class="bi bi-arrow-left"></i> Zpět
   </a>
-  <div class="fw-semibold small text-dark">Mapa</div>
-  <button class="btn btn-light btn-sm rounded-pill shadow-sm" type="button" data-bs-toggle="offcanvas" data-bs-target="#mapControlsPanel" aria-controls="mapControlsPanel" title="Nastavení">
-    <i class="bi bi-sliders"></i>
+  {% if request.GET.project %}
+    <a id="mapProjectTitle" class="map-project-title" data-default-title="Mapa" href="{% url 'project_detail' request.GET.project %}">Mapa</a>
+  {% else %}
+    <div id="mapProjectTitle" class="map-project-title" data-default-title="Mapa">Mapa</div>
+  {% endif %}
+  <button id="mapMenuButton" class="map-menu-button" type="button" aria-label="Otevřít nastavení" aria-expanded="false">
+    <i class="bi bi-list"></i>
   </button>
 </div>
 
@@ -177,20 +181,6 @@
   </div>
 </div>
 
-<!-- Less prominent locate button (bottom-left) -->
-<div id="map-locate">
-  <button id="locateBtn" class="btn btn-light btn-sm rounded-circle shadow locate-btn" type="button" title="Zaměřit na mou polohu" aria-label="Zaměřit na mou polohu">
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <circle cx="12" cy="12" r="5" fill="none" stroke="currentColor" stroke-width="2" opacity="0.95" />
-      <line x1="12" y1="2" x2="12" y2="6" stroke="currentColor" stroke-width="2" opacity="0.95" />
-      <line x1="12" y1="18" x2="12" y2="22" stroke="currentColor" stroke-width="2" opacity="0.95" />
-      <line x1="2" y1="12" x2="6" y2="12" stroke="currentColor" stroke-width="2" opacity="0.95" />
-      <line x1="18" y1="12" x2="22" y2="12" stroke="currentColor" stroke-width="2" opacity="0.95" />
-      <circle cx="12" cy="12" r="1.8" fill="currentColor" opacity="0.95" />
-    </svg>
-  </button>
-</div>
-
 <div id="newRecordModal" class="capture-modal">
   <div class="capture-card">
     <div class="d-flex justify-content-between align-items-center mb-1">
@@ -229,26 +219,13 @@
   </div>
 </div>
 
-<!-- Controls offcanvas -->
-<div class="offcanvas offcanvas-top" tabindex="-1" id="mapControlsPanel" aria-labelledby="mapControlsLabel" style="height:auto; max-height:75vh;">
-  <div class="offcanvas-header py-2">
-    <h6 class="offcanvas-title" id="mapControlsLabel">Nastavení a uložení</h6>
-    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Zavřít"></button>
-  </div>
-  <div class="offcanvas-body">
-    <label for="projectSelect" class="form-label">Vyber projekt:</label>
-    <select id="projectSelect" class="form-select mb-3">
-      <option value="">Všechny projekty</option>
-      <option value="none">Bez projektu</option>
-      {% for p in projects %}
-        <option value="{{ p.id }}">{{ p.name }}</option>
-      {% endfor %}
-    </select>
-
+<!-- Controls panel -->
+<div id="mapControlsPanel" class="map-controls-panel" aria-hidden="true">
+  <div class="map-controls-body">
     <div class="d-flex flex-column gap-2">
       <div class="form-check">
-        <input class="form-check-input" type="checkbox" id="labelsCheckbox" checked>
-        <label class="form-check-label small" for="labelsCheckbox">
+        <input class="form-check-input" type="checkbox" id="streetNamesCheckbox" checked>
+        <label class="form-check-label small" for="streetNamesCheckbox">
           Zobrazit názvy bodů
         </label>
       </div>

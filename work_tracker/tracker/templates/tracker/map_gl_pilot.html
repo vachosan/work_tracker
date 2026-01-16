@@ -59,6 +59,7 @@
   window.DEBUG_MAP_UI = false;
   {% endif %}
 </script>
+{{ projects_js|json_script:"projects-data" }}
 <script src="{% static 'js/map_ui.js' %}?v=dev1"></script>
 <script>
     document.addEventListener('DOMContentLoaded', () => {
@@ -1245,6 +1246,16 @@
       console.error('MapLibre error', { ...extra, error: err });
     });
 
+    map.addControl(
+      new maplibregl.GeolocateControl({
+        positionOptions: { enableHighAccuracy: true },
+        trackUserLocation: true,
+        showUserLocation: true,
+        showAccuracyCircle: true,
+        fitBoundsOptions: { maxZoom: 18 },
+      }),
+      'top-left'
+    );
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
   });
 </script>

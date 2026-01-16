@@ -19,6 +19,9 @@
   let treePanel;
   let backLink;
   let backLinkDefaultHref;
+  let menuButton;
+  let controlsPanel;
+  let projectTitle;
 
   let photoViewer;
   let photoViewerImg;
@@ -101,6 +104,39 @@
         projectId: cfg.projectId,
         addToProjectUrlTemplate: cfg.addToProjectUrlTemplate,
       });
+    }
+  }
+
+  function findProjectName(projectId) {
+    if (!projectId) return '';
+    const dataEl = document.getElementById('projects-data');
+    if (!dataEl) return '';
+    try {
+      const projects = JSON.parse(dataEl.textContent);
+      if (!Array.isArray(projects)) return '';
+      const match = projects.find(function (item) {
+        return item && String(item.id) === String(projectId);
+      });
+      return match && match.name ? String(match.name) : '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function updateProjectTitle() {
+    if (!projectTitle) return;
+    const defaultTitle = projectTitle.getAttribute('data-default-title') || 'Mapa';
+    const projectId = cfg.projectId ? String(cfg.projectId) : '';
+    const resolved = findProjectName(projectId);
+    projectTitle.textContent = resolved || defaultTitle;
+  }
+
+  function setControlsOpen(nextOpen) {
+    if (!controlsPanel) return;
+    controlsPanel.classList.toggle('open', nextOpen);
+    controlsPanel.setAttribute('aria-hidden', nextOpen ? 'false' : 'true');
+    if (menuButton) {
+      menuButton.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
     }
   }
 
@@ -1226,10 +1262,33 @@
     treePanel = document.getElementById('tree-panel');
     backLink = document.getElementById('mapBackLink');
     backLinkDefaultHref = backLink ? backLink.getAttribute('href') : null;
+    menuButton = document.getElementById('mapMenuButton');
+    controlsPanel = document.getElementById('mapControlsPanel');
+    projectTitle = document.getElementById('mapProjectTitle');
     if (debugEnabled) {
       console.debug('map_ui dom', {
         bottomPanel: !!bottomPanel,
         treePanel: !!treePanel,
+      });
+    }
+    updateProjectTitle();
+
+    if (menuButton && controlsPanel) {
+      menuButton.addEventListener('click', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        const isOpen = controlsPanel.classList.contains('open');
+        setControlsOpen(!isOpen);
+      });
+      document.addEventListener('click', function (event) {
+        if (!controlsPanel.classList.contains('open')) return;
+        if (controlsPanel.contains(event.target) || menuButton.contains(event.target)) return;
+        setControlsOpen(false);
+      });
+      document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') {
+          setControlsOpen(false);
+        }
       });
     }
 

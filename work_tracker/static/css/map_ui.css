@@ -41,25 +41,99 @@
     background-color: #e9ecef;
     color: #000;
   }
-  /* locate button (top-left) */
-  #map-locate { position: fixed; left: 12px; top: calc(56px + 8px); z-index: 1100; }
-  #map-locate .locate-btn {
-    width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center;
-    background: rgba(255,255,255,.7); color: #222; border: 1px solid rgba(0,0,0,.2);
-    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  /* mini header */
+  #map-mini-header {
+    position: fixed;
+    top: 8px;
+    left: 0;
+    right: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    padding: 0 12px;
+    gap: 12px;
   }
-  #map-locate .locate-btn svg { width: 20px; height: 20px; opacity: .85; }
-  #map-locate .locate-btn:hover { background: rgba(255,255,255,.9); }
-  #map-locate .locate-btn:active { background: rgba(255,255,255,1); }
-  /* translucent top bar */
-  #map-topbar {
-    position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 8px 12px;
-    background: rgba(255,255,255,.85);
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
-    box-shadow: 0 2px 12px rgba(0,0,0,.1);
+  #map-mini-header .map-mini-link {
+    pointer-events: auto;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.88);
+    box-shadow: 0 4px 16px rgba(0,0,0,.12);
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #111;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid rgba(0,0,0,.12);
+  }
+  #map-mini-header .map-project-title {
+    pointer-events: auto;
+    padding: 6px 14px;
+    border-radius: 999px;
+    background: rgba(255,255,255,.88);
+    box-shadow: 0 4px 16px rgba(0,0,0,.12);
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #111;
+    max-width: min(70vw, 360px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-decoration: none;
+  }
+  #map-mini-header a.map-project-title:hover {
+    background: rgba(255,255,255,1);
+  }
+  #map-mini-header .map-menu-button {
+    pointer-events: auto;
+    pointer-events: auto;
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    border: 1px solid rgba(0,0,0,.15);
+    background: rgba(255,255,255,.92);
+    box-shadow: 0 4px 14px rgba(0,0,0,.12);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #111;
+  }
+  #map-mini-header .map-mini-link,
+  #map-mini-header .map-menu-button {
+    flex: 0 0 auto;
+  }
+  #map-mini-header .map-project-title {
+    margin: 0 auto;
+  }
+  #map-mini-header .map-menu-button:hover {
+    background: rgba(255,255,255,1);
+  }
+  /* shift MapLibre controls below header */
+  .maplibregl-ctrl-top-right,
+  .maplibregl-ctrl-top-left {
+    margin-top: 64px;
+  }
+  /* settings panel */
+  #mapControlsPanel.map-controls-panel {
+    position: fixed;
+    top: 56px;
+    right: 12px;
+    width: min(320px, 90vw);
+    max-height: min(70vh, 420px);
+    overflow: auto;
+    background: rgba(255,255,255,.98);
+    border-radius: 14px;
+    box-shadow: 0 12px 30px rgba(0,0,0,.18);
+    padding: 12px 14px;
+    z-index: 1200;
+    display: none;
+  }
+  #mapControlsPanel.map-controls-panel.open {
+    display: block;
   }
   /* floating action buttons */
   #map-fabs { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 1100; }
