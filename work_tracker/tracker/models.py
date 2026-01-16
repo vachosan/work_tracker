@@ -223,6 +223,64 @@ class WorkRecord(models.Model):
         return self.assessments.order_by("-assessed_at", "-id").first()
 
 
+class RuianCadastralArea(models.Model):
+    code = models.CharField(max_length=32, primary_key=True)
+    name = models.CharField(max_length=255)
+
+    class Meta:
+        verbose_name = "Ruian cadastral area"
+        verbose_name_plural = "Ruian cadastral areas"
+
+    def __str__(self):
+        return f"{self.code} {self.name}"
+
+
+class RuianMunicipality(models.Model):
+    code = models.CharField(max_length=32, primary_key=True)
+    name = models.CharField(max_length=255)
+
+    class Meta:
+        verbose_name = "Ruian municipality"
+        verbose_name_plural = "Ruian municipalities"
+
+    def __str__(self):
+        return f"{self.code} {self.name}"
+
+
+class RuianCadastralAreaMunicipality(models.Model):
+    cadastral_area = models.ForeignKey(
+        RuianCadastralArea,
+        on_delete=models.CASCADE,
+        related_name="municipality_links",
+    )
+    municipality = models.ForeignKey(
+        RuianMunicipality,
+        on_delete=models.CASCADE,
+        related_name="cadastral_area_links",
+    )
+
+    class Meta:
+        unique_together = ("cadastral_area", "municipality")
+        indexes = [
+            models.Index(fields=["cadastral_area", "municipality"]),
+            models.Index(fields=["municipality"]),
+        ]
+
+    def __str__(self):
+        return f"{self.cadastral_area_id}->{self.municipality_id}"
+
+
+class RuianImportMeta(models.Model):
+    imported_at = models.DateTimeField(auto_now_add=True)
+    source_url = models.CharField(max_length=512, blank=True, default="")
+    source_zip_name = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        verbose_name = "Ruian import meta"
+        verbose_name_plural = "Ruian import meta"
+        ordering = ["-imported_at"]
+
+
 class TreeAssessment(models.Model):
     work_record = models.ForeignKey(
         "WorkRecord",
@@ -1009,6 +1067,36 @@ def _assign_cadastre_attributes(tree: "WorkRecord") -> None:
         if prefix.isdigit():
             tree.cadastral_area_code = prefix
             update_fields.append("cadastral_area_code")
+    if tree.cadastral_area_code:
+        try:
+            code = tree.cadastral_area_code
+            if not tree.cadastral_area_name:
+                name = (
+                    RuianCadastralArea.objects.filter(code=code)
+                    .values_list("name", flat=True)
+                    .first()
+                )
+                if name:
+                    tree.cadastral_area_name = name
+                    update_fields.append("cadastral_area_name")
+            if not tree.municipality_name:
+                municipality_code = (
+                    RuianCadastralAreaMunicipality.objects.filter(cadastral_area_id=code)
+                    .order_by("municipality_id")
+                    .values_list("municipality_id", flat=True)
+                    .first()
+                )
+                if municipality_code:
+                    municipality_name = (
+                        RuianMunicipality.objects.filter(code=municipality_code)
+                        .values_list("name", flat=True)
+                        .first()
+                    )
+                    if municipality_name:
+                        tree.municipality_name = municipality_name
+                        update_fields.append("municipality_name")
+        except Exception:
+            pass
     if result.get("cad_lookup_status"):
         tree.cad_lookup_status = result["cad_lookup_status"]
         update_fields.append("cad_lookup_status")

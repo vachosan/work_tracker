@@ -1,10 +1,19 @@
+from pathlib import Path
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse
 
-from .models import Project, ProjectMembership, WorkRecord
+from .models import (
+    Project,
+    ProjectMembership,
+    RuianCadastralArea,
+    RuianCadastralAreaMunicipality,
+    RuianMunicipality,
+    WorkRecord,
+)
 
 
 class ProjectTreeAddTests(TestCase):
@@ -107,3 +116,48 @@ class CadastreAreaCodeDerivationTests(TestCase):
     def test_cadastral_area_code_accepts_numeric_prefix(self):
         record = self._create_with_parcel("123-")
         self.assertEqual(record.cadastral_area_code, "123")
+
+
+class RuianImportTests(TestCase):
+    def test_import_ruian_from_sample_dir(self):
+        sample_dir = Path(__file__).resolve().parent / "data" / "ruian_sample"
+        call_command("import_ruian", source_dir=str(sample_dir))
+
+        self.assertEqual(RuianMunicipality.objects.count(), 2)
+        self.assertEqual(RuianCadastralArea.objects.count(), 3)
+        self.assertTrue(
+            RuianCadastralAreaMunicipality.objects.filter(
+                cadastral_area_id="2001", municipality_id="1001"
+            ).exists()
+        )
+
+
+class WorkRecordRuianEnrichmentTests(TestCase):
+    def _create_with_parcel(self, parcel_number):
+        with patch(
+            "tracker.models._cad_lookup_by_point",
+            return_value={"parcel_number": parcel_number, "cad_lookup_status": "ok"},
+        ):
+            record = WorkRecord.objects.create(
+                title="WR", latitude=49.0, longitude=17.0
+            )
+        record.refresh_from_db()
+        return record
+
+    def test_enriches_names_from_ruian_tables(self):
+        RuianCadastralArea.objects.create(code="710504", name="Katastr X")
+        RuianMunicipality.objects.create(code="5001", name="Obec Y")
+        RuianCadastralAreaMunicipality.objects.create(
+            cadastral_area_id="710504", municipality_id="5001"
+        )
+
+        record = self._create_with_parcel("710504-241/1")
+        self.assertEqual(record.cadastral_area_code, "710504")
+        self.assertEqual(record.cadastral_area_name, "Katastr X")
+        self.assertEqual(record.municipality_name, "Obec Y")
+
+    def test_missing_ruian_tables_does_not_block_create(self):
+        record = self._create_with_parcel("710504-241/1")
+        self.assertEqual(record.cadastral_area_code, "710504")
+        self.assertFalse(record.cadastral_area_name)
+        self.assertFalse(record.municipality_name)
