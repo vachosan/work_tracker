@@ -1,4 +1,5 @@
 import logging
+import os
 import math
 import string
 from decimal import Decimal, ROUND_HALF_UP
@@ -1128,6 +1129,8 @@ def _ensure_tree_in_system_dataset(sender, instance, created, **kwargs):
 @receiver(post_save, sender=WorkRecord)
 def _assign_cadastre_on_create(sender, instance, created, **kwargs):
     if not created:
+        return
+    if os.getenv("ARBOMAP_DISABLE_CADASTRE_LOOKUP") == "1":
         return
     try:
         _assign_cadastre_attributes(instance)
