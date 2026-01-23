@@ -10,11 +10,15 @@
     disableLocationConfirmFab: false,
     csrfToken: null,
     interventionNoteData: {},
+    workRecordSetLocationUrlTemplate: null,
   };
   const debugEnabled = typeof window !== 'undefined' && window.DEBUG_MAP_UI;
 
   const recordCache = {};
   let currentWorkRecordId = null;
+  let moveLocationMode = false;
+  let moveTargetId = null;
+  let pendingLngLat = null;
 
   let bottomPanel;
   let treePanel;
@@ -23,6 +27,11 @@
   let menuButton;
   let controlsPanel;
   let projectTitle;
+  let workrecordPanelActions;
+  let moveLocationBanner;
+  let moveLocationCancelBtn;
+  let moveLocationSaveBtn;
+  let moveLocationMessage;
 
   let photoViewer;
   let photoViewerImg;
@@ -103,6 +112,9 @@
     if (userCfg.interventionNoteData) {
       cfg.interventionNoteData = userCfg.interventionNoteData || {};
     }
+    if (userCfg.workRecordSetLocationUrlTemplate) {
+      cfg.workRecordSetLocationUrlTemplate = userCfg.workRecordSetLocationUrlTemplate;
+    }
     if (debugEnabled) {
       console.debug('map_ui config', {
         projectId: cfg.projectId,
@@ -159,10 +171,138 @@
     closeBottomPanel();
     currentWorkRecordId = null;
     window.activeRecordId = null;
-    const placeholder = document.getElementById('workrecord-panel-actions');
-    if (placeholder) {
-      placeholder.innerHTML = '';
+    if (workrecordPanelActions) {
+      workrecordPanelActions.innerHTML = '';
     }
+    cancelMoveLocationMode();
+  }
+
+  function getSetLocationUrl(recordId) {
+    if (!cfg.workRecordSetLocationUrlTemplate) return null;
+    return cfg.workRecordSetLocationUrlTemplate.replace('/0/set_location/', '/' + recordId + '/set_location/');
+  }
+
+  function updateMoveLocationBanner() {
+    if (!moveLocationBanner) return;
+    moveLocationBanner.classList.toggle('active', moveLocationMode);
+    moveLocationBanner.setAttribute('aria-hidden', moveLocationMode ? 'false' : 'true');
+    if (moveLocationSaveBtn) {
+      moveLocationSaveBtn.disabled = !pendingLngLat;
+    }
+  }
+
+  function setMoveLocationMessage(message, isError) {
+    if (!moveLocationMessage) return;
+    moveLocationMessage.textContent = message || '';
+    moveLocationMessage.classList.toggle('error', !!isError);
+  }
+
+  function normalizeLngLat(lngLat) {
+    if (!lngLat) return null;
+    if (typeof lngLat.lng === 'number' && typeof lngLat.lat === 'number') {
+      return { lng: lngLat.lng, lat: lngLat.lat };
+    }
+    if (Array.isArray(lngLat) && lngLat.length >= 2) {
+      const lng = Number(lngLat[0]);
+      const lat = Number(lngLat[1]);
+      if (Number.isFinite(lng) && Number.isFinite(lat)) {
+        return { lng: lng, lat: lat };
+      }
+    }
+    return null;
+  }
+
+  function setPendingMoveLocation(lngLat) {
+    if (!moveLocationMode) return;
+    const normalized = normalizeLngLat(lngLat);
+    if (!normalized) return;
+    pendingLngLat = normalized;
+    setMoveLocationMessage('');
+    updateMoveLocationBanner();
+  }
+
+  function enterMoveLocationMode(recordId) {
+    if (!recordId) return;
+    const idNum = Number(recordId);
+    if (!Number.isFinite(idNum)) return;
+    if (!getSetLocationUrl(idNum)) return;
+    const record = recordCache[idNum];
+    if (record && !record.can_edit) return;
+    moveLocationMode = true;
+    moveTargetId = idNum;
+    pendingLngLat = null;
+    setMoveLocationMessage('');
+    updateMoveLocationBanner();
+    renderPanelActions(recordCache[idNum]);
+  }
+
+  function cancelMoveLocationMode() {
+    if (!moveLocationMode && !pendingLngLat) return;
+    moveLocationMode = false;
+    moveTargetId = null;
+    pendingLngLat = null;
+    updateMoveLocationBanner();
+    setMoveLocationMessage('');
+    if (typeof window.clearMoveLocationMarker === 'function') {
+      window.clearMoveLocationMarker();
+    }
+    renderPanelActions(currentWorkRecordId ? recordCache[currentWorkRecordId] : null);
+  }
+
+  function submitMoveLocation() {
+    if (!moveLocationMode || !moveTargetId || !pendingLngLat) return;
+    const url = getSetLocationUrl(moveTargetId);
+    if (!url) return;
+    if (moveLocationSaveBtn) moveLocationSaveBtn.disabled = true;
+    const payload = new URLSearchParams();
+    payload.set('latitude', pendingLngLat.lat);
+    payload.set('longitude', pendingLngLat.lng);
+    const headers = { 'X-Requested-With': 'XMLHttpRequest' };
+    if (cfg.csrfToken) headers['X-CSRFToken'] = cfg.csrfToken;
+    headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    fetch(url, {
+      method: 'POST',
+      headers: headers,
+      body: payload.toString(),
+    })
+      .then(function (resp) {
+        return resp.json().then(function (body) {
+          return { status: resp.status, body: body };
+        });
+      })
+      .then(function (result) {
+        if (result.status >= 400 || !result.body) {
+          const message = (result.body && result.body.error) || 'Nepodařilo se uložit polohu.';
+          throw new Error(message);
+        }
+        const updated = {
+          id: moveTargetId,
+          latitude: result.body.latitude,
+          longitude: result.body.longitude,
+        };
+        const cached = recordCache[Number(moveTargetId)];
+        if (cached) {
+          cached.lat = updated.latitude;
+          cached.lon = updated.longitude;
+          cached.latitude = updated.latitude;
+          cached.longitude = updated.longitude;
+          cacheRecord(cached);
+        }
+        if (typeof window.updateWorkrecordLocationInMap === 'function') {
+          window.updateWorkrecordLocationInMap(moveTargetId, {
+            lng: updated.longitude,
+            lat: updated.latitude,
+          });
+        }
+        cancelMoveLocationMode();
+      })
+      .catch(function (err) {
+        const message = err && err.message ? err.message : 'Nepodařilo se uložit polohu.';
+        setMoveLocationMessage(message, true);
+      })
+      .finally(function () {
+        if (moveLocationSaveBtn && moveLocationMode) moveLocationSaveBtn.disabled = !pendingLngLat;
+      });
   }
 
   function updateBackLink(recordId) {
@@ -248,9 +388,7 @@
     const taxon = record.taxon || '';
     const options = opts || {};
     const taxonHtml = taxon.trim()
-      ? '<div class="wr-desc"><small class="text-muted">Taxon: ' +
-        taxon.trim() +
-        '</small></div>'
+      ? '<span class="wr-sep">·</span><span class="wr-taxon">' + taxon.trim() + '</span>'
       : '';
     const assessClass = record.has_assessment
       ? 'wr-popup-btn assess has-assessment'
@@ -278,12 +416,14 @@
 
     return (
       '<div class="wr-popup">' +
-      '<div><a href="' +
+      '<div class="wr-header">' +
+      '<a href="' +
       detailUrl +
       '" class="wr-title">' +
       displayLabel +
-      '</a></div>' +
+      '</a>' +
       taxonHtml +
+      '</div>' +
       buildPhotosHtml(record, state) +
       '<div class="wr-popup-actions">' +
       '<button type="button" class="wr-popup-btn photo" data-action="capture" data-record-id="' +
@@ -298,9 +438,11 @@
       record.id +
       '" title="Zásahy"><i class="bi bi-tools"></i></button>' +
       addToProjectButtonHtml +
-      '<a class="wr-popup-btn edit" href="/tracker/' +
-      record.id +
-      '/edit/" title="Upravit úkon"><i class="bi bi-pencil-square"></i></a>' +
+      (record.can_edit && getSetLocationUrl(record.id)
+        ? '<button type="button" class="wr-popup-btn move-location" data-action="move-location" data-record-id="' +
+          record.id +
+          '" title="Upravit polohu"><i class="bi bi-geo-alt"></i></button>'
+        : '') +
       '</div>' +
       addToProjectMessageHtml +
       '</div>'
@@ -344,6 +486,11 @@
     );
   }
 
+  function renderPanelActions(record) {
+    if (!workrecordPanelActions) return;
+    workrecordPanelActions.innerHTML = '';
+  }
+
   function renderTreePanel(record, state) {
     if (!treePanel || !record) return;
     if (currentWorkRecordId !== Number(record.id)) return;
@@ -352,10 +499,6 @@
     const html =
       '<div class="tree-panel-inner">' +
       '<div class="tree-panel-header">' +
-      '<span class="tree-panel-title">' +
-      getRecordDisplayLabel(record) +
-      '</span>' +
-      '<button type="button" class="tree-panel-close" aria-label="Zavřít detail stromu">&times;</button>' +
       '</div>' +
       buildPopupHtml(record, state || {}, { addToProjectEnabled: addToProjectEnabled }) +
       '</div>';
@@ -368,6 +511,7 @@
       });
     }
     treePanel.innerHTML = html;
+    renderPanelActions(record);
     if (debugMode) {
       const addBtn = treePanel.querySelector('[data-action="add_to_project"]');
       console.debug('map_ui renderTreePanel debug post', {
@@ -428,6 +572,13 @@
         ev.preventDefault();
         ev.stopPropagation();
         openInterventionModal(record.id);
+      });
+    });
+    treePanel.querySelectorAll('.wr-popup-btn[data-action="move-location"]').forEach(function (btn) {
+      btn.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        enterMoveLocationMode(record.id);
       });
     });
     const addButtons = treePanel.querySelectorAll('.wr-popup-btn[data-action="add_to_project"]');
@@ -566,6 +717,9 @@
     if (!Number.isFinite(idNum)) return;
     const prefill = opts || {};
 
+    if (moveLocationMode && moveTargetId && moveTargetId !== idNum) {
+      cancelMoveLocationMode();
+    }
     setCurrentWorkRecord(idNum);
     updateBackLink(idNum);
 
@@ -1270,6 +1424,11 @@
     menuButton = document.getElementById('mapMenuButton');
     controlsPanel = document.getElementById('mapControlsPanel');
     projectTitle = document.getElementById('mapProjectTitle');
+    workrecordPanelActions = document.getElementById('workrecord-panel-actions');
+    moveLocationBanner = document.getElementById('moveLocationBanner');
+    moveLocationCancelBtn = document.getElementById('moveLocationCancelBtn');
+    moveLocationSaveBtn = document.getElementById('moveLocationSaveBtn');
+    moveLocationMessage = document.getElementById('moveLocationMessage');
     const saveFab = document.getElementById('saveFab');
     if (cfg.disableLocationConfirmFab && saveFab) {
       saveFab.remove();
@@ -1307,6 +1466,27 @@
           event.preventDefault();
           closeTreePanel();
         }
+      });
+    }
+
+    if (workrecordPanelActions) {
+      workrecordPanelActions.addEventListener('click', function (event) {
+        const btn = event.target.closest('[data-action="move-location"]');
+        if (!btn) return;
+        event.preventDefault();
+        const recordId = btn.getAttribute('data-record-id');
+        enterMoveLocationMode(recordId);
+      });
+    }
+
+    if (moveLocationCancelBtn) {
+      moveLocationCancelBtn.addEventListener('click', function () {
+        cancelMoveLocationMode();
+      });
+    }
+    if (moveLocationSaveBtn) {
+      moveLocationSaveBtn.addEventListener('click', function () {
+        submitMoveLocation();
       });
     }
 
@@ -1557,6 +1737,15 @@
     initDom();
     window.openWorkRecordPanel = openWorkRecordPanel;
     window.closeWorkRecordPanel = closeTreePanel;
+    window.workTrackerMapUi = {
+      isMoveLocationMode: function () {
+        return moveLocationMode;
+      },
+      setPendingLngLat: setPendingMoveLocation,
+      enterMoveLocationMode: enterMoveLocationMode,
+      cancelMoveLocationMode: cancelMoveLocationMode,
+    };
+    updateMoveLocationBanner();
   }
 
   if (document.readyState === 'loading') {

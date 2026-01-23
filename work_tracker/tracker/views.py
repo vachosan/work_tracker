@@ -1710,6 +1710,7 @@ def workrecord_detail_api(request, pk):
         })
 
     has_assessment = work_record.assessments.exists()
+    can_edit = can_edit_project(request.user, work_record.project)
 
     return JsonResponse({
         "status": "ok",
@@ -1722,6 +1723,7 @@ def workrecord_detail_api(request, pk):
             "project_id": work_record.project_id,
             "lat": work_record.latitude,
             "lon": work_record.longitude,
+            "can_edit": can_edit,
             "has_assessment": has_assessment,
             "has_photos": bool(photos),
             "photos": photos,
@@ -1788,6 +1790,41 @@ def save_coordinates(request):
     record.longitude = lon
     record.save(update_fields=["latitude", "longitude"])
     return JsonResponse({"status": "ok"})
+
+
+@login_required
+@require_http_methods(["POST"])
+def workrecord_set_location(request, pk):
+    work_record = get_object_or_404(WorkRecord, pk=pk)
+    if not can_edit_project(request.user, work_record.project):
+        return JsonResponse({"error": "Forbidden"}, status=403)
+
+    payload = {}
+    if request.POST:
+        payload = request.POST
+    elif request.body:
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+        except json.JSONDecodeError:
+            return JsonResponse({"error": "Invalid payload"}, status=400)
+
+    def parse_float(value):
+        if value in (None, ""):
+            return None
+        try:
+            return float(str(value).replace(",", "."))
+        except (TypeError, ValueError):
+            return None
+
+    lat = parse_float(payload.get("latitude") or payload.get("lat"))
+    lon = parse_float(payload.get("longitude") or payload.get("lon"))
+    if lat is None or lon is None:
+        return JsonResponse({"error": "Invalid coordinates"}, status=400)
+
+    work_record.latitude = lat
+    work_record.longitude = lon
+    work_record.save(update_fields=["latitude", "longitude"])
+    return JsonResponse({"id": work_record.pk, "latitude": lat, "longitude": lon})
 
 
 @login_required

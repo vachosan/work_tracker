@@ -13,6 +13,15 @@
   </button>
 </div>
 
+<div id="moveLocationBanner" class="map-move-banner" aria-hidden="true">
+  <div class="map-move-banner__text">Klikni do mapy na nové místo</div>
+  <div id="moveLocationMessage" class="map-move-banner__message"></div>
+  <div class="map-move-banner__actions">
+    <button id="moveLocationCancelBtn" type="button" class="btn btn-outline-secondary btn-sm">Zrušit</button>
+    <button id="moveLocationSaveBtn" type="button" class="btn btn-primary btn-sm" disabled>Uložit</button>
+  </div>
+</div>
+
 <!-- Floating action buttons (bottom-right) -->
 <div id="map-fabs" class="d-flex flex-column align-items-end gap-2">
   {% if show_save_fab|default:True %}

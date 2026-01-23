@@ -53,6 +53,7 @@
     disableLocationConfirmFab: true,
     csrfToken: "{{ csrf_token }}",
     interventionNoteData: {{ intervention_note_data_json|default:"{}" | safe }},
+    workRecordSetLocationUrlTemplate: "{% url 'workrecord_set_location' 0 %}",
   };
   {% if request.GET.debug_map_ui %}
   window.DEBUG_MAP_UI = true;
@@ -122,6 +123,21 @@
       if (console && console.debug) {
         console.debug(...args);
       }
+    };
+    const isMoveLocationMode = () => {
+      return (
+        window.workTrackerMapUi &&
+        typeof window.workTrackerMapUi.isMoveLocationMode === 'function' &&
+        window.workTrackerMapUi.isMoveLocationMode()
+      );
+    };
+    const handleMoveLocationClick = (lngLat) => {
+      if (!isMoveLocationMode()) return false;
+      if (window.workTrackerMapUi && typeof window.workTrackerMapUi.setPendingLngLat === 'function') {
+        window.workTrackerMapUi.setPendingLngLat(lngLat);
+      }
+      updateMoveLocationMarker(lngLat);
+      return true;
     };
     const params = new URLSearchParams(window.location.search);
     const projectParam = params.get('project');
@@ -289,6 +305,62 @@
       }
       newRecordCoords = null;
     }
+
+    function updateMoveLocationMarker(lngLat) {
+      if (!lngLat) return;
+      const source = map.getSource('move-location-point');
+      if (!source) return;
+      source.setData({
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [lngLat.lng, lngLat.lat] },
+            properties: {},
+          },
+        ],
+      });
+    }
+
+    function clearMoveLocationMarker() {
+      const source = map.getSource('move-location-point');
+      if (source) {
+        source.setData({ type: 'FeatureCollection', features: [] });
+      }
+    }
+
+    function updateWorkrecordLocationInMap(recordId, lngLat) {
+      if (!recordId || !lngLat) return;
+      const coords = [lngLat.lng, lngLat.lat];
+      let updated = false;
+      if (workrecordFeatureCollection && Array.isArray(workrecordFeatureCollection.features)) {
+        workrecordFeatureCollection.features.forEach((feature) => {
+          if (!feature || !feature.properties) return;
+          if (Number(feature.properties.id) === Number(recordId)) {
+            if (feature.geometry && Array.isArray(feature.geometry.coordinates)) {
+              feature.geometry.coordinates = coords;
+              updated = true;
+            }
+          }
+        });
+      }
+      const target = workrecordFeatures.find((feature) => Number(feature.id) === Number(recordId));
+      if (target) {
+        target.coordinates = coords;
+      }
+      if (updated) {
+        const src = map.getSource('workrecords');
+        if (src && typeof src.setData === 'function') {
+          src.setData(workrecordFeatureCollection);
+        }
+        updateTreeCrownsSource(workrecordFeatureCollection);
+        renderLabelOverlay();
+      }
+    }
+
+    window.updateWorkrecordLocationInMap = updateWorkrecordLocationInMap;
+    window.setMoveLocationMarker = updateMoveLocationMarker;
+    window.clearMoveLocationMarker = clearMoveLocationMarker;
 
     function submitNewRecord() {
       if (!newRecordSaveBtn) return;
@@ -1136,6 +1208,24 @@
         },
       });
 
+      map.addSource('move-location-point', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+
+      map.addLayer({
+        id: 'move-location-point',
+        type: 'circle',
+        source: 'move-location-point',
+        paint: {
+          'circle-color': '#0ea5e9',
+          'circle-radius': 7,
+          'circle-opacity': 0.9,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#fff',
+        },
+      });
+
       const expandCluster = (feature) => {
         if (!feature) return;
         const rawClusterId = feature.properties && feature.properties.cluster_id;
@@ -1157,6 +1247,9 @@
       };
 
       map.on('click', 'workrecord-clusters', (event) => {
+        if (handleMoveLocationClick(event.lngLat)) {
+          return;
+        }
         const features = map.queryRenderedFeatures(event.point, { layers: ['workrecord-clusters'] });
         const feature = features && features[0];
         if (!feature) return;
@@ -1168,6 +1261,9 @@
         const features = map.queryRenderedFeatures(event.point, { layers: layerIds });
         const feature = features && features[0];
         if (!feature) return;
+        if (handleMoveLocationClick(event.lngLat)) {
+          return;
+        }
         const recordId = feature.properties && feature.properties.id;
         const label = feature.properties && feature.properties.label;
         if (recordId && window.openWorkRecordPanel) {
@@ -1202,6 +1298,9 @@
         map.on('mouseleave', CONTEXT_LAYER_ID, resetPointer);
       }
       map.on('click', (event) => {
+        if (handleMoveLocationClick(event.lngLat)) {
+          return;
+        }
         const bbox = [
           [event.point.x - HIT_TOLERANCE, event.point.y - HIT_TOLERANCE],
           [event.point.x + HIT_TOLERANCE, event.point.y + HIT_TOLERANCE],

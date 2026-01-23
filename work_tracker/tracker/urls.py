@@ -47,6 +47,11 @@ urlpatterns = [
     path("map-upload-photo/", views.map_upload_photo, name="map_upload_photo"),
     path("map-create-work-record/", views.map_create_work_record, name="map_create_work_record"),
     path(
+        "api/workrecord/<int:pk>/set_location/",
+        views.workrecord_set_location,
+        name="workrecord_set_location",
+    ),
+    path(
         "work-records/<int:pk>/assessment/",
         views.workrecord_assessment_api,
         name="workrecord_assessment_api",
