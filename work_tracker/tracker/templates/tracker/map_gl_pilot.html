@@ -109,6 +109,12 @@
       const num = Number(value);
       return Number.isFinite(num) ? num : null;
     };
+    const parseFloatWithComma = (value) => {
+      if (value === null || value === '') return null;
+      const normalized = String(value).replace(',', '.');
+      const num = Number(normalized);
+      return Number.isFinite(num) ? num : null;
+    };
     const logFetchDebug = (...args) => {
       if (!DEBUG_FETCH) return;
       if (console && console.debug) {
@@ -124,8 +130,8 @@
     const WORKRECORDS_GEOJSON_URL_WITH_PARAMS = dataParams.toString()
       ? `${WORKRECORDS_GEOJSON_URL}?${dataParams.toString()}`
       : WORKRECORDS_GEOJSON_URL;
-    const initialLat = toNumber(params.get('lat'));
-    const initialLon = toNumber(params.get('lon'));
+    const initialLat = parseFloatWithComma(params.get('lat'));
+    const initialLon = parseFloatWithComma(params.get('lon'));
     const initialZoom = toNumber(params.get('z'));
     const focusParam = toNumber(params.get('focus'));
     pendingFocusId = Number.isFinite(focusParam) ? focusParam : null;
@@ -520,18 +526,19 @@
       zoom: 13,
     });
     const applyInitialView = () => {
-      if (initialBbox) {
-        const [minLon, minLat, maxLon, maxLat] = initialBbox;
-        map.fitBounds([[minLon, minLat], [maxLon, maxLat]], {
-          padding: 40,
+      if (initialLat !== null && initialLon !== null) {
+        // lat/lon deep-link has priority over bbox
+        map.flyTo({
+          center: [initialLon, initialLat],
+          zoom: initialZoom !== null ? initialZoom : 18,
           duration: 800,
         });
         return;
       }
-      if (initialLat !== null && initialLon !== null) {
-        map.flyTo({
-          center: [initialLon, initialLat],
-          zoom: initialZoom !== null ? initialZoom : 16,
+      if (initialBbox) {
+        const [minLon, minLat, maxLon, maxLat] = initialBbox;
+        map.fitBounds([[minLon, minLat], [maxLon, maxLat]], {
+          padding: 40,
           duration: 800,
         });
       }
