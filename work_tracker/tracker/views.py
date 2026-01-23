@@ -566,11 +566,12 @@ def delete_work_record(request, pk):
         # smažeme všechny fotky
         photos = PhotoDocumentation.objects.filter(work_record=work_record)
         for photo in photos:
-            if photo.photo and os.path.exists(photo.photo.path):
+            if photo.photo:
+                # Nepouzivame .path; S3/django-storages nepodporuje absolutni cesty.
                 try:
-                    os.remove(photo.photo.path)
+                    photo.photo.delete(save=False)
                 except Exception as e:
-                    print(f"⚠️ Nepodařilo se smazat soubor {photo.photo.path}: {e}")
+                    print(f"⚠️ Nepodařilo se smazat soubor {photo.photo.name}: {e}")
             photo.delete()
 
         # smažeme samotný úkon
