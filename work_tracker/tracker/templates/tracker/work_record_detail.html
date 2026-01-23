@@ -12,8 +12,8 @@
   {% endwith %}
 
   <div class="d-flex gap-2 flex-shrink-0">
-    {% if active_project_id %}
-      <a href="{% url 'map_project_redirect' active_project_id %}?focus={{ work_record.id }}{% if work_record.latitude and work_record.longitude %}&lat={{ work_record.latitude }}&lon={{ work_record.longitude }}&z=18{% endif %}"
+    {% if active_project_id and work_record.latitude and work_record.longitude %}
+      <a href="{% url 'map_project_redirect' active_project_id %}?focus={{ work_record.id }}&lat={{ work_record.latitude }}&lon={{ work_record.longitude }}&z=18"
          class="btn btn-outline-success btn-icon-square" title="Mapa projektu">
         <i class="bi bi-geo-alt"></i>
       </a>
@@ -21,11 +21,6 @@
       <a href="{% url 'map_gl_pilot' %}?lat={{ work_record.latitude }}&lon={{ work_record.longitude }}&z=18&focus={{ work_record.id }}"
          class="btn btn-outline-success btn-icon-square" title="Zobrazit v mapØ">
         <i class="bi bi-geo-alt"></i>
-      </a>
-    {% else %}
-      <a href="{% url 'map_gl_pilot' %}?focus={{ work_record.id }}"
-         class="btn btn-outline-success btn-icon-square" title="Pýidat polohu">
-        <i class="bi bi-geo"></i>
       </a>
     {% endif %}
     {% if active_project_id %}

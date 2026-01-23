@@ -18,11 +18,6 @@
         <a class="btn btn-outline-primary btn-sm" href="{% url 'map_project_redirect' project.pk %}">
           <i class="bi bi-map"></i> Mapa projektu
         </a>
-        {% if is_member %}
-          <a href="{% url 'create_work_record_for_project' project.pk %}" class="btn btn-primary btn-sm">
-            <i class="bi bi-plus-lg"></i> Přidat strom / úkon
-          </a>
-        {% endif %}
         {% if can_edit_project %}
           <a href="{% url 'edit_project' project.pk %}" class="btn btn-outline-warning btn-sm">
             <i class="bi bi-pencil"></i> Upravit projekt

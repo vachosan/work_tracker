@@ -38,7 +38,7 @@
 <div id="map"></div>
 <div id="wr-label-overlay"></div>
 
-{% include "tracker/partials/map_ui.html" %}
+{% include "tracker/partials/map_ui.html" with show_save_fab=False %}
 
 <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@3.0.6/dist/pmtiles.js"></script>
@@ -50,6 +50,7 @@
     mapUploadPhotoUrl: "{% url 'map_upload_photo' %}",
     projectId: "{{ request.GET.project|default:'' }}",
     addToProjectUrlTemplate: "{% url 'project_tree_add' 0 0 %}",
+    disableLocationConfirmFab: true,
     csrfToken: "{{ csrf_token }}",
     interventionNoteData: {{ intervention_note_data_json|default:"{}" | safe }},
   };
@@ -63,6 +64,7 @@
 <script src="{% static 'js/map_ui.js' %}?v=dev1"></script>
 <script>
     document.addEventListener('DOMContentLoaded', () => {
+    document.body.classList.add('map-gl-pilot');
     if (!window.maplibregl) {
       console.error('MapLibre GL JS is not available.');
       return;

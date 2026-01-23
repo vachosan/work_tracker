@@ -7,6 +7,7 @@
     mapUploadPhotoUrl: null,
     projectId: null,
     addToProjectUrlTemplate: null,
+    disableLocationConfirmFab: false,
     csrfToken: null,
     interventionNoteData: {},
   };
@@ -93,6 +94,9 @@
     if (userCfg.addToProjectUrlTemplate) {
       cfg.addToProjectUrlTemplate = userCfg.addToProjectUrlTemplate;
     }
+    if (userCfg.disableLocationConfirmFab !== undefined && userCfg.disableLocationConfirmFab !== null) {
+      cfg.disableLocationConfirmFab = Boolean(userCfg.disableLocationConfirmFab);
+    }
     if (userCfg.csrfToken) {
       cfg.csrfToken = userCfg.csrfToken;
     }
@@ -103,6 +107,7 @@
       console.debug('map_ui config', {
         projectId: cfg.projectId,
         addToProjectUrlTemplate: cfg.addToProjectUrlTemplate,
+        disableLocationConfirmFab: cfg.disableLocationConfirmFab,
       });
     }
   }
@@ -1265,6 +1270,10 @@
     menuButton = document.getElementById('mapMenuButton');
     controlsPanel = document.getElementById('mapControlsPanel');
     projectTitle = document.getElementById('mapProjectTitle');
+    const saveFab = document.getElementById('saveFab');
+    if (cfg.disableLocationConfirmFab && saveFab) {
+      saveFab.remove();
+    }
     if (debugEnabled) {
       console.debug('map_ui dom', {
         bottomPanel: !!bottomPanel,

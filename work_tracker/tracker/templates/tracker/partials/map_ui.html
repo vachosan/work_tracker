@@ -15,9 +15,12 @@
 
 <!-- Floating action buttons (bottom-right) -->
 <div id="map-fabs" class="d-flex flex-column align-items-end gap-2">
-  <button id="saveFab" class="btn btn-success rounded-circle shadow fab-btn" type="button" title="Uložit polohu" aria-label="Uložit polohu" disabled>
-    <i class="bi bi-check-lg"></i>
-  </button>
+  {% if show_save_fab|default:True %}
+    <!-- Save-location FAB (hidden in MapLibre pilot). -->
+    <button id="saveFab" class="btn btn-success rounded-circle shadow fab-btn" type="button" title="Uložit polohu" aria-label="Uložit polohu" disabled>
+      <i class="bi bi-check-lg"></i>
+    </button>
+  {% endif %}
   <button id="createFab" class="btn btn-primary rounded-circle shadow fab-btn" type="button" title="Přidat záznam" aria-label="Přidat záznam">
     <i class="bi bi-plus-lg"></i>
   </button>
