@@ -169,8 +169,13 @@
             <div id="interventionNoteHintModal" class="form-text text-muted"></div>
           </div>
           <div class="col-12">
-            {{ intervention_form.description.label_tag }}
-            {{ intervention_form.description }}
+            <button type="button" class="btn btn-link btn-sm p-0 text-muted" id="interventionDescriptionToggle">
+              Přidat popis
+            </button>
+            <div id="interventionDescriptionWrap" class="collapse mt-1">
+              {{ intervention_form.description.label_tag }}
+              {{ intervention_form.description }}
+            </div>
           </div>
           <div class="col-6">
             {{ intervention_form.urgency.label_tag }}

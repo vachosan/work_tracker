@@ -780,6 +780,7 @@ def tree_intervention_api(request, tree_id):
             'status': obj.get_status_display(),
             'status_code': obj.status,
             'status_note': obj.status_note or '',
+            'description': obj.description or '',
             'transition_url': reverse('tree_intervention_transition', args=[obj.pk]),
             'created_at': obj.created_at.isoformat() if obj.created_at else None,
             'handed_over_for_check_at': (

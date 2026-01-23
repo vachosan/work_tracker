@@ -85,6 +85,9 @@
   let interventionFormErrors;
   let interventionTypeSelect;
   let interventionListContainer;
+  let interventionDescriptionWrap;
+  let interventionDescriptionToggle;
+  let interventionDescriptionInput;
   function mergeConfig() {
     const userCfg = window.workTrackerMapUiConfig || {};
     if (!userCfg || typeof userCfg !== 'object') return;
@@ -1128,6 +1131,23 @@
     }
   }
 
+  function setInterventionDescriptionOpen(open) {
+    if (!interventionDescriptionWrap || !interventionDescriptionToggle) return;
+    interventionDescriptionWrap.classList.toggle('show', !!open);
+    interventionDescriptionToggle.textContent = open ? 'Skrýt popis' : 'Přidat popis';
+    if (open && interventionDescriptionInput) {
+      interventionDescriptionInput.focus();
+    }
+  }
+
+  function syncInterventionDescriptionVisibility() {
+    const hasText =
+      interventionDescriptionInput &&
+      interventionDescriptionInput.value &&
+      interventionDescriptionInput.value.trim();
+    setInterventionDescriptionOpen(!!hasText);
+  }
+
   function getInterventions(recordId) {
     const rec = recordCache[Number(recordId)] || {};
     return Array.isArray(rec.interventions) ? rec.interventions.slice() : [];
@@ -1141,6 +1161,9 @@
 
   function renderInterventionList(items) {
     if (!interventionListContainer) return;
+    if (debugEnabled && items && items.length) {
+      console.debug('map_ui interventions keys', Object.keys(items[0] || {}));
+    }
     if (!items || !items.length) {
       interventionListContainer.innerHTML =
         '<p class="text-muted mb-1">Zatím nejsou zadány žádné zásahy.</p>';
@@ -1228,9 +1251,9 @@
         const actions = item.allowed_actions || {};
         if (!isHistory && actions.mark_done) {
           sectionHtml +=
-            '<button type="button" class="btn btn-outline-success btn-sm me-1 py-0 px-2" data-action="transition" data-target="done_pending_owner" data-transition-url="' + transitionUrl + '" data-intervention-id="' +
+            '<button type="button" class="btn btn-outline-success btn-sm me-1 py-0 px-1 intervention-done-btn" data-action="transition" data-target="done_pending_owner" data-transition-url="' + transitionUrl + '" data-intervention-id="' +
             item.id +
-            '">Označit hotovo</button>';
+            '" title="Označit hotovo"><i class="bi bi-check"></i></button>';
         }
         if (!isHistory && actions.confirm) {
           sectionHtml +=
@@ -1246,6 +1269,13 @@
         }
         sectionHtml += '</div></td>';
         sectionHtml += '</tr>';
+        if (item.description) {
+          sectionHtml +=
+            '<tr class="intervention-note-row"><td colspan="5">' +
+            '<div class="text-muted small mt-1 intervention-note">' +
+            item.description +
+            '</div></td></tr>';
+        }
       });
       sectionHtml += '</tbody></table></div>';
       if (isHistory) {
@@ -1335,6 +1365,7 @@
     }
     setInterventionMessage('', true);
     updateInterventionNoteHint();
+    syncInterventionDescriptionVisibility();
     loadInterventionsForRecord(recordId);
     interventionModal.classList.add('active');
   }
@@ -1380,6 +1411,7 @@
           if (interventionTreeIdInput && rid) {
             interventionTreeIdInput.value = rid;
           }
+          syncInterventionDescriptionVisibility();
         }
         const current = rid ? getInterventions(rid) : [];
         if (data && data.intervention && rid) {
@@ -1673,6 +1705,9 @@
     interventionFormErrors = document.getElementById('interventionFormErrors');
     interventionTypeSelect = document.getElementById('id_intervention_type');
     interventionListContainer = document.getElementById('intervention-list');
+    interventionDescriptionWrap = document.getElementById('interventionDescriptionWrap');
+    interventionDescriptionToggle = document.getElementById('interventionDescriptionToggle');
+    interventionDescriptionInput = document.getElementById('id_description');
     if (interventionModal) {
       interventionApiTemplate = interventionModal.dataset.apiTemplate || '';
     }
@@ -1700,6 +1735,15 @@
       if (interventionTypeSelect) {
         interventionTypeSelect.addEventListener('change', updateInterventionNoteHint);
       }
+    }
+    if (interventionDescriptionToggle) {
+      interventionDescriptionToggle.addEventListener('click', function () {
+        const isOpen =
+          interventionDescriptionWrap &&
+          interventionDescriptionWrap.classList.contains('show');
+        setInterventionDescriptionOpen(!isOpen);
+      });
+      setInterventionDescriptionOpen(false);
     }
     if (interventionListContainer) {
       interventionListContainer.addEventListener('click', function (e) {

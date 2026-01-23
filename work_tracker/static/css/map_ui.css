@@ -378,6 +378,12 @@
   #captureCommentWrap.collapse.show {
     display: block;
   }
+  #interventionDescriptionWrap.collapse {
+    display: none;
+  }
+  #interventionDescriptionWrap.collapse.show {
+    display: block;
+  }
   #newRecordCloseBtn {
     width: 28px;
     height: 28px;
@@ -445,6 +451,16 @@
   }
   .interventions-actions .btn {
     white-space: nowrap;
+  }
+  .intervention-done-btn {
+    font-size: 0.75rem !important;
+    line-height: 1.1 !important;
+    padding: 2px 6px !important;
+    border-radius: 999px !important;
+    min-width: 26px;
+  }
+  .intervention-note {
+    margin-top: 2px;
   }
   .intervention-status-badge {
     white-space: normal;
