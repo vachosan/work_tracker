@@ -1494,8 +1494,18 @@ def workrecords_geojson(request):
         "-assessed_at",
         "-id",
     )
+    approved_interventions = TreeIntervention.objects.filter(
+        tree=OuterRef("pk"),
+        status="completed",
+    )
+    done_interventions = TreeIntervention.objects.filter(
+        tree=OuterRef("pk"),
+        status="done_pending_owner",
+    )
     qs = qs.annotate(
-        crown_width_m=Subquery(latest_assessment.values("crown_width_m")[:1])
+        crown_width_m=Subquery(latest_assessment.values("crown_width_m")[:1]),
+        has_approved_intervention=Exists(approved_interventions),
+        has_done_intervention=Exists(done_interventions),
     )
 
     # TODO: this pilot endpoint will be replaced by the registry-driven map feed later.
@@ -1525,9 +1535,16 @@ def workrecords_geojson(request):
         else:
             label = wr.generate_internal_code() or f"WR {wr.id}"
 
+        intervention_stage = "none"
+        if getattr(wr, "has_approved_intervention", False):
+            intervention_stage = "approved"
+        elif getattr(wr, "has_done_intervention", False):
+            intervention_stage = "done"
+
         features.append(
             {
                 "type": "Feature",
+                "id": wr.id,
                 "geometry": {
                     "type": "Point",
                     "coordinates": [wr.longitude, wr.latitude],
@@ -1536,6 +1553,7 @@ def workrecords_geojson(request):
                     "id": wr.id,
                     "label": label,
                     "crown_width_m": to_float(getattr(wr, "crown_width_m", None)),
+                    "intervention_stage": intervention_stage,
                 },
             }
         )

@@ -92,6 +92,7 @@
     let contextFeatures = [];
     let selectedLat = null;
     let selectedLon = null;
+    let selectedRecordId = null;
     let newRecordCoords = null;
     let pendingFocusId = null;
     const WORKRECORD_POINT_RADIUS = 5;
@@ -99,6 +100,9 @@
     const WORKRECORD_POINT_STROKE_COLOR = '#fff';
     const WORKRECORD_POINT_OPACITY = 1;
     const PROJECT_POINT_COLOR = '#f97316';
+    const WORKRECORD_DONE_COLOR = '#0ea5e9';
+    const WORKRECORD_APPROVED_COLOR = '#10b981';
+    const WORKRECORD_SELECTED_COLOR = '#111827';
     const CONTEXT_POINT_COLOR = '#888';
     const CONTEXT_POINT_OPACITY = 0.7;
     const CROWN_DIAMETER_KEYS = ['crown_diameter_m', 'crown_width_m', 'diameter_crown', 'crown_diameter'];
@@ -106,6 +110,16 @@
     const WORKRECORDS_DEBOUNCE_MS = 200;
     // DEBUG_FETCH = true logs workrecords/context fetch URL + bbox, feature counts, and aborts.
     const DEBUG_FETCH = false;
+    const WORKRECORD_COLOR_EXPRESSION = [
+      'case',
+      ['boolean', ['feature-state', 'selected'], false],
+      WORKRECORD_SELECTED_COLOR,
+      ['==', ['get', 'intervention_stage'], 'approved'],
+      WORKRECORD_APPROVED_COLOR,
+      ['==', ['get', 'intervention_stage'], 'done'],
+      WORKRECORD_DONE_COLOR,
+      PROJECT_POINT_COLOR,
+    ];
 
     const toNumber = (value) => {
       if (value === null || value === '') return null;
@@ -420,11 +434,12 @@
             selectedLon = null;
             const rec = data.record;
             const label = rec.external_tree_id || rec.title || `WR ${rec.id}`;
-            const feature = {
-              type: 'Feature',
-              geometry: { type: 'Point', coordinates: [rec.lon, rec.lat] },
-              properties: { id: rec.id, label },
-            };
+              const feature = {
+                type: 'Feature',
+                id: rec.id,
+                geometry: { type: 'Point', coordinates: [rec.lon, rec.lat] },
+                properties: { id: rec.id, label },
+              };
             workrecordFeatures.push({ id: rec.id, label, coordinates: [rec.lon, rec.lat] });
             if (!workrecordFeatureCollection) {
               workrecordFeatureCollection = { type: 'FeatureCollection', features: [] };
@@ -599,6 +614,32 @@
       center: [17.2509, 49.5938], // Olomouc
       zoom: 13,
     });
+    const setSelectedRecordId = (recordId) => {
+      const nextId = Number(recordId);
+      const normalizedId = Number.isFinite(nextId) ? nextId : null;
+      if (normalizedId === selectedRecordId) return;
+      if (selectedRecordId && map.getSource('workrecords')) {
+        try {
+          map.setFeatureState(
+            { source: 'workrecords', id: selectedRecordId },
+            { selected: false }
+          );
+        } catch (err) {
+          logFetchDebug('selected state clear failed', err);
+        }
+      }
+      selectedRecordId = normalizedId;
+      if (selectedRecordId && map.getSource('workrecords')) {
+        try {
+          map.setFeatureState(
+            { source: 'workrecords', id: selectedRecordId },
+            { selected: true }
+          );
+        } catch (err) {
+          logFetchDebug('selected state set failed', err);
+        }
+      }
+    };
     const applyInitialView = () => {
       if (initialLat !== null && initialLon !== null) {
         // lat/lon deep-link has priority over bbox
@@ -632,6 +673,7 @@
         zoom: Math.max(map.getZoom(), 18),
         duration: 600,
       });
+      setSelectedRecordId(recordId);
       if (window.openWorkRecordPanel) {
         window.openWorkRecordPanel(target.id, { label: target.label });
       }
@@ -1047,6 +1089,9 @@
             }
             updateTreeCrownsSource(fc);
             renderLabelOverlay();
+            if (selectedRecordId) {
+              setSelectedRecordId(selectedRecordId);
+            }
             applyInitialFocus();
           })
           .catch(err => {
@@ -1165,18 +1210,18 @@
         },
       });
 
-      map.addLayer({
-        id: 'workrecord-unclustered',
-        type: 'circle',
-        source: 'workrecords',
-        filter: ['!', ['has', 'point_count']],
-        paint: {
-          'circle-color': PROJECT_POINT_COLOR,
-          'circle-radius': WORKRECORD_POINT_RADIUS,
-          'circle-opacity': WORKRECORD_POINT_OPACITY,
-          'circle-stroke-width': WORKRECORD_POINT_STROKE_WIDTH,
-          'circle-stroke-color': WORKRECORD_POINT_STROKE_COLOR,
-        },
+        map.addLayer({
+          id: 'workrecord-unclustered',
+          type: 'circle',
+          source: 'workrecords',
+          filter: ['!', ['has', 'point_count']],
+          paint: {
+            'circle-color': WORKRECORD_COLOR_EXPRESSION,
+            'circle-radius': WORKRECORD_POINT_RADIUS,
+            'circle-opacity': WORKRECORD_POINT_OPACITY,
+            'circle-stroke-width': WORKRECORD_POINT_STROKE_WIDTH,
+            'circle-stroke-color': WORKRECORD_POINT_STROKE_COLOR,
+          },
       });
 
       map.addLayer({
@@ -1269,6 +1314,7 @@
         if (recordId && window.openWorkRecordPanel) {
           const layerId = feature.layer && feature.layer.id;
           const inProject = layerId ? layerId !== CONTEXT_LAYER_ID : undefined;
+          setSelectedRecordId(recordId);
           window.openWorkRecordPanel(recordId, { label, inProject });
         }
       };
@@ -1329,6 +1375,7 @@
         if (window.closeWorkRecordPanel) {
           window.closeWorkRecordPanel();
         }
+        setSelectedRecordId(null);
         selectedLat = lngLat.lat.toFixed(7);
         selectedLon = lngLat.lng.toFixed(7);
         window.selectedLat = selectedLat;

@@ -1336,16 +1336,19 @@
       headers: headers,
       body: payload.toString(),
     })
-      .then(function (resp) {
-        if (!resp.ok) {
-          return resp.text().then(function (text) {
-            console.error('transition failed', { status: resp.status, body: text });
-            setInterventionMessage('Nepodařilo se změnit stav zásahu.', true);
-            throw new Error('transition failed');
-          });
-        }
-        loadInterventionsForRecord(recordId);
-      })
+        .then(function (resp) {
+          if (!resp.ok) {
+            return resp.text().then(function (text) {
+              console.error('transition failed', { status: resp.status, body: text });
+              setInterventionMessage('Nepodařilo se změnit stav zásahu.', true);
+              throw new Error('transition failed');
+            });
+          }
+          loadInterventionsForRecord(recordId);
+          if (typeof window.refreshProjectWorkrecords === 'function') {
+            window.refreshProjectWorkrecords();
+          }
+        })
       .catch(function () {
         setInterventionMessage('Nepodařilo se změnit stav zásahu.', true);
       })
