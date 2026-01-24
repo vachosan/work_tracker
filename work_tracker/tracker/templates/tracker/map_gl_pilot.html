@@ -103,6 +103,7 @@
     const WORKRECORD_DONE_COLOR = '#0ea5e9';
     const WORKRECORD_APPROVED_COLOR = '#10b981';
     const WORKRECORD_SELECTED_COLOR = '#111827';
+    const VEGETATION_TYPES = ['TREE', 'SHRUB', 'HEDGE'];
     const CONTEXT_POINT_COLOR = '#888';
     const CONTEXT_POINT_OPACITY = 0.7;
     const CROWN_DIAMETER_KEYS = ['crown_diameter_m', 'crown_width_m', 'diameter_crown', 'crown_diameter'];
@@ -119,6 +120,22 @@
       ['==', ['get', 'intervention_stage'], 'done'],
       WORKRECORD_DONE_COLOR,
       PROJECT_POINT_COLOR,
+    ];
+    const WORKRECORD_STROKE_WIDTH_EXPRESSION = [
+      'match',
+      ['get', 'vegetation_type'],
+      'SHRUB',
+      2,
+      'HEDGE',
+      2,
+      WORKRECORD_POINT_STROKE_WIDTH,
+    ];
+    const WORKRECORD_STROKE_COLOR_EXPRESSION = [
+      'match',
+      ['get', 'vegetation_type'],
+      'HEDGE',
+      '#111827',
+      WORKRECORD_POINT_STROKE_COLOR,
     ];
 
     const toNumber = (value) => {
@@ -185,6 +202,7 @@
 
     const newRecordModal = document.getElementById('newRecordModal');
     const newRecordTitleInput = document.getElementById('newRecordTitle');
+    let newRecordVegetationSelect = null;
     const newRecordSaveBtn = document.getElementById('newRecordSaveBtn');
     const newRecordCancelBtn = document.getElementById('newRecordCancelBtn');
     const newRecordCloseBtn = document.getElementById('newRecordCloseBtn');
@@ -264,12 +282,37 @@
 
     function resetNewRecordForm() {
       if (newRecordTitleInput) newRecordTitleInput.value = '';
+      if (newRecordVegetationSelect) newRecordVegetationSelect.value = 'TREE';
       if (taxonDisplayInput) taxonDisplayInput.value = '';
       if (taxonCzechInput) taxonCzechInput.value = '';
       if (taxonLatinInput) taxonLatinInput.value = '';
       if (taxonGbifKeyInput) taxonGbifKeyInput.value = '';
       hideTaxonSuggestions();
     }
+
+    function ensureNewRecordVegetationSelect() {
+      if (!newRecordModal) return;
+      const stack = newRecordModal.querySelector('.vstack');
+      if (!stack || stack.querySelector('#newRecordVegetationType')) return;
+      const wrap = document.createElement('div');
+      wrap.innerHTML = `
+        <label class="form-label mb-1" for="newRecordVegetationType">Typ vegetace</label>
+        <select id="newRecordVegetationType" class="form-select form-select-sm">
+          <option value="TREE" selected>Strom</option>
+          <option value="SHRUB">Keř</option>
+          <option value="HEDGE">Živý plot</option>
+        </select>
+      `;
+      const titleBlock = stack.firstElementChild;
+      if (titleBlock && titleBlock.nextSibling) {
+        stack.insertBefore(wrap, titleBlock.nextSibling);
+      } else {
+        stack.appendChild(wrap);
+      }
+      newRecordVegetationSelect = wrap.querySelector('#newRecordVegetationType');
+    }
+
+    ensureNewRecordVegetationSelect();
 
     function openNewRecordModal() {
       if (!newRecordModal) return;
@@ -347,8 +390,8 @@
       if (!recordId || !lngLat) return;
       const coords = [lngLat.lng, lngLat.lat];
       let updated = false;
-      if (workrecordFeatureCollection && Array.isArray(workrecordFeatureCollection.features)) {
-        workrecordFeatureCollection.features.forEach((feature) => {
+      if (workrecordFeatureCollectionRaw && Array.isArray(workrecordFeatureCollectionRaw.features)) {
+        workrecordFeatureCollectionRaw.features.forEach((feature) => {
           if (!feature || !feature.properties) return;
           if (Number(feature.properties.id) === Number(recordId)) {
             if (feature.geometry && Array.isArray(feature.geometry.coordinates)) {
@@ -358,17 +401,8 @@
           }
         });
       }
-      const target = workrecordFeatures.find((feature) => Number(feature.id) === Number(recordId));
-      if (target) {
-        target.coordinates = coords;
-      }
       if (updated) {
-        const src = map.getSource('workrecords');
-        if (src && typeof src.setData === 'function') {
-          src.setData(workrecordFeatureCollection);
-        }
-        updateTreeCrownsSource(workrecordFeatureCollection);
-        renderLabelOverlay();
+        applyVegetationFilters();
       }
     }
 
@@ -391,6 +425,9 @@
       const gbifKeyValue = taxonGbifKeyInput ? taxonGbifKeyInput.value.trim() : '';
       const projectId = projectSelect ? projectSelect.value : '';
       const taxonValue = latinTaxon || displayTaxon;
+      const vegetationType = newRecordVegetationSelect
+        ? newRecordVegetationSelect.value
+        : 'TREE';
 
       newRecordSaveBtn.disabled = true;
       const payload = new URLSearchParams({
@@ -399,6 +436,7 @@
         taxon_czech: czechTaxon,
         taxon_latin: latinTaxon,
         taxon_gbif_key: gbifKeyValue,
+        vegetation_type: vegetationType,
         date: '',
         project_id: projectId && projectId !== 'none' ? projectId : '',
         latitude: selectedLat,
@@ -433,24 +471,20 @@
             selectedLat = null;
             selectedLon = null;
             const rec = data.record;
-            const label = rec.external_tree_id || rec.title || `WR ${rec.id}`;
+            const label = rec.display_label || rec.passport_code || rec.external_tree_id || rec.title || `WR ${rec.id}`;
+            const mapLabel = rec.map_label || label;
+            const vegetationType = rec.vegetation_type || 'TREE';
               const feature = {
                 type: 'Feature',
                 id: rec.id,
                 geometry: { type: 'Point', coordinates: [rec.lon, rec.lat] },
-                properties: { id: rec.id, label },
+                properties: { id: rec.id, label, map_label: mapLabel, vegetation_type: vegetationType },
               };
-            workrecordFeatures.push({ id: rec.id, label, coordinates: [rec.lon, rec.lat] });
-            if (!workrecordFeatureCollection) {
-              workrecordFeatureCollection = { type: 'FeatureCollection', features: [] };
+            if (!workrecordFeatureCollectionRaw) {
+              workrecordFeatureCollectionRaw = { type: 'FeatureCollection', features: [] };
             }
-            workrecordFeatureCollection.features.push(feature);
-            const src = map.getSource('workrecords');
-            if (src && typeof src.setData === 'function') {
-              src.setData(workrecordFeatureCollection);
-            }
-            updateTreeCrownsSource(workrecordFeatureCollection);
-            renderLabelOverlay();
+            workrecordFeatureCollectionRaw.features.push(feature);
+            applyVegetationFilters();
             if (window.openWorkRecordPanel) {
               window.openWorkRecordPanel(data.record.id);
             }
@@ -501,6 +535,37 @@
       }
       return value;
     };
+
+    const ensureVegetationFilterControls = () => {
+      const panel = document.getElementById('mapControlsPanel');
+      if (!panel) return;
+      const body = panel.querySelector('.map-controls-body .d-flex');
+      if (!body || body.querySelector('#vegTreeCheckbox')) return;
+      const block = document.createElement('div');
+      block.className = 'd-flex flex-column gap-1';
+      block.innerHTML = `
+        <div class="small fw-semibold">Vegetace</div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="vegTreeCheckbox" checked>
+          <label class="form-check-label small" for="vegTreeCheckbox">Stromy</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="vegShrubCheckbox" checked>
+          <label class="form-check-label small" for="vegShrubCheckbox">Keře</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="vegHedgeCheckbox" checked>
+          <label class="form-check-label small" for="vegHedgeCheckbox">Živé ploty</label>
+        </div>
+      `;
+      body.appendChild(block);
+    };
+
+    ensureVegetationFilterControls();
+    const vegTreeCheckbox = document.getElementById('vegTreeCheckbox');
+    const vegShrubCheckbox = document.getElementById('vegShrubCheckbox');
+    const vegHedgeCheckbox = document.getElementById('vegHedgeCheckbox');
+    let enabledVegetationTypes = new Set(VEGETATION_TYPES);
 
     const getCrownDiameterM = (properties) => {
       if (!properties) return null;
@@ -613,6 +678,14 @@
       style,
       center: [17.2509, 49.5938], // Olomouc
       zoom: 13,
+    });
+    const handleVegetationFilterChange = () => {
+      if (!map) return;
+      applyVegetationFilters();
+    };
+    [vegTreeCheckbox, vegShrubCheckbox, vegHedgeCheckbox].forEach((checkbox) => {
+      if (!checkbox) return;
+      checkbox.addEventListener('change', handleVegetationFilterChange);
     });
     const setSelectedRecordId = (recordId) => {
       const nextId = Number(recordId);
@@ -748,20 +821,10 @@
         fetch(url)
           .then(resp => resp.json())
           .then(fc => {
-            const features = Array.isArray(fc && fc.features) ? fc.features : [];
-            contextFeatures = features
-            .map(feature => {
-              if (!feature || !feature.geometry || !feature.properties) return null;
-              const coords = feature.geometry.coordinates;
-              if (!Array.isArray(coords) || coords.length < 2) return null;
-              return {
-                id: feature.properties.id,
-                label: feature.properties.label,
-                coordinates: coords,
-              };
-            })
-            .filter(Boolean);
-            source.setData(fc);
+            contextFeatureCollectionRaw = fc;
+            const filtered = filterFeatureCollection(fc);
+            contextFeatures = rebuildWorkrecordFeatures(filtered.features);
+            source.setData(filtered);
             renderLabelOverlay();
           })
           .catch(err => logFetchDebug('context fetch error', err));
@@ -800,6 +863,70 @@
     const setLayerVisibility = (layerId, visible) => {
       if (!map.getLayer(layerId)) return;
       map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+    };
+    const normalizeVegetationType = (value) => value || 'TREE';
+    const isVegetationVisible = (value) => enabledVegetationTypes.has(normalizeVegetationType(value));
+    const filterFeatureCollection = (fc) => {
+      if (!fc || fc.type !== 'FeatureCollection') {
+        return { type: 'FeatureCollection', features: [] };
+      }
+      const features = Array.isArray(fc.features) ? fc.features : [];
+      const filtered = features.filter((feature) => {
+        const typeValue = feature && feature.properties ? feature.properties.vegetation_type : null;
+        return isVegetationVisible(typeValue);
+      });
+      return { type: 'FeatureCollection', features: filtered };
+    };
+    let workrecordFeatureCollectionRaw = null;
+    let contextFeatureCollectionRaw = null;
+    const rebuildWorkrecordFeatures = (features) => {
+      return (features || [])
+        .map(feature => {
+          if (!feature || !feature.geometry || !feature.properties) return null;
+          const coords = feature.geometry.coordinates;
+          if (!Array.isArray(coords) || coords.length < 2) return null;
+          return {
+            id: feature.properties.id,
+            label: feature.properties.map_label || feature.properties.label,
+            coordinates: coords,
+          };
+        })
+        .filter(Boolean);
+    };
+    const syncVegetationFilters = () => {
+      const next = new Set();
+      const treeEnabled = vegTreeCheckbox ? vegTreeCheckbox.checked : true;
+      const shrubEnabled = vegShrubCheckbox ? vegShrubCheckbox.checked : true;
+      const hedgeEnabled = vegHedgeCheckbox ? vegHedgeCheckbox.checked : true;
+      if (treeEnabled) next.add('TREE');
+      if (shrubEnabled) next.add('SHRUB');
+      if (hedgeEnabled) next.add('HEDGE');
+      enabledVegetationTypes = next.size ? next : new Set(VEGETATION_TYPES);
+    };
+    const applyVegetationFilters = () => {
+      syncVegetationFilters();
+      const src = map.getSource('workrecords');
+      if (src && workrecordFeatureCollectionRaw) {
+        const filtered = filterFeatureCollection(workrecordFeatureCollectionRaw);
+        workrecordFeatureCollection = filtered;
+        workrecordFeatures = rebuildWorkrecordFeatures(filtered.features);
+        src.setData(filtered);
+        updateTreeCrownsSource(filtered);
+        renderLabelOverlay();
+        if (
+          selectedRecordId &&
+          !filtered.features.some(f => Number(f && f.properties ? f.properties.id : null) === Number(selectedRecordId))
+        ) {
+          setSelectedRecordId(null);
+        }
+      }
+      const contextSrc = map.getSource(CONTEXT_SOURCE_ID);
+      if (contextSrc && contextFeatureCollectionRaw) {
+        const filtered = filterFeatureCollection(contextFeatureCollectionRaw);
+        contextFeatures = rebuildWorkrecordFeatures(filtered.features);
+        contextSrc.setData(filtered);
+        renderLabelOverlay();
+      }
     };
 
     const renderLabelOverlay = () => {
@@ -899,6 +1026,22 @@
     bindLabelOverlayHandlers();
 
       map.on('load', () => {
+        const squareSize = 24;
+        const squareInner = 14;
+        const canvas = document.createElement('canvas');
+        canvas.width = squareSize;
+        canvas.height = squareSize;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, squareSize, squareSize);
+          ctx.fillStyle = '#ffffff';
+          const offset = Math.floor((squareSize - squareInner) / 2);
+          ctx.fillRect(offset, offset, squareInner, squareInner);
+          const imageData = ctx.getImageData(0, 0, squareSize, squareSize);
+          if (!map.hasImage('wr-square')) {
+            map.addImage('wr-square', imageData, { sdf: true });
+          }
+        }
         applyInitialView();
         const pm = new window.pmtiles.PMTiles('/tiles/cz.pmtiles');
         pm.getMetadata()
@@ -1070,24 +1213,15 @@
             const features = Array.isArray(fc && fc.features) ? fc.features : [];
             logFetchDebug('workrecords features', features.length);
             logFetchDebug('workrecords sample labels', features.slice(0, 3).map(f => f && f.properties ? f.properties.label : null));
-            workrecordFeatures = features
-              .map(feature => {
-                if (!feature || !feature.geometry || !feature.properties) return null;
-                const coords = feature.geometry.coordinates;
-                if (!Array.isArray(coords) || coords.length < 2) return null;
-                return {
-                  id: feature.properties.id,
-                  label: feature.properties.label,
-                  coordinates: coords,
-                };
-              })
-              .filter(Boolean);
-            workrecordFeatureCollection = fc;
+            workrecordFeatureCollectionRaw = fc;
+            const filtered = filterFeatureCollection(fc);
+            workrecordFeatures = rebuildWorkrecordFeatures(filtered.features);
+            workrecordFeatureCollection = filtered;
             const src = map.getSource('workrecords');
             if (src && typeof src.setData === 'function') {
-              src.setData(fc);
+              src.setData(filtered);
             }
-            updateTreeCrownsSource(fc);
+            updateTreeCrownsSource(filtered);
             renderLabelOverlay();
             if (selectedRecordId) {
               setSelectedRecordId(selectedRecordId);
@@ -1117,8 +1251,8 @@
             'circle-color': CONTEXT_POINT_COLOR,
             'circle-radius': WORKRECORD_POINT_RADIUS,
             'circle-opacity': CONTEXT_POINT_OPACITY,
-            'circle-stroke-width': WORKRECORD_POINT_STROKE_WIDTH,
-            'circle-stroke-color': WORKRECORD_POINT_STROKE_COLOR,
+            'circle-stroke-width': WORKRECORD_STROKE_WIDTH_EXPRESSION,
+            'circle-stroke-color': WORKRECORD_STROKE_COLOR_EXPRESSION,
           },
           layout: {
             visibility: 'none',
@@ -1210,18 +1344,84 @@
         },
       });
 
-        map.addLayer({
-          id: 'workrecord-unclustered',
-          type: 'circle',
-          source: 'workrecords',
-          filter: ['!', ['has', 'point_count']],
-          paint: {
-            'circle-color': WORKRECORD_COLOR_EXPRESSION,
-            'circle-radius': WORKRECORD_POINT_RADIUS,
-            'circle-opacity': WORKRECORD_POINT_OPACITY,
-            'circle-stroke-width': WORKRECORD_POINT_STROKE_WIDTH,
-            'circle-stroke-color': WORKRECORD_POINT_STROKE_COLOR,
-          },
+      map.addLayer({
+        id: 'workrecord-unclustered',
+        type: 'circle',
+        source: 'workrecords',
+        filter: [
+          'all',
+          ['!', ['has', 'point_count']],
+          [
+            'any',
+            ['==', ['get', 'vegetation_type'], 'TREE'],
+            ['==', ['get', 'vegetation_type'], null],
+          ],
+        ],
+        paint: {
+          'circle-color': WORKRECORD_COLOR_EXPRESSION,
+          'circle-radius': WORKRECORD_POINT_RADIUS,
+          'circle-opacity': WORKRECORD_POINT_OPACITY,
+          'circle-stroke-width': WORKRECORD_STROKE_WIDTH_EXPRESSION,
+          'circle-stroke-color': WORKRECORD_STROKE_COLOR_EXPRESSION,
+        },
+    });
+
+      map.addLayer({
+        id: 'wr-squares-outline',
+        type: 'symbol',
+        source: 'workrecords',
+        filter: [
+          'all',
+          ['!', ['has', 'point_count']],
+          ['match', ['get', 'vegetation_type'], ['SHRUB', 'HEDGE'], true, false],
+        ],
+        layout: {
+          'icon-image': 'wr-square',
+          'icon-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            16,
+            0.57,
+            18,
+            0.72,
+            20,
+            0.85,
+          ],
+          'icon-allow-overlap': true,
+        },
+        paint: {
+          'icon-color': '#111111',
+        },
+      });
+
+      map.addLayer({
+        id: 'wr-squares',
+        type: 'symbol',
+        source: 'workrecords',
+        filter: [
+          'all',
+          ['!', ['has', 'point_count']],
+          ['match', ['get', 'vegetation_type'], ['SHRUB', 'HEDGE'], true, false],
+        ],
+        layout: {
+          'icon-image': 'wr-square',
+          'icon-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            16,
+            0.50,
+            18,
+            0.65,
+            20,
+            0.75,
+          ],
+          'icon-allow-overlap': true,
+        },
+        paint: {
+          'icon-color': WORKRECORD_COLOR_EXPRESSION,
+        },
       });
 
       map.addLayer({

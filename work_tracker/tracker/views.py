@@ -504,6 +504,7 @@ def create_work_record(request, project_id=None):
                 pass
 
             work_record.save()
+            work_record.assign_passport_identifiers()
             work_record.sync_title_from_identifiers()
             work_record.save(
                 update_fields=[
@@ -1039,6 +1040,7 @@ EXPORT_DATA_HEADERS = [
     "project_name",
     "title",
     "external_tree_id",
+    "passport_code",
     "taxon",
     "taxon_czech",
     "taxon_latin",
@@ -1072,6 +1074,7 @@ def _export_row_native(record, assessment):
         record.project.name if record.project else None,
         record.title or None,
         record.external_tree_id or None,
+        record.passport_code or None,
         record.taxon or None,
         record.taxon_czech or None,
         record.taxon_latin or None,
@@ -1126,6 +1129,7 @@ def export_selected_csv(request, pk):
                 record.project.name if record.project else "",
                 record.title or "",
                 record.external_tree_id or "",
+                record.passport_code or "",
                 record.taxon or "",
                 record.taxon_czech or "",
                 record.taxon_latin or "",
@@ -1404,6 +1408,8 @@ def _build_map_mapui_context(request):
             "id": r.id,
             "title": r.title or "",
             "external_tree_id": r.external_tree_id or "",
+            "passport_code": r.passport_code or "",
+            "display_label": r.display_label,
             "taxon": r.taxon or "",
             "project": r.project.name if r.project else "",
             "project_id": r.project_id,
@@ -1419,6 +1425,8 @@ def _build_map_mapui_context(request):
             "title": (r.title or ""),
             "taxon": r.taxon or "",
             "external_tree_id": r.external_tree_id or "",
+            "passport_code": r.passport_code or "",
+            "display_label": r.display_label,
             "project_id": r.project_id,
             "has_coords": (r.latitude is not None and r.longitude is not None),
         }
@@ -1476,7 +1484,15 @@ def workrecords_geojson(request):
         qs = project.trees.filter(
             latitude__isnull=False,
             longitude__isnull=False,
-        ).only("id", "latitude", "longitude", "external_tree_id", "title")
+        ).only(
+            "id",
+            "latitude",
+            "longitude",
+            "external_tree_id",
+            "title",
+            "passport_code",
+            "vegetation_type",
+        )
     else:
         # Use the Project.trees M2M as the source of truth; legacy FK can drift.
         visible_projects = user_projects_qs(request.user)
@@ -1487,7 +1503,15 @@ def workrecords_geojson(request):
                 longitude__isnull=False,
             )
             .distinct()
-            .only("id", "latitude", "longitude", "external_tree_id", "title")
+            .only(
+                "id",
+                "latitude",
+                "longitude",
+                "external_tree_id",
+                "title",
+                "passport_code",
+                "vegetation_type",
+            )
         )
 
     latest_assessment = TreeAssessment.objects.filter(work_record=OuterRef("pk")).order_by(
@@ -1528,12 +1552,7 @@ def workrecords_geojson(request):
 
     features = []
     for wr in qs:
-        if wr.external_tree_id:
-            label = wr.external_tree_id
-        elif wr.title:
-            label = wr.title
-        else:
-            label = wr.generate_internal_code() or f"WR {wr.id}"
+        label = wr.display_label
 
         intervention_stage = "none"
         if getattr(wr, "has_approved_intervention", False):
@@ -1552,6 +1571,8 @@ def workrecords_geojson(request):
                 "properties": {
                     "id": wr.id,
                     "label": label,
+                    "map_label": wr.map_label,
+                    "vegetation_type": wr.vegetation_type,
                     "crown_width_m": to_float(getattr(wr, "crown_width_m", None)),
                     "intervention_stage": intervention_stage,
                 },
@@ -1737,6 +1758,8 @@ def workrecord_detail_api(request, pk):
             "id": work_record.id,
             "title": work_record.title or "",
             "external_tree_id": work_record.external_tree_id or "",
+            "passport_code": work_record.passport_code or "",
+            "display_label": work_record.display_label,
             "taxon": work_record.taxon or "",
             "project": work_record.project.name if work_record.project else "",
             "project_id": work_record.project_id,
@@ -1897,6 +1920,7 @@ def map_create_work_record(request):
     taxon_czech_value = (request.POST.get("taxon_czech") or "").strip()
     taxon_latin_value = (request.POST.get("taxon_latin") or "").strip()
     gbif_key_raw = (request.POST.get("taxon_gbif_key") or "").strip()
+    vegetation_type_raw = (request.POST.get("vegetation_type") or "").strip().upper()
     project_id = request.POST.get("project_id") or request.POST.get("project") or request.GET.get("project") or None
     date_str = (request.POST.get("date") or "").strip()
     lat_str = request.POST.get("latitude")
@@ -1935,9 +1959,17 @@ def map_create_work_record(request):
         except ValueError:
             taxon_gbif_key = None
 
+    valid_types = {choice[0] for choice in WorkRecord.VegetationType.choices}
+    vegetation_type = (
+        vegetation_type_raw
+        if vegetation_type_raw in valid_types
+        else WorkRecord.VegetationType.TREE
+    )
+
     work_record = WorkRecord(
         project=project,
         external_tree_id=external_tree_id or None,
+        vegetation_type=vegetation_type,
         taxon=taxon_value or "",
         taxon_czech=taxon_czech_value,
         taxon_latin=taxon_latin_value,
@@ -1947,6 +1979,7 @@ def map_create_work_record(request):
         date=record_date,
     )
     work_record.save()
+    work_record.assign_passport_identifiers()
     work_record.sync_title_from_identifiers()
     work_record.save(
         update_fields=[
@@ -1974,6 +2007,10 @@ def map_create_work_record(request):
             "id": work_record.id,
             "title": work_record.title or "",
             "external_tree_id": work_record.external_tree_id or "",
+            "passport_code": work_record.passport_code or "",
+            "display_label": work_record.display_label,
+            "map_label": work_record.map_label,
+            "vegetation_type": work_record.vegetation_type,
             "taxon": work_record.taxon or "",
             "taxon_czech": work_record.taxon_czech or "",
             "taxon_latin": work_record.taxon_latin or "",

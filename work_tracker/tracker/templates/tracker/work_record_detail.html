@@ -84,6 +84,11 @@
     </p>
     <small class="text-muted">Datum: {{ work_record.date|date:"d.m.Y" }}</small>
     <div class="mt-2 small">
+      {% if work_record.passport_code %}
+        <div><strong>Pasportní číslo:</strong>
+          {{ work_record.passport_code }}
+        </div>
+      {% endif %}
       <div><strong>Kód stromu (interní):</strong>
         {% if work_record.title %}
           {{ work_record.title }}

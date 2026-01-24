@@ -451,6 +451,9 @@ document.addEventListener('DOMContentLoaded', function () {
   const LABEL_MIN_ZOOM = Math.max(LABEL_MAX_ZOOM - 1, 0);
 
   function getRecordDisplayLabel(record) {
+    if (record.display_label && String(record.display_label).trim()) {
+      return String(record.display_label).trim();
+    }
     if (record.title && record.title.trim()) {
       return record.title.trim();
     }

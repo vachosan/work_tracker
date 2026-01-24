@@ -8,7 +8,7 @@ from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-from django.db import models
+from django.db import models, transaction
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
@@ -112,6 +112,11 @@ class Species(models.Model):
 
 
 class WorkRecord(models.Model):
+    class VegetationType(models.TextChoices):
+        TREE = "TREE", "Strom"
+        SHRUB = "SHRUB", "Keř"
+        HEDGE = "HEDGE", "Živý plot"
+
     title = models.CharField(max_length=200, blank=True)
     external_tree_id = models.CharField(
         max_length=50,
@@ -140,6 +145,25 @@ class WorkRecord(models.Model):
         related_name="work_records",
         verbose_name="Projekt",
     )
+    vegetation_type = models.CharField(
+        max_length=10,
+        choices=VegetationType.choices,
+        null=True,
+        blank=True,
+        default=VegetationType.TREE,
+        verbose_name="Typ vegetace",
+    )
+    passport_no = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Pasportní číslo",
+    )
+    passport_code = models.CharField(
+        max_length=16,
+        null=True,
+        blank=True,
+        verbose_name="Pasportní kód",
+    )
 
     latitude = models.FloatField(
         null=True,
@@ -166,6 +190,12 @@ class WorkRecord(models.Model):
 
     class Meta:
         ordering = ["-date", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project", "vegetation_type", "passport_no"],
+                name="unique_passport_no_per_project_type",
+            )
+        ]
 
     def generate_internal_code(self) -> str | None:
         """
@@ -179,6 +209,88 @@ class WorkRecord(models.Model):
         if not self.pk:
             return None
         return int_to_base36(int(self.pk))
+
+    def _passport_prefix(self) -> str:
+        mapping = {
+            self.VegetationType.TREE: "T",
+            self.VegetationType.SHRUB: "K",
+            self.VegetationType.HEDGE: "ZP",
+        }
+        return mapping.get(self.vegetation_type or self.VegetationType.TREE, "T")
+
+    def _map_prefix(self) -> str:
+        mapping = {
+            self.VegetationType.TREE: "T",
+            self.VegetationType.SHRUB: "K",
+            self.VegetationType.HEDGE: "P",
+        }
+        return mapping.get(self.vegetation_type or self.VegetationType.TREE, "T")
+
+    def _format_passport_code(self, number: int) -> str:
+        return f"{self._passport_prefix()}-{number:04d}"
+
+    def assign_passport_identifiers(self) -> None:
+        if self.passport_no or self.passport_code:
+            return
+        if not self.project_id:
+            return
+        vegetation_type = self.vegetation_type or self.VegetationType.TREE
+        with transaction.atomic():
+            seq, _ = ProjectSequence.objects.select_for_update().get_or_create(
+                project_id=self.project_id,
+                vegetation_type=vegetation_type,
+                defaults={"next_value": 1},
+            )
+            next_value = seq.next_value or 1
+            seq.next_value = next_value + 1
+            seq.save(update_fields=["next_value"])
+
+            self.vegetation_type = vegetation_type
+            self.passport_no = next_value
+            self.passport_code = self._format_passport_code(next_value)
+            self.save(update_fields=["vegetation_type", "passport_no", "passport_code"])
+
+    @property
+    def display_label(self) -> str:
+        if self.passport_code:
+            return self.passport_code
+        if self.external_tree_id:
+            return self.external_tree_id
+        if self.title:
+            return self.title
+        internal_code = self.generate_internal_code()
+        if internal_code:
+            return internal_code
+        if self.pk:
+            return str(self.pk)
+        return "WorkRecord (unsaved)"
+
+    def _passport_number_from_code(self) -> int | None:
+        if not self.passport_code:
+            return None
+        digits = "".join(ch for ch in self.passport_code if ch.isdigit())
+        if not digits:
+            return None
+        try:
+            return int(digits)
+        except ValueError:
+            return None
+
+    @property
+    def map_label(self) -> str:
+        passport_no = self.passport_no or self._passport_number_from_code()
+        if passport_no:
+            return f"{self._map_prefix()}{passport_no}"
+        if self.external_tree_id:
+            return self.external_tree_id
+        if self.title:
+            return self.title
+        internal_code = self.generate_internal_code()
+        if internal_code:
+            return internal_code
+        if self.pk:
+            return str(self.pk)
+        return "WorkRecord (unsaved)"
 
     def sync_title_from_identifiers(self):
         """
@@ -222,6 +334,30 @@ class WorkRecord(models.Model):
         Řadíme podle assessed_at a id.
         """
         return self.assessments.order_by("-assessed_at", "-id").first()
+
+
+class ProjectSequence(models.Model):
+    project = models.ForeignKey(
+        "Project",
+        on_delete=models.CASCADE,
+        related_name="sequences",
+    )
+    vegetation_type = models.CharField(
+        max_length=10,
+        choices=WorkRecord.VegetationType.choices,
+    )
+    next_value = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["project", "vegetation_type"],
+                name="unique_sequence_per_project_type",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.project_id} {self.vegetation_type} next={self.next_value}"
 
 
 class RuianCadastralArea(models.Model):

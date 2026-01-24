@@ -653,7 +653,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (r.lat && r.lon) {
           const m = L.marker([r.lat, r.lon], { icon: wrIcon });
           m.recordId = Number(r.id);
-          const titleText = (r.title && r.title.trim()) ? r.title : '(bez názvu)';
+          const titleText = (r.display_label && r.display_label.trim())
+            ? r.display_label
+            : ((r.title && r.title.trim()) ? r.title : '(bez názvu)');
           const detailUrl = buildDetailUrl(r.id);
           const photosForDisplay = Array.isArray(r.photos) ? r.photos.slice(0, 2) : [];
           const photosHtml = photosForDisplay.length

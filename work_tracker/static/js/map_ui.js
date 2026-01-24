@@ -319,6 +319,9 @@
 
   function getRecordDisplayLabel(record) {
     if (!record) return '';
+    if (record.display_label && String(record.display_label).trim()) {
+      return String(record.display_label).trim();
+    }
     if (record.title && String(record.title).trim()) {
       return String(record.title).trim();
     }
