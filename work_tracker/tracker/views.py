@@ -1968,7 +1968,7 @@ def map_create_work_record(request):
     if request.method != "POST":
         return JsonResponse({"status": "error", "msg": "Invalid request"}, status=405)
 
-    external_tree_id = (request.POST.get("title") or "").strip()
+    external_tree_id = (request.POST.get("external_tree_id") or "").strip()
     taxon_value = (request.POST.get("taxon") or "").strip()
     taxon_czech_value = (request.POST.get("taxon_czech") or "").strip()
     taxon_latin_value = (request.POST.get("taxon_latin") or "").strip()
@@ -2197,7 +2197,10 @@ def workrecord_shrub_assessment_api(request, pk):
         WorkRecord.VegetationType.SHRUB,
         WorkRecord.VegetationType.HEDGE,
     ):
-        return HttpResponseBadRequest("WorkRecord is not shrub/hedge")
+        return JsonResponse(
+            {"error": "WorkRecord is not shrub/hedge"},
+            status=400,
+        )
 
     if request.method == "GET":
         assessment = work_record.latest_shrub_assessment
@@ -2241,6 +2244,7 @@ def workrecord_shrub_assessment_api(request, pk):
     vitality = parse_int(payload.get("vitality"), 1, 5)
     note = (payload.get("note") or "").strip()
 
+    # Always append a new record to preserve assessment history.
     assessment = ShrubAssessment.objects.create(
         work_record=work_record,
         assessed_at=date.today(),

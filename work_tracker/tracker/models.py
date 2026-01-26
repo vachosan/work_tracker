@@ -252,10 +252,11 @@ class WorkRecord(models.Model):
 
     @property
     def display_label(self) -> str:
-        if self.passport_code:
-            return self.passport_code
         if self.external_tree_id:
             return self.external_tree_id
+        passport_no = self.passport_no or self._passport_number_from_code()
+        if passport_no:
+            return f"{self._map_prefix()}{passport_no}"
         if self.title:
             return self.title
         internal_code = self.generate_internal_code()
@@ -278,11 +279,11 @@ class WorkRecord(models.Model):
 
     @property
     def map_label(self) -> str:
+        if self.external_tree_id:
+            return self.external_tree_id
         passport_no = self.passport_no or self._passport_number_from_code()
         if passport_no:
             return f"{self._map_prefix()}{passport_no}"
-        if self.external_tree_id:
-            return self.external_tree_id
         if self.title:
             return self.title
         internal_code = self.generate_internal_code()
@@ -296,16 +297,10 @@ class WorkRecord(models.Model):
         """
         Ensure `title` is always usable for display/export:
 
-        - If external_tree_id is set, title mirrors it.
-        - Else if title already has a value (legacy data), leave it unchanged.
+        - If title already has a value (legacy data), leave it unchanged.
         - Else, derive a short internal code based on the PK.
         """
-        if self.external_tree_id:
-            # Prefer explicit external id for all user-facing purposes
-            self.title = self.external_tree_id
-            return
-
-        # No external id; if there is already some title (old data),
+        # If there is already some title (old data),
         # treat it as user-defined / legacy external code and do not overwrite it.
         if self.title:
             return
@@ -537,7 +532,7 @@ class ShrubAssessment(models.Model):
     )
 
     assessed_at = models.DateField(
-        default=timezone.now,
+        default=timezone.localdate,
         verbose_name="Datum hodnocení",
     )
 

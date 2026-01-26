@@ -419,7 +419,7 @@
       }
       const urlParams = new URLSearchParams(window.location.search);
       const projectIdParam = urlParams.get('project');
-      const title = newRecordTitleInput ? newRecordTitleInput.value.trim() : '';
+      const externalTreeId = newRecordTitleInput ? newRecordTitleInput.value.trim() : '';
       const displayTaxon = taxonDisplayInput ? taxonDisplayInput.value.trim() : '';
       const latinTaxon = taxonLatinInput ? taxonLatinInput.value.trim() : '';
       const czechTaxon = taxonCzechInput ? taxonCzechInput.value.trim() : '';
@@ -432,7 +432,7 @@
 
       newRecordSaveBtn.disabled = true;
       const payload = new URLSearchParams({
-        title: title,
+        external_tree_id: externalTreeId,
         taxon: taxonValue,
         taxon_czech: czechTaxon,
         taxon_latin: latinTaxon,
@@ -472,8 +472,8 @@
             selectedLat = null;
             selectedLon = null;
             const rec = data.record;
-            const label = rec.display_label || rec.passport_code || rec.external_tree_id || rec.title || `WR ${rec.id}`;
-            const mapLabel = rec.map_label || label;
+            const mapLabel = rec.map_label || rec.display_label || rec.external_tree_id || rec.title || `WR ${rec.id}`;
+            const label = mapLabel;
             const vegetationType = rec.vegetation_type || 'TREE';
               const feature = {
                 type: 'Feature',
