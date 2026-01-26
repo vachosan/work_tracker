@@ -175,6 +175,11 @@ class WorkRecord(models.Model):
         blank=True,
         help_text="Zeměpisná délka (longitude, např. 18.676)",
     )
+    hedge_line = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Osa živého plotu (GeoJSON LineString)",
+    )
     parcel_number = models.CharField(max_length=64, blank=True, null=True)
     cadastral_area_code = models.CharField(max_length=32, blank=True, null=True)
     cadastral_area_name = models.CharField(max_length=128, blank=True, null=True)

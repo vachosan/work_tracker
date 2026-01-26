@@ -1538,6 +1538,7 @@ def workrecords_geojson(request):
             "title",
             "passport_code",
             "vegetation_type",
+            "hedge_line",
         )
     else:
         # Use the Project.trees M2M as the source of truth; legacy FK can drift.
@@ -1557,10 +1558,15 @@ def workrecords_geojson(request):
                 "title",
                 "passport_code",
                 "vegetation_type",
+                "hedge_line",
             )
         )
 
     latest_assessment = TreeAssessment.objects.filter(work_record=OuterRef("pk")).order_by(
+        "-assessed_at",
+        "-id",
+    )
+    latest_shrub = ShrubAssessment.objects.filter(work_record=OuterRef("pk")).order_by(
         "-assessed_at",
         "-id",
     )
@@ -1574,6 +1580,7 @@ def workrecords_geojson(request):
     )
     qs = qs.annotate(
         crown_width_m=Subquery(latest_assessment.values("crown_width_m")[:1]),
+        shrub_width_m=Subquery(latest_shrub.values("width_m")[:1]),
         has_approved_intervention=Exists(approved_interventions),
         has_done_intervention=Exists(done_interventions),
     )
@@ -1606,6 +1613,10 @@ def workrecords_geojson(request):
         elif getattr(wr, "has_done_intervention", False):
             intervention_stage = "done"
 
+        shrub_width_value = None
+        if wr.vegetation_type == WorkRecord.VegetationType.HEDGE:
+            shrub_width_value = to_float(getattr(wr, "shrub_width_m", None))
+
         features.append(
             {
                 "type": "Feature",
@@ -1620,6 +1631,8 @@ def workrecords_geojson(request):
                     "map_label": wr.map_label,
                     "vegetation_type": wr.vegetation_type,
                     "crown_width_m": to_float(getattr(wr, "crown_width_m", None)),
+                    "hedge_line": wr.hedge_line,
+                    "shrub_width_m": shrub_width_value,
                     "intervention_stage": intervention_stage,
                 },
             }
@@ -1978,13 +1991,7 @@ def map_create_work_record(request):
     date_str = (request.POST.get("date") or "").strip()
     lat_str = request.POST.get("latitude")
     lon_str = request.POST.get("longitude")
-
-    # souřadnice jsou pro mapu povinné
-    try:
-        lat = float(lat_str)
-        lon = float(lon_str)
-    except (TypeError, ValueError):
-        return JsonResponse({"status": "error", "msg": "Chybné souřadnice."}, status=400)
+    hedge_line_raw = request.POST.get("hedge_line")
 
     # projekt (volitelný)
     project = None
@@ -2019,6 +2026,59 @@ def map_create_work_record(request):
         else WorkRecord.VegetationType.TREE
     )
 
+    def parse_hedge_line(raw_value):
+        if not raw_value:
+            return None
+        data = raw_value
+        if isinstance(raw_value, str):
+            try:
+                data = json.loads(raw_value)
+            except json.JSONDecodeError:
+                return None
+        if not isinstance(data, dict):
+            return None
+        if data.get("type") != "LineString":
+            return None
+        coords = data.get("coordinates")
+        if not isinstance(coords, list) or len(coords) < 2:
+            return None
+        normalized = []
+        for point in coords:
+            if not isinstance(point, (list, tuple)) or len(point) < 2:
+                return None
+            try:
+                lon = float(point[0])
+                lat = float(point[1])
+            except (TypeError, ValueError):
+                return None
+            normalized.append([lon, lat])
+        return {"type": "LineString", "coordinates": normalized}
+
+    hedge_line = None
+    if vegetation_type == WorkRecord.VegetationType.HEDGE:
+        hedge_line = parse_hedge_line(hedge_line_raw)
+        if not hedge_line:
+            return JsonResponse(
+                {"status": "error", "msg": "Chybné GeoJSON LineString pro živý plot."},
+                status=400,
+            )
+        coords = hedge_line.get("coordinates", [])
+        count = len(coords)
+        if count == 0:
+            return JsonResponse(
+                {"status": "error", "msg": "Živý plot musí mít alespoň 2 body."},
+                status=400,
+            )
+        lat = sum(point[1] for point in coords) / count
+        lon = sum(point[0] for point in coords) / count
+    else:
+        # souřadnice jsou pro mapu povinné
+        try:
+            lat = float(lat_str)
+            lon = float(lon_str)
+        except (TypeError, ValueError):
+            return JsonResponse({"status": "error", "msg": "Chybné souřadnice."}, status=400)
+
     work_record = WorkRecord(
         project=project,
         external_tree_id=external_tree_id or None,
@@ -2029,6 +2089,7 @@ def map_create_work_record(request):
         taxon_gbif_key=taxon_gbif_key,
         latitude=lat,
         longitude=lon,
+        hedge_line=hedge_line,
         date=record_date,
     )
     work_record.save()
@@ -2045,6 +2106,7 @@ def map_create_work_record(request):
             "project",
             "latitude",
             "longitude",
+            "hedge_line",
             "date",
         ]
     )
@@ -2072,6 +2134,7 @@ def map_create_work_record(request):
             "project_id": work_record.project_id,
             "lat": work_record.latitude,
             "lon": work_record.longitude,
+            "hedge_line": work_record.hedge_line,
         },
     })
 
