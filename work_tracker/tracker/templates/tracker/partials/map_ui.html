@@ -30,9 +30,16 @@
       <i class="bi bi-check-lg"></i>
     </button>
   {% endif %}
-  <button id="createFab" class="btn btn-primary rounded-circle shadow fab-btn" type="button" title="Přidat záznam" aria-label="Přidat záznam">
-    <i class="bi bi-plus-lg"></i>
-  </button>
+  <div class="d-flex align-items-center gap-2">
+    <div id="hedgeDrawFabGroup" class="d-none d-flex align-items-center gap-1">
+      <button id="hedgeDrawFinishBtn" class="btn btn-success btn-sm shadow" type="button" title="Dokončit živý plot" aria-label="Dokončit živý plot">✅</button>
+      <button id="hedgeDrawUndoBtn" class="btn btn-outline-light btn-sm shadow" type="button" title="Undo bod" aria-label="Undo bod">↶</button>
+      <button id="hedgeDrawCancelBtn" class="btn btn-outline-secondary btn-sm shadow" type="button" title="Zrušit kreslení" aria-label="Zrušit kreslení">✖</button>
+    </div>
+    <button id="createFab" class="btn btn-primary rounded-circle shadow fab-btn" type="button" title="Přidat záznam" aria-label="Přidat záznam">
+      <i class="bi bi-plus-lg"></i>
+    </button>
+  </div>
 </div>
 
 <div id="bottom-panel">

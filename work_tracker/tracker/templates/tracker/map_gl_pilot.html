@@ -33,10 +33,27 @@
     white-space: nowrap;
     will-change: transform;
   }
+  .hedge-draw-banner {
+    position: fixed;
+    top: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1200;
+    background: rgba(15, 23, 42, 0.92);
+    color: #f8fafc;
+    padding: 8px 12px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    box-shadow: 0 8px 18px rgba(0,0,0,.25);
+    pointer-events: none;
+  }
 </style>
 
 <div id="map"></div>
 <div id="wr-label-overlay"></div>
+<div id="hedgeDrawBanner" class="hedge-draw-banner d-none" role="status" aria-live="polite">
+  Kreslení živého plotu: klikej body od začátku. Dvojklik nebo ✅ = dokončit. ✖ nebo ESC = zrušit.
+</div>
 
 {% include "tracker/partials/map_ui.html" with show_save_fab=False %}
 
@@ -85,6 +102,7 @@
     const CROWN_SOURCE_ID = 'tree_crowns';
     const CROWN_FILL_LAYER_ID = 'tree_crowns_fill';
     const CROWN_LINE_LAYER_ID = 'tree_crowns_line';
+    const HEDGE_MIN_ZOOM = 17;
     const HEDGE_FILL_SOURCE_ID = 'hedge-polygons';
     const HEDGE_FILL_LAYER_ID = 'hedge-polygons-fill';
     const HEDGE_OUTLINE_LAYER_ID = 'hedge-polygons-outline';
@@ -92,6 +110,12 @@
     const HEDGE_AXIS_LAYER_ID = 'hedge-axis-line';
     const HEDGE_DRAW_SOURCE_ID = 'hedge-draw-line';
     const HEDGE_DRAW_LAYER_ID = 'hedge-draw-line';
+    const HEDGE_DRAW_POINTS_SOURCE_ID = 'hedge-draw-points';
+    const HEDGE_DRAW_POINTS_LAYER_ID = 'hedge-draw-points';
+    const HEDGE_CENTROIDS_SOURCE_ID = 'hedge-centroids';
+    const HEDGE_CENTROID_LAYER_ID = 'hedge-centroids-point';
+    const HEDGE_CENTROID_CLUSTER_LAYER_ID = 'hedge-centroids-clusters';
+    const HEDGE_CENTROID_CLUSTER_COUNT_LAYER_ID = 'hedge-centroids-cluster-count';
     const labelOverlay = document.getElementById('wr-label-overlay');
     // Cache DOM nodes by feature id to avoid duplicate label elements.
     const labelNodeCache = new Map();
@@ -103,6 +127,7 @@
     let selectedRecordId = null;
     let newRecordCoords = null;
     let pendingFocusId = null;
+    let hedgeDrawArmed = false;
     let isDrawingHedge = false;
     let hedgeDrawCoords = [];
     let pendingHedgeLine = null;
@@ -219,6 +244,11 @@
     const newRecordCancelBtn = document.getElementById('newRecordCancelBtn');
     const newRecordCloseBtn = document.getElementById('newRecordCloseBtn');
     const createFab = document.getElementById('createFab');
+    const hedgeDrawBanner = document.getElementById('hedgeDrawBanner');
+    const hedgeDrawFabGroup = document.getElementById('hedgeDrawFabGroup');
+    const hedgeDrawFinishBtn = document.getElementById('hedgeDrawFinishBtn');
+    const hedgeDrawUndoBtn = document.getElementById('hedgeDrawUndoBtn');
+    const hedgeDrawCancelBtn = document.getElementById('hedgeDrawCancelBtn');
     const projectSelect = document.getElementById('projectSelect');
     const taxonDisplayInput = document.getElementById('taxon_display');
     const taxonCzechInput = document.getElementById('taxon_czech');
@@ -327,20 +357,30 @@
 
     ensureNewRecordVegetationSelect();
 
-    const maybeStartHedgeDrawing = () => {
-      if (!newRecordVegetationSelect || newRecordVegetationSelect.value !== 'HEDGE') return;
-      if (isDrawingHedge) return;
-      const startLon = toNumber(selectedLon);
-      const startLat = toNumber(selectedLat);
-      const initial = startLon !== null && startLat !== null ? [startLon, startLat] : null;
-      closeNewRecordModal();
-      startHedgeDrawing(initial);
+    const isHedgeSelected = () => {
+      return newRecordVegetationSelect && newRecordVegetationSelect.value === 'HEDGE';
     };
     if (newRecordVegetationSelect) {
       newRecordVegetationSelect.addEventListener('change', () => {
-        if (newRecordVegetationSelect.value === 'HEDGE') {
-          maybeStartHedgeDrawing();
+        const nextValue = newRecordVegetationSelect.value;
+        if (nextValue === 'HEDGE') {
+          closeNewRecordModal();
+          hedgeDrawArmed = true;
+          isDrawingHedge = false;
+          hedgeDrawCoords = [];
+          pendingHedgeLine = null;
+          updateHedgeDrawSource();
+          setHedgeDrawingUi(true, 'Klikni na začátek živého plotu, pak přidávej body. ✅ dokončit, ✖ zrušit.');
+          return;
         }
+        if (!isDrawingHedge && !hedgeDrawArmed) return;
+        const shouldCancel = confirm('Zrušit rozkreslený živý plot?');
+        if (shouldCancel) {
+          cancelHedgeDrawing();
+          hedgeDrawArmed = false;
+          return;
+        }
+        newRecordVegetationSelect.value = 'HEDGE';
       });
     }
 
@@ -368,8 +408,26 @@
         }
       });
     }
+    if (hedgeDrawFinishBtn) {
+      hedgeDrawFinishBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        finishHedgeDrawing();
+      });
+    }
+    if (hedgeDrawCancelBtn) {
+      hedgeDrawCancelBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        cancelHedgeDrawing();
+      });
+    }
+    if (hedgeDrawUndoBtn) {
+      hedgeDrawUndoBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        undoHedgePoint();
+      });
+    }
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && isDrawingHedge) {
+      if (event.key === 'Escape' && (isDrawingHedge || hedgeDrawArmed)) {
         cancelHedgeDrawing();
       }
     });
@@ -398,77 +456,80 @@
       newRecordCoords = null;
     }
 
-    const ensureHedgeDrawControls = () => {
-      if (document.getElementById('hedgeDrawControls')) return;
-      const panel = document.getElementById('mapControlsPanel');
-      if (!panel) return;
-      const body = panel.querySelector('.map-controls-body');
-      if (!body) return;
-      const block = document.createElement('div');
-      block.id = 'hedgeDrawControls';
-      block.className = 'd-none mt-2';
-      block.innerHTML = `
-        <div class="small fw-semibold">Kreslení živého plotu</div>
-        <div class="small text-muted">Klikněte pro body, dvojklik ukončí.</div>
-        <div class="d-flex gap-2 mt-1">
-          <button type="button" class="btn btn-sm btn-success" id="hedgeDrawFinishBtn">Dokončit</button>
-          <button type="button" class="btn btn-sm btn-outline-secondary" id="hedgeDrawCancelBtn">Zrušit</button>
-        </div>
-      `;
-      body.appendChild(block);
-      const finishBtn = block.querySelector('#hedgeDrawFinishBtn');
-      const cancelBtn = block.querySelector('#hedgeDrawCancelBtn');
-      if (finishBtn) {
-        finishBtn.addEventListener('click', (event) => {
-          event.preventDefault();
-          finishHedgeDrawing();
-        });
+    const setHedgeDrawingUi = (active, message) => {
+      if (hedgeDrawBanner) {
+        hedgeDrawBanner.classList.toggle('d-none', !active);
+        if (active && message) {
+          hedgeDrawBanner.textContent = message;
+        }
       }
-      if (cancelBtn) {
-        cancelBtn.addEventListener('click', (event) => {
-          event.preventDefault();
-          cancelHedgeDrawing();
-        });
+      if (hedgeDrawFabGroup) {
+        hedgeDrawFabGroup.classList.toggle('d-none', !active);
       }
-    };
-
-    const setHedgeDrawControlsVisible = (visible) => {
-      const block = document.getElementById('hedgeDrawControls');
-      if (!block) return;
-      if (visible) {
-        block.classList.remove('d-none');
-      } else {
-        block.classList.add('d-none');
+      if (hedgeDrawFinishBtn) {
+        hedgeDrawFinishBtn.disabled = !isDrawingHedge || hedgeDrawCoords.length < 2;
+      }
+      if (hedgeDrawUndoBtn) {
+        hedgeDrawUndoBtn.disabled = !isDrawingHedge || hedgeDrawCoords.length < 2;
       }
     };
 
     const updateHedgeDrawSource = () => {
-      const source = map.getSource(HEDGE_DRAW_SOURCE_ID);
-      if (!source || typeof source.setData !== 'function') return;
+      const lineSource = map.getSource(HEDGE_DRAW_SOURCE_ID);
+      const pointSource = map.getSource(HEDGE_DRAW_POINTS_SOURCE_ID);
+      if (!lineSource || typeof lineSource.setData !== 'function') return;
+      if (!pointSource || typeof pointSource.setData !== 'function') return;
       if (!hedgeDrawCoords.length) {
-        source.setData({ type: 'FeatureCollection', features: [] });
+        lineSource.setData({ type: 'FeatureCollection', features: [] });
+        pointSource.setData({ type: 'FeatureCollection', features: [] });
         return;
       }
-      source.setData({
+      const lineCoords = hedgeDrawCoords.length === 1
+        ? [hedgeDrawCoords[0], hedgeDrawCoords[0]]
+        : hedgeDrawCoords;
+      lineSource.setData({
         type: 'FeatureCollection',
         features: [
           {
             type: 'Feature',
-            geometry: { type: 'LineString', coordinates: hedgeDrawCoords },
+            geometry: { type: 'LineString', coordinates: lineCoords },
             properties: {},
           },
         ],
       });
+      pointSource.setData({
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: hedgeDrawCoords[0] },
+            properties: { role: 'start' },
+          },
+        ],
+      });
+      setHedgeDrawingUi(true);
     };
 
     const addHedgePoint = (lngLat) => {
       if (!lngLat) return;
       hedgeDrawCoords.push([lngLat.lng, lngLat.lat]);
       updateHedgeDrawSource();
+      setHedgeDrawingUi(true, 'Přidávej body. ✅ dokončit. ↶ zpět. ✖ zrušit.');
+    };
+
+    const undoHedgePoint = () => {
+      if (!hedgeDrawCoords.length) return;
+      hedgeDrawCoords.pop();
+      if (!hedgeDrawCoords.length) {
+        cancelHedgeDrawing();
+        return;
+      }
+      updateHedgeDrawSource();
+      setHedgeDrawingUi(true, 'Přidávej body. ✅ dokončit. ↶ zpět. ✖ zrušit.');
     };
 
     const startHedgeDrawing = (initialPoint) => {
-      ensureHedgeDrawControls();
+      hedgeDrawArmed = false;
       isDrawingHedge = true;
       hedgeDrawCoords = [];
       pendingHedgeLine = null;
@@ -477,18 +538,19 @@
       }
       clearNewRecordMarker();
       updateHedgeDrawSource();
-      setHedgeDrawControlsVisible(true);
+      setHedgeDrawingUi(true, 'Přidávej body. ✅ dokončit. ↶ zpět. ✖ zrušit.');
       if (map && map.doubleClickZoom) {
         map.doubleClickZoom.disable();
       }
     };
 
     const cancelHedgeDrawing = () => {
+      hedgeDrawArmed = false;
       isDrawingHedge = false;
       hedgeDrawCoords = [];
       pendingHedgeLine = null;
       updateHedgeDrawSource();
-      setHedgeDrawControlsVisible(false);
+      setHedgeDrawingUi(false);
       if (map && map.doubleClickZoom) {
         map.doubleClickZoom.enable();
       }
@@ -514,13 +576,27 @@
       window.selectedLat = selectedLat;
       window.selectedLon = selectedLon;
       updateNewRecordMarker({ lng: centerLon, lat: centerLat });
+      hedgeDrawCoords = [];
+      hedgeDrawArmed = false;
       isDrawingHedge = false;
       updateHedgeDrawSource();
-      setHedgeDrawControlsVisible(false);
+      setHedgeDrawingUi(false);
       if (map && map.doubleClickZoom) {
         map.doubleClickZoom.enable();
       }
       openNewRecordModal();
+    };
+
+    const resetHedgeDrawingState = () => {
+      hedgeDrawArmed = false;
+      isDrawingHedge = false;
+      hedgeDrawCoords = [];
+      pendingHedgeLine = null;
+      updateHedgeDrawSource();
+      setHedgeDrawingUi(false);
+      if (map && map.doubleClickZoom) {
+        map.doubleClickZoom.enable();
+      }
     };
 
     function updateMoveLocationMarker(lngLat) {
@@ -636,6 +712,7 @@
             resetNewRecordForm();
             closeNewRecordModal();
             clearNewRecordMarker();
+            resetHedgeDrawingState();
             selectedLat = null;
             selectedLon = null;
             const rec = data.record;
@@ -850,6 +927,34 @@
       const { polygons, axes } = hedgesToGeoJSON(pointsGeoJSON);
       polygonSource.setData(polygons);
       axisSource.setData(axes);
+    };
+
+    const hedgesToCentroids = (pointsGeoJSON) => {
+      const empty = { type: 'FeatureCollection', features: [] };
+      if (!pointsGeoJSON || pointsGeoJSON.type !== 'FeatureCollection') return empty;
+      if (!window.turf || typeof window.turf.centroid !== 'function') return empty;
+      const features = [];
+      for (const feature of pointsGeoJSON.features || []) {
+        if (!feature || !feature.properties) continue;
+        if (feature.properties.vegetation_type !== 'HEDGE') continue;
+        const line = parseHedgeLine(feature.properties.hedge_line);
+        if (!line) continue;
+        const centroid = window.turf.centroid(line);
+        centroid.properties = {
+          id: feature.properties.id,
+          label: feature.properties.label || feature.properties.map_label || '',
+          map_label: feature.properties.map_label || feature.properties.label || '',
+          vegetation_type: 'HEDGE',
+        };
+        features.push(centroid);
+      }
+      return { type: 'FeatureCollection', features };
+    };
+
+    const updateHedgeCentroids = (pointsGeoJSON) => {
+      const source = map.getSource(HEDGE_CENTROIDS_SOURCE_ID);
+      if (!source || typeof source.setData !== 'function') return;
+      source.setData(hedgesToCentroids(pointsGeoJSON));
     };
 
     const cuzkOrthoTiles = 'https://ags.cuzk.gov.cz/arcgis1/rest/services/ORTOFOTO_WM/MapServer/tile/{z}/{y}/{x}';
@@ -1157,6 +1262,7 @@
         src.setData(filtered);
         updateTreeCrownsSource(filtered);
         updateHedgeSources(filtered);
+        updateHedgeCentroids(filtered);
         renderLabelOverlay();
         if (
           selectedRecordId &&
@@ -1468,6 +1574,7 @@
             }
             updateTreeCrownsSource(filtered);
             updateHedgeSources(filtered);
+            updateHedgeCentroids(filtered);
             renderLabelOverlay();
             if (selectedRecordId) {
               setSelectedRecordId(selectedRecordId);
@@ -1540,6 +1647,17 @@
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
       });
+      map.addSource(HEDGE_DRAW_POINTS_SOURCE_ID, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addSource(HEDGE_CENTROIDS_SOURCE_ID, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+        cluster: true,
+        clusterRadius: 25,
+        clusterMaxZoom: 15,
+      });
 
       // Add crowns before marker layers so markers stay on top.
       map.addLayer({
@@ -1571,9 +1689,10 @@
         id: HEDGE_FILL_LAYER_ID,
         type: 'fill',
         source: HEDGE_FILL_SOURCE_ID,
+        minzoom: HEDGE_MIN_ZOOM,
         paint: {
           'fill-color': '#4d7c0f',
-          'fill-opacity': 0.25,
+          'fill-opacity': 0.2,
         },
       });
 
@@ -1581,10 +1700,11 @@
         id: HEDGE_OUTLINE_LAYER_ID,
         type: 'line',
         source: HEDGE_FILL_SOURCE_ID,
+        minzoom: HEDGE_MIN_ZOOM,
         paint: {
-          'line-color': '#365314',
-          'line-width': 2,
-          'line-opacity': 0.8,
+          'line-color': '#16a34a',
+          'line-width': 0,
+          'line-opacity': 0,
         },
       });
 
@@ -1592,10 +1712,26 @@
         id: HEDGE_AXIS_LAYER_ID,
         type: 'line',
         source: HEDGE_AXIS_SOURCE_ID,
+        minzoom: HEDGE_MIN_ZOOM,
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round',
+        },
         paint: {
-          'line-color': '#14532d',
-          'line-width': 1,
-          'line-opacity': 0.6,
+          'line-color': '#f97316',
+          'line-width': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15,
+            1.2,
+            18,
+            1.8,
+            20,
+            2.2,
+          ],
+          'line-dasharray': [2, 2],
+          'line-opacity': 0.9,
         },
       });
 
@@ -1604,9 +1740,66 @@
         type: 'line',
         source: HEDGE_DRAW_SOURCE_ID,
         paint: {
-          'line-color': '#15803d',
+          'line-color': '#f97316',
           'line-width': 2,
-          'line-dasharray': [1, 1],
+          'line-dasharray': [2, 2],
+        },
+      });
+
+      map.addLayer({
+        id: HEDGE_DRAW_POINTS_LAYER_ID,
+        type: 'circle',
+        source: HEDGE_DRAW_POINTS_SOURCE_ID,
+        paint: {
+          'circle-color': '#16a34a',
+          'circle-radius': 6,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#ffffff',
+        },
+      });
+
+      map.addLayer({
+        id: HEDGE_CENTROID_CLUSTER_LAYER_ID,
+        type: 'circle',
+        source: HEDGE_CENTROIDS_SOURCE_ID,
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': '#1f6feb',
+          'circle-radius': [
+            'step',
+            ['get', 'point_count'],
+            15,
+            10, 20,
+            30, 25,
+          ],
+          'circle-opacity': 0.85,
+        },
+      });
+
+      map.addLayer({
+        id: HEDGE_CENTROID_CLUSTER_COUNT_LAYER_ID,
+        type: 'symbol',
+        source: HEDGE_CENTROIDS_SOURCE_ID,
+        filter: ['has', 'point_count'],
+        layout: {
+          'text-field': ['get', 'point_count_abbreviated'],
+          'text-font': ['Open Sans Regular'],
+          'text-size': 12,
+        },
+        paint: {
+          'text-color': '#fff',
+        },
+      });
+
+      map.addLayer({
+        id: HEDGE_CENTROID_LAYER_ID,
+        type: 'circle',
+        source: HEDGE_CENTROIDS_SOURCE_ID,
+        filter: ['!', ['has', 'point_count']],
+        paint: {
+          'circle-color': '#f97316',
+          'circle-radius': 10,
+          'circle-opacity': 0,
         },
       });
 
@@ -1777,12 +1970,12 @@
         },
       });
 
-      const expandCluster = (feature) => {
+      const expandCluster = (feature, sourceId = 'workrecords') => {
         if (!feature) return;
         const rawClusterId = feature.properties && feature.properties.cluster_id;
         const clusterId = rawClusterId !== undefined ? Number(rawClusterId) : null;
         if (clusterId === undefined || clusterId === null) return;
-        const source = map.getSource('workrecords');
+        const source = map.getSource(sourceId);
         if (!source || typeof source.getClusterExpansionZoom !== 'function') return;
         source.getClusterExpansionZoom(clusterId, (error, zoom) => {
           if (error) {
@@ -1798,6 +1991,10 @@
       };
 
       map.on('click', 'workrecord-clusters', (event) => {
+        if (hedgeDrawArmed) {
+          startHedgeDrawing([event.lngLat.lng, event.lngLat.lat]);
+          return;
+        }
         if (isDrawingHedge) {
           addHedgePoint(event.lngLat);
           return;
@@ -1808,10 +2005,29 @@
         const features = map.queryRenderedFeatures(event.point, { layers: ['workrecord-clusters'] });
         const feature = features && features[0];
         if (!feature) return;
-        expandCluster(feature);
+        expandCluster(feature, 'workrecords');
+      });
+
+      map.on('click', HEDGE_CENTROID_CLUSTER_LAYER_ID, (event) => {
+        if (hedgeDrawArmed) {
+          startHedgeDrawing([event.lngLat.lng, event.lngLat.lat]);
+          return;
+        }
+        if (isDrawingHedge) {
+          addHedgePoint(event.lngLat);
+          return;
+        }
+        const features = map.queryRenderedFeatures(event.point, { layers: [HEDGE_CENTROID_CLUSTER_LAYER_ID] });
+        const feature = features && features[0];
+        if (!feature) return;
+        expandCluster(feature, HEDGE_CENTROIDS_SOURCE_ID);
       });
 
       const handleWorkRecordClick = (event, layers) => {
+        if (hedgeDrawArmed) {
+          startHedgeDrawing([event.lngLat.lng, event.lngLat.lat]);
+          return;
+        }
         if (isDrawingHedge) {
           addHedgePoint(event.lngLat);
           return;
@@ -1839,6 +2055,9 @@
       map.on('click', 'workrecord-hitarea', (event) => {
         handleWorkRecordClick(event, ['workrecord-hitarea']);
       });
+      map.on('click', HEDGE_CENTROID_LAYER_ID, (event) => {
+        handleWorkRecordClick(event, [HEDGE_CENTROID_LAYER_ID]);
+      });
       map.on('click', HEDGE_FILL_LAYER_ID, (event) => {
         handleWorkRecordClick(event, [HEDGE_FILL_LAYER_ID]);
       });
@@ -1855,10 +2074,14 @@
       const resetPointer = () => { map.getCanvas().style.cursor = ''; };
       map.on('mouseenter', 'workrecord-clusters', setPointer);
       map.on('mouseleave', 'workrecord-clusters', resetPointer);
+      map.on('mouseenter', HEDGE_CENTROID_CLUSTER_LAYER_ID, setPointer);
+      map.on('mouseleave', HEDGE_CENTROID_CLUSTER_LAYER_ID, resetPointer);
       map.on('mouseenter', 'workrecord-unclustered', setPointer);
       map.on('mouseleave', 'workrecord-unclustered', resetPointer);
       map.on('mouseenter', 'workrecord-hitarea', setPointer);
       map.on('mouseleave', 'workrecord-hitarea', resetPointer);
+      map.on('mouseenter', HEDGE_CENTROID_LAYER_ID, setPointer);
+      map.on('mouseleave', HEDGE_CENTROID_LAYER_ID, resetPointer);
       map.on('mouseenter', HEDGE_FILL_LAYER_ID, setPointer);
       map.on('mouseleave', HEDGE_FILL_LAYER_ID, resetPointer);
       map.on('mouseenter', HEDGE_OUTLINE_LAYER_ID, setPointer);
@@ -1868,6 +2091,10 @@
         map.on('mouseleave', CONTEXT_LAYER_ID, resetPointer);
       }
       map.on('click', (event) => {
+        if (hedgeDrawArmed) {
+          startHedgeDrawing([event.lngLat.lng, event.lngLat.lat]);
+          return;
+        }
         if (isDrawingHedge) {
           addHedgePoint(event.lngLat);
           return;
@@ -1895,7 +2122,12 @@
         }
         const clusters = map.queryRenderedFeatures(bbox, { layers: ['workrecord-clusters'] });
         if (clusters && clusters.length) {
-          expandCluster(clusters[0]);
+          expandCluster(clusters[0], 'workrecords');
+          return;
+        }
+        const hedgeClusters = map.queryRenderedFeatures(bbox, { layers: [HEDGE_CENTROID_CLUSTER_LAYER_ID] });
+        if (hedgeClusters && hedgeClusters.length) {
+          expandCluster(hedgeClusters[0], HEDGE_CENTROIDS_SOURCE_ID);
           return;
         }
         const lngLat = event.lngLat;
