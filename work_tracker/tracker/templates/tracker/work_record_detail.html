@@ -107,179 +107,281 @@
   </div>
 </div>
 
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header d-flex justify-content-between align-items-center py-2">
-    <h2 class="h6 mb-0">Hodnocení stromu</h2>
-    <button class="btn btn-sm btn-outline-secondary" type="button"
-            data-bs-toggle="collapse" data-bs-target="#treeAssessmentCollapse"
-            aria-expanded="false" aria-controls="treeAssessmentCollapse">
-      Zobrazit / skrýt
-    </button>
+{% if work_record.vegetation_type == 'SHRUB' or work_record.vegetation_type == 'HEDGE' %}
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center py-2">
+      <h2 class="h6 mb-0">Hodnocení keře / živého plotu</h2>
+      <button class="btn btn-sm btn-outline-secondary" type="button"
+              data-bs-toggle="collapse" data-bs-target="#shrubAssessmentCollapse"
+              aria-expanded="false" aria-controls="shrubAssessmentCollapse">
+        Zobrazit / skrýt
+      </button>
+    </div>
+    <div id="shrubAssessmentCollapse" class="collapse show">
+      <div class="card-body small">
+        {% with work_record.latest_shrub_assessment as assessment %}
+          {% if assessment %}
+            <div class="table-responsive">
+              <table class="table table-sm mb-0">
+                <tbody>
+                  <tr>
+                    <th scope="row" class="w-50">Výška keře [m]</th>
+                    <td>{{ assessment.height_m|default:"–" }}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Šířka keře [m]</th>
+                    <td>{{ assessment.width_m|default:"–" }}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Vitalita</th>
+                    <td>
+                      {% if assessment.vitality == 1 %}1 – výborná až mírně snížená
+                      {% elif assessment.vitality == 2 %}2 – zřetelně snížená
+                      {% elif assessment.vitality == 3 %}3 – výrazně snížená
+                      {% elif assessment.vitality == 4 %}4 – zbytková
+                      {% elif assessment.vitality == 5 %}5 – suchý (mrtvý) strom
+                      {% else %}–{% endif %}
+                    </td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Poznámka</th>
+                    <td>{{ assessment.note|default:"-" }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <p class="text-muted mb-0">Keř / živý plot zatím nebyl hodnocen.</p>
+          {% endif %}
+        {% endwith %}
+      </div>
+    </div>
   </div>
-  <div id="treeAssessmentCollapse" class="collapse show">
-    <div class="card-body small">
-      {% with work_record.latest_assessment as assessment %}
-        {% if assessment %}
+
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center py-2">
+      <h2 class="h6 mb-0">Historie hodnocení</h2>
+      <button class="btn btn-sm btn-outline-secondary" type="button"
+              data-bs-toggle="collapse" data-bs-target="#shrubAssessmentHistoryCollapse"
+              aria-expanded="false" aria-controls="shrubAssessmentHistoryCollapse">
+        Zobrazit / skrýt
+      </button>
+    </div>
+    <div id="shrubAssessmentHistoryCollapse" class="collapse">
+      <div class="card-body small">
+        {% if work_record.shrub_assessments.all %}
           <div class="table-responsive">
             <table class="table table-sm mb-0">
+              <thead>
+                <tr>
+                  <th>Datum hodnocení</th>
+                  <th>Výška [m]</th>
+                  <th>Šířka [m]</th>
+                  <th>Vitalita</th>
+                  <th>Poznámka</th>
+                </tr>
+              </thead>
               <tbody>
-                <tr>
-                  <th scope="row" class="w-50">Průměr kmene (DBH) [cm]</th>
-                  <td>{{ assessment.dbh_cm|default:"–" }}</td>
-                </tr>
-                <tr>
-                  <th scope="row">Výška stromu [m]</th>
-                  <td>{{ assessment.height_m|default:"–" }}</td>
-                </tr>
-                <tr>
-                  <th scope="row">Šířka koruny [m]</th>
-                  <td>{{ assessment.crown_width_m|default:"-" }}</td>
-                </tr>
-                <tr>
-                  <th scope="row">Plocha koruny [m²]</th>
-                  <td>
-                    {% if assessment.crown_area_m2 %}
-                      {{ assessment.crown_area_m2 }}
-                    {% elif not assessment.height_m %}
-                      Chybí výška stromu
-                    {% elif not assessment.crown_width_m %}
-                      Zadej šířku koruny
-                    {% else %}
-                      -
-                    {% endif %}
-                  </td>
-                </tr>
-                <tr>
-                  <th scope="row">Fyziologické stáří</th>
-                  <td>
-                    {% if assessment.physiological_age == 1 %}1 – mladý jedinec ve fázi ujímání
-                    {% elif assessment.physiological_age == 2 %}2 – aklimatizovaný mladý strom
-                    {% elif assessment.physiological_age == 3 %}3 – dospívající jedinec
-                    {% elif assessment.physiological_age == 4 %}4 – dospělý jedinec
-                    {% elif assessment.physiological_age == 5 %}5 – senescentní jedinec
-                    {% else %}–{% endif %}
-                  </td>
-                </tr>
-                <tr>
-                  <th scope="row">Vitalita</th>
-                  <td>
-                    {% if assessment.vitality == 1 %}1 – výborná až mírně snížená
-                    {% elif assessment.vitality == 2 %}2 – zřetelně snížená
-                    {% elif assessment.vitality == 3 %}3 – výrazně snížená
-                    {% elif assessment.vitality == 4 %}4 – zbytková
-                    {% elif assessment.vitality == 5 %}5 – suchý (mrtvý) strom
-                    {% else %}–{% endif %}
-                  </td>
-                </tr>
-                <tr>
-                  <th scope="row">Zdravotní stav</th>
-                  <td>
-                    {% if assessment.health_state == 1 %}1 – výborný až dobrý
-                    {% elif assessment.health_state == 2 %}2 – zhoršený
-                    {% elif assessment.health_state == 3 %}3 – výrazně zhoršený
-                    {% elif assessment.health_state == 4 %}4 – silně narušený
-                    {% elif assessment.health_state == 5 %}5 – kritický / rozpadlý strom
-                    {% else %}–{% endif %}
-                  </td>
-                </tr>
-                <tr>
-                  <th scope="row">Stabilita</th>
-                  <td>
-                    {% if assessment.stability == 1 %}1 – výborná až dobrá (nenarušená)
-                    {% elif assessment.stability == 2 %}2 – zhoršená
-                    {% elif assessment.stability == 3 %}3 – výrazně zhoršená
-                    {% elif assessment.stability == 4 %}4 – silně narušená
-                    {% elif assessment.stability == 5 %}5 – kritická
-                    {% else %}–{% endif %}
-                  </td>
-                </tr>
-                <tr>
-                  <th scope="row">Perspektiva stromu</th>
-                  <td>
-                    {% if assessment.perspective == 'a' %}a – dlouhodobě perspektivní
-                    {% elif assessment.perspective == 'b' %}b – krátkodobě perspektivní
-                    {% elif assessment.perspective == 'c' %}c – neperspektivní
-                    {% else %}–{% endif %}
-                  </td>
-                </tr>
+                {% for a in work_record.shrub_assessments.all|dictsortreversed:"assessed_at" %}
+                  <tr>
+                    <td>{{ a.assessed_at|date:"d.m.Y" }}</td>
+                    <td>{{ a.height_m|default:"–" }}</td>
+                    <td>{{ a.width_m|default:"–" }}</td>
+                    <td>
+                      {% if a.vitality == 1 %}1 – výborná až mírně snížená
+                      {% elif a.vitality == 2 %}2 – zřetelně snížená
+                      {% elif a.vitality == 3 %}3 – výrazně snížená
+                      {% elif a.vitality == 4 %}4 – zbytková
+                      {% elif a.vitality == 5 %}5 – suchý (mrtvý) strom
+                      {% else %}–{% endif %}
+                    </td>
+                    <td>{{ a.note|default:"-" }}</td>
+                  </tr>
+                {% endfor %}
               </tbody>
             </table>
           </div>
         {% else %}
-          <p class="text-muted mb-0">Strom zatím nebyl hodnocen.</p>
+          <p class="text-muted mb-0">Žádná uložená hodnocení.</p>
         {% endif %}
-      {% endwith %}
+      </div>
     </div>
   </div>
-</div>
+{% else %}
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center py-2">
+      <h2 class="h6 mb-0">Hodnocení stromu</h2>
+      <button class="btn btn-sm btn-outline-secondary" type="button"
+              data-bs-toggle="collapse" data-bs-target="#treeAssessmentCollapse"
+              aria-expanded="false" aria-controls="treeAssessmentCollapse">
+        Zobrazit / skrýt
+      </button>
+    </div>
+    <div id="treeAssessmentCollapse" class="collapse show">
+      <div class="card-body small">
+        {% with work_record.latest_assessment as assessment %}
+          {% if assessment %}
+            <div class="table-responsive">
+              <table class="table table-sm mb-0">
+                <tbody>
+                  <tr>
+                    <th scope="row" class="w-50">Průměr kmene (DBH) [cm]</th>
+                    <td>{{ assessment.dbh_cm|default:"–" }}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Výška stromu [m]</th>
+                    <td>{{ assessment.height_m|default:"–" }}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Šířka koruny [m]</th>
+                    <td>{{ assessment.crown_width_m|default:"-" }}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Plocha koruny [m²]</th>
+                    <td>
+                      {% if assessment.crown_area_m2 %}
+                        {{ assessment.crown_area_m2 }}
+                      {% elif not assessment.height_m %}
+                        Chybí výška stromu
+                      {% elif not assessment.crown_width_m %}
+                        Zadej šířku koruny
+                      {% else %}
+                        -
+                      {% endif %}
+                    </td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Fyziologické stáří</th>
+                    <td>
+                      {% if assessment.physiological_age == 1 %}1 – mladý jedinec ve fázi ujímání
+                      {% elif assessment.physiological_age == 2 %}2 – aklimatizovaný mladý strom
+                      {% elif assessment.physiological_age == 3 %}3 – dospívající jedinec
+                      {% elif assessment.physiological_age == 4 %}4 – dospělý jedinec
+                      {% elif assessment.physiological_age == 5 %}5 – senescentní jedinec
+                      {% else %}–{% endif %}
+                    </td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Vitalita</th>
+                    <td>
+                      {% if assessment.vitality == 1 %}1 – výborná až mírně snížená
+                      {% elif assessment.vitality == 2 %}2 – zřetelně snížená
+                      {% elif assessment.vitality == 3 %}3 – výrazně snížená
+                      {% elif assessment.vitality == 4 %}4 – zbytková
+                      {% elif assessment.vitality == 5 %}5 – suchý (mrtvý) strom
+                      {% else %}–{% endif %}
+                    </td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Zdravotní stav</th>
+                    <td>
+                      {% if assessment.health_state == 1 %}1 – výborný až dobrý
+                      {% elif assessment.health_state == 2 %}2 – zhoršený
+                      {% elif assessment.health_state == 3 %}3 – výrazně zhoršený
+                      {% elif assessment.health_state == 4 %}4 – silně narušený
+                      {% elif assessment.health_state == 5 %}5 – kritický / rozpadlý strom
+                      {% else %}–{% endif %}
+                    </td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Stabilita</th>
+                    <td>
+                      {% if assessment.stability == 1 %}1 – výborná až dobrá (nenarušená)
+                      {% elif assessment.stability == 2 %}2 – zhoršená
+                      {% elif assessment.stability == 3 %}3 – výrazně zhoršená
+                      {% elif assessment.stability == 4 %}4 – silně narušená
+                      {% elif assessment.stability == 5 %}5 – kritická
+                      {% else %}–{% endif %}
+                    </td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Perspektiva stromu</th>
+                    <td>
+                      {% if assessment.perspective == 'a' %}a – dlouhodobě perspektivní
+                      {% elif assessment.perspective == 'b' %}b – krátkodobě perspektivní
+                      {% elif assessment.perspective == 'c' %}c – neperspektivní
+                      {% else %}–{% endif %}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          {% else %}
+            <p class="text-muted mb-0">Strom zatím nebyl hodnocen.</p>
+          {% endif %}
+        {% endwith %}
+      </div>
+    </div>
+  </div>
 
-<div class="card border-0 shadow-sm mb-4">
-  <div class="card-header d-flex justify-content-between align-items-center py-2">
-    <h2 class="h6 mb-0">Historie hodnocení</h2>
-    <button class="btn btn-sm btn-outline-secondary" type="button"
-            data-bs-toggle="collapse" data-bs-target="#treeAssessmentHistoryCollapse"
-            aria-expanded="false" aria-controls="treeAssessmentHistoryCollapse">
-      Zobrazit / skrýt
-    </button>
-  </div>
-  <div id="treeAssessmentHistoryCollapse" class="collapse">
-    <div class="card-body small">
-      {% if work_record.assessments.all %}
-        <div class="table-responsive">
-          <table class="table table-sm mb-0">
-            <thead>
-              <tr>
-                <th>Datum hodnocení</th>
-                <th>DBH [cm]</th>
-                <th>Výška [m]</th>
-                <th>Šířka koruny [m]</th>
-                <th>Plocha koruny [m²]</th>
-                <th>Fyziologické stáří</th>
-                <th>Vitalita</th>
-                <th>Zdravotní stav</th>
-                <th>Stabilita</th>
-                <th>Perspektiva</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for a in work_record.assessments.all|dictsortreversed:"assessed_at" %}
+  <div class="card border-0 shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center py-2">
+      <h2 class="h6 mb-0">Historie hodnocení</h2>
+      <button class="btn btn-sm btn-outline-secondary" type="button"
+              data-bs-toggle="collapse" data-bs-target="#treeAssessmentHistoryCollapse"
+              aria-expanded="false" aria-controls="treeAssessmentHistoryCollapse">
+        Zobrazit / skrýt
+      </button>
+    </div>
+    <div id="treeAssessmentHistoryCollapse" class="collapse">
+      <div class="card-body small">
+        {% if work_record.assessments.all %}
+          <div class="table-responsive">
+            <table class="table table-sm mb-0">
+              <thead>
                 <tr>
-                  <td>{{ a.assessed_at|date:"d.m.Y" }}</td>
-                  <td>{{ a.dbh_cm|default:"–" }}</td>
-                  <td>{{ a.height_m|default:"–" }}</td>
-                  <td>{{ a.crown_width_m|default:"-" }}</td>
-                  <td>
-                    {% if a.crown_area_m2 %}
-                      {{ a.crown_area_m2 }}
-                    {% elif not a.height_m %}
-                      Chybí výška stromu
-                    {% elif not a.crown_width_m %}
-                      Zadej šířku koruny
-                    {% else %}
-                      -
-                    {% endif %}
-                  </td>
-                  <td>{{ a.physiological_age|default:"-" }}</td>
-                  <td>{{ a.vitality|default:"–" }}</td>
-                  <td>{{ a.health_state|default:"–" }}</td>
-                  <td>{{ a.stability|default:"–" }}</td>
-                  <td>
-                    {% if a.perspective == 'a' %}a – dlouhodobě perspektivní
-                    {% elif a.perspective == 'b' %}b – krátkodobě perspektivní
-                    {% elif a.perspective == 'c' %}c – neperspektivní
-                    {% else %}–{% endif %}
-                  </td>
+                  <th>Datum hodnocení</th>
+                  <th>DBH [cm]</th>
+                  <th>Výška [m]</th>
+                  <th>Šířka koruny [m]</th>
+                  <th>Plocha koruny [m²]</th>
+                  <th>Fyziologické stáří</th>
+                  <th>Vitalita</th>
+                  <th>Zdravotní stav</th>
+                  <th>Stabilita</th>
+                  <th>Perspektiva</th>
                 </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      {% else %}
-        <p class="text-muted mb-0">Žádná uložená hodnocení.</p>
-      {% endif %}
+              </thead>
+              <tbody>
+                {% for a in work_record.assessments.all|dictsortreversed:"assessed_at" %}
+                  <tr>
+                    <td>{{ a.assessed_at|date:"d.m.Y" }}</td>
+                    <td>{{ a.dbh_cm|default:"–" }}</td>
+                    <td>{{ a.height_m|default:"–" }}</td>
+                    <td>{{ a.crown_width_m|default:"-" }}</td>
+                    <td>
+                      {% if a.crown_area_m2 %}
+                        {{ a.crown_area_m2 }}
+                      {% elif not a.height_m %}
+                        Chybí výška stromu
+                      {% elif not a.crown_width_m %}
+                        Zadej šířku koruny
+                      {% else %}
+                        -
+                      {% endif %}
+                    </td>
+                    <td>{{ a.physiological_age|default:"-" }}</td>
+                    <td>{{ a.vitality|default:"–" }}</td>
+                    <td>{{ a.health_state|default:"–" }}</td>
+                    <td>{{ a.stability|default:"–" }}</td>
+                    <td>
+                      {% if a.perspective == 'a' %}a – dlouhodobě perspektivní
+                      {% elif a.perspective == 'b' %}b – krátkodobě perspektivní
+                      {% elif a.perspective == 'c' %}c – neperspektivní
+                      {% else %}–{% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="text-muted mb-0">Žádná uložená hodnocení.</p>
+        {% endif %}
+      </div>
     </div>
   </div>
-</div>
+{% endif %}
 
 <div id="intervence" class="card border-0 shadow-sm mb-4">
   <div class="card-header d-flex justify-content-between align-items-center py-2">

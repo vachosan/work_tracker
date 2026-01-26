@@ -39,17 +39,31 @@
             </div>
           {% endif %}
 
-          {% if wr.latest_assessment %}
-            <div class="small text-muted">
-              DBH: {{ wr.latest_assessment.dbh_cm|default:"-" }} cm,
-              výška: {{ wr.latest_assessment.height_m|default:"-" }} m,
-              vitalita: {{ wr.latest_assessment.vitality|default:"-" }},
-              stabilita: {{ wr.latest_assessment.stability|default:"-" }}
-            </div>
+          {% if wr.vegetation_type == 'SHRUB' or wr.vegetation_type == 'HEDGE' %}
+            {% if wr.latest_shrub_assessment %}
+              <div class="small text-muted">
+                výška: {{ wr.latest_shrub_assessment.height_m|default:"-" }} m,
+                šířka: {{ wr.latest_shrub_assessment.width_m|default:"-" }} m,
+                vitalita: {{ wr.latest_shrub_assessment.vitality|default:"-" }}
+              </div>
+            {% else %}
+              <div class="small text-muted">
+                Bez hodnocení.
+              </div>
+            {% endif %}
           {% else %}
-            <div class="small text-muted">
-              Bez hodnocení.
-            </div>
+            {% if wr.latest_assessment %}
+              <div class="small text-muted">
+                DBH: {{ wr.latest_assessment.dbh_cm|default:"-" }} cm,
+                výška: {{ wr.latest_assessment.height_m|default:"-" }} m,
+                vitalita: {{ wr.latest_assessment.vitality|default:"-" }},
+                stabilita: {{ wr.latest_assessment.stability|default:"-" }}
+              </div>
+            {% else %}
+              <div class="small text-muted">
+                Bez hodnocení.
+              </div>
+            {% endif %}
           {% endif %}
 
           {% if wr.intervention_count > 0 %}

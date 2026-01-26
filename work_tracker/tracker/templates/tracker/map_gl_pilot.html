@@ -47,6 +47,7 @@
   window.workTrackerMapUiConfig = {
     workRecordDetailApiBase: "{% url 'workrecord_detail_api' 0 %}".replace(/0\/?$/, ""),
     assessmentApiBase: "{% url 'workrecord_assessment_api' 0 %}".replace("0/assessment/", ""),
+    shrubAssessmentApiBase: "{% url 'workrecord_shrub_assessment_api' 0 %}".replace("0/shrub-assessment/", ""),
     mapUploadPhotoUrl: "{% url 'map_upload_photo' %}",
     projectId: "{{ request.GET.project|default:'' }}",
     addToProjectUrlTemplate: "{% url 'project_tree_add' 0 0 %}",

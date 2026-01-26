@@ -335,6 +335,14 @@ class WorkRecord(models.Model):
         """
         return self.assessments.order_by("-assessed_at", "-id").first()
 
+    @property
+    def latest_shrub_assessment(self):
+        """
+        Vrátí nejnovější hodnocení keře/živého plotu (nebo None, pokud neexistuje).
+        Řadíme podle assessed_at a id.
+        """
+        return self.shrub_assessments.order_by("-assessed_at", "-id").first()
+
 
 class ProjectSequence(models.Model):
     project = models.ForeignKey(
@@ -518,6 +526,51 @@ class TreeAssessment(models.Model):
     def save(self, *args, **kwargs):
         self.crown_area_m2 = self._compute_crown_area_m2()
         super().save(*args, **kwargs)
+
+
+class ShrubAssessment(models.Model):
+    work_record = models.ForeignKey(
+        "WorkRecord",
+        on_delete=models.CASCADE,
+        related_name="shrub_assessments",
+        verbose_name="Pracovní záznam",
+    )
+
+    assessed_at = models.DateField(
+        default=timezone.now,
+        verbose_name="Datum hodnocení",
+    )
+
+    vitality = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        choices=VITALITY_CHOICES,
+        verbose_name="Vitalita",
+    )
+
+    height_m = models.FloatField(
+        null=True,
+        blank=True,
+        verbose_name="Výška keře [m]",
+    )
+
+    width_m = models.FloatField(
+        null=True,
+        blank=True,
+        verbose_name="Šířka keře [m]",
+    )
+
+    note = models.TextField(
+        blank=True,
+        verbose_name="Poznámka",
+    )
+
+    class Meta:
+        verbose_name = "Hodnocení keře"
+        verbose_name_plural = "Hodnocení keřů"
+
+    def __str__(self):
+        return f"Hodnocení keře pro WorkRecord #{self.work_record_id}"
 
 
 class PhotoDocumentation(models.Model):

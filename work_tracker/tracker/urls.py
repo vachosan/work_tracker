@@ -57,6 +57,11 @@ urlpatterns = [
         name="workrecord_assessment_api",
     ),
     path(
+        "work-records/<int:pk>/shrub-assessment/",
+        views.workrecord_shrub_assessment_api,
+        name="workrecord_shrub_assessment_api",
+    ),
+    path(
         "api/work-records/<int:pk>/",
         views.workrecord_detail_api,
         name="workrecord_detail_api",

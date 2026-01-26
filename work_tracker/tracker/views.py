@@ -23,7 +23,20 @@ from django.core.files import File
 from django.core.files.base import ContentFile
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Max, Min, F, Count, Q, Prefetch, Exists, OuterRef, Subquery
+from django.db.models import (
+    Max,
+    Min,
+    F,
+    Count,
+    Q,
+    Prefetch,
+    Exists,
+    OuterRef,
+    Subquery,
+    Case,
+    When,
+    BooleanField,
+)
 from django.http import (
     StreamingHttpResponse,
     FileResponse,
@@ -54,6 +67,7 @@ from .models import (
     PhotoDocumentation,
     ProjectMembership,
     TreeAssessment,
+    ShrubAssessment,
     TreeIntervention,
     Species,
 )
@@ -112,10 +126,25 @@ def _project_detail_queryset(project, q, df, dt, has_assessment, has_open_interv
     if dt:
         qs = qs.filter(date__lte=dt)
 
-    if has_assessment == "yes":
-        qs = qs.filter(assessments__isnull=False).distinct()
-    elif has_assessment == "no":
-        qs = qs.filter(assessments__isnull=True)
+    if has_assessment in ("yes", "no"):
+        tree_exists = Exists(TreeAssessment.objects.filter(work_record=OuterRef("pk")))
+        shrub_exists = Exists(ShrubAssessment.objects.filter(work_record=OuterRef("pk")))
+        has_assessment_expr = Case(
+            When(
+                vegetation_type__in=[
+                    WorkRecord.VegetationType.SHRUB,
+                    WorkRecord.VegetationType.HEDGE,
+                ],
+                then=shrub_exists,
+            ),
+            default=tree_exists,
+            output_field=BooleanField(),
+        )
+        qs = qs.annotate(has_assessment_flag=has_assessment_expr)
+        if has_assessment == "yes":
+            qs = qs.filter(has_assessment_flag=True)
+        else:
+            qs = qs.filter(has_assessment_flag=False)
 
     if has_open_interventions == "none":
         qs = qs.filter(interventions__isnull=True)
@@ -129,6 +158,7 @@ def _project_detail_queryset(project, q, df, dt, has_assessment, has_open_interv
         qs = qs.filter(interventions__status="completed").distinct()
 
     latest_assessments_qs = TreeAssessment.objects.order_by("-assessed_at", "-id")
+    latest_shrub_assessments_qs = ShrubAssessment.objects.order_by("-assessed_at", "-id")
     interventions_qs = TreeIntervention.objects.select_related("intervention_type").order_by(
         "urgency", "due_date", "id"
     )
@@ -137,6 +167,11 @@ def _project_detail_queryset(project, q, df, dt, has_assessment, has_open_interv
         qs.select_related("project")
         .prefetch_related(
             Prefetch("assessments", queryset=latest_assessments_qs, to_attr="prefetched_assessments"),
+            Prefetch(
+                "shrub_assessments",
+                queryset=latest_shrub_assessments_qs,
+                to_attr="prefetched_shrub_assessments",
+            ),
             Prefetch("interventions", queryset=interventions_qs, to_attr="prefetched_interventions"),
         )
         .order_by("-created_at")
@@ -587,7 +622,7 @@ def work_record_detail(request, pk):
     work_record = get_object_or_404(
         WorkRecord.objects
         .select_related("project")
-        .prefetch_related("assessments", "photos"),
+        .prefetch_related("assessments", "shrub_assessments", "photos"),
         pk=pk,
     )
 
@@ -1389,13 +1424,23 @@ def _build_map_mapui_context(request):
         .select_related("project")
     )
     records = list(base_records.order_by("-id"))
+    tree_assessment_exists = Exists(TreeAssessment.objects.filter(work_record=OuterRef("pk")))
+    shrub_assessment_exists = Exists(ShrubAssessment.objects.filter(work_record=OuterRef("pk")))
     coords_qs = (
         base_records
         .filter(latitude__isnull=False, longitude__isnull=False)
         .annotate(
             photo_count=Count("photos", distinct=True),
-            has_any_assessment=Exists(
-                TreeAssessment.objects.filter(work_record=OuterRef("pk"))
+            has_any_assessment=Case(
+                When(
+                    vegetation_type__in=[
+                        WorkRecord.VegetationType.SHRUB,
+                        WorkRecord.VegetationType.HEDGE,
+                    ],
+                    then=shrub_assessment_exists,
+                ),
+                default=tree_assessment_exists,
+                output_field=BooleanField(),
             ),
         )
         .order_by("-id")
@@ -1415,6 +1460,7 @@ def _build_map_mapui_context(request):
             "project_id": r.project_id,
             "lat": r.latitude,
             "lon": r.longitude,
+            "vegetation_type": r.vegetation_type,
             "has_assessment": bool(getattr(r, "has_any_assessment", False)),
             "has_photos": bool(getattr(r, "photo_count", 0)),
         })
@@ -1749,7 +1795,13 @@ def workrecord_detail_api(request, pk):
             "description": photo.description or "",
         })
 
-    has_assessment = work_record.assessments.exists()
+    if work_record.vegetation_type in (
+        WorkRecord.VegetationType.SHRUB,
+        WorkRecord.VegetationType.HEDGE,
+    ):
+        has_assessment = work_record.shrub_assessments.exists()
+    else:
+        has_assessment = work_record.assessments.exists()
     can_edit = can_edit_project(request.user, work_record.project)
 
     return JsonResponse({
@@ -1761,6 +1813,7 @@ def workrecord_detail_api(request, pk):
             "passport_code": work_record.passport_code or "",
             "display_label": work_record.display_label,
             "taxon": work_record.taxon or "",
+            "vegetation_type": work_record.vegetation_type,
             "project": work_record.project.name if work_record.project else "",
             "project_id": work_record.project_id,
             "lat": work_record.latitude,
@@ -2123,6 +2176,88 @@ def workrecord_assessment_api(request, pk):
         "health_state": assessment.health_state,
         "stability": assessment.stability,
         "perspective": assessment.perspective,
+        "assessed_at": assessment.assessed_at.isoformat() if assessment.assessed_at else None,
+    })
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def workrecord_shrub_assessment_api(request, pk):
+    """
+    JSON API for reading ShrubAssessments tied to a WorkRecord.
+    GET: return the latest assessment values (or nulls if none exist).
+    POST: append a new assessment version from JSON payload.
+    """
+    try:
+        work_record = WorkRecord.objects.get(pk=pk)
+    except WorkRecord.DoesNotExist:
+        return JsonResponse({"error": "WorkRecord not found"}, status=404)
+
+    if work_record.vegetation_type not in (
+        WorkRecord.VegetationType.SHRUB,
+        WorkRecord.VegetationType.HEDGE,
+    ):
+        return HttpResponseBadRequest("WorkRecord is not shrub/hedge")
+
+    if request.method == "GET":
+        assessment = work_record.latest_shrub_assessment
+        data = {
+            "work_record_id": work_record.pk,
+            "height_m": assessment.height_m if assessment else None,
+            "width_m": assessment.width_m if assessment else None,
+            "vitality": assessment.vitality if assessment else None,
+            "note": assessment.note if assessment else "",
+            "assessed_at": assessment.assessed_at.isoformat() if assessment and assessment.assessed_at else None,
+        }
+        return JsonResponse(data)
+
+    # POST
+    try:
+        payload = json.loads(request.body.decode("utf-8") or "{}")
+    except json.JSONDecodeError:
+        return HttpResponseBadRequest("Invalid JSON")
+
+    def parse_int(value, min_val, max_val):
+        if value in (None, ""):
+            return None
+        try:
+            iv = int(value)
+        except (TypeError, ValueError):
+            return None
+        if iv < min_val or iv > max_val:
+            return None
+        return iv
+
+    def parse_float(value):
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    height_m = parse_float(payload.get("height_m"))
+    width_m = parse_float(payload.get("width_m"))
+    vitality = parse_int(payload.get("vitality"), 1, 5)
+    note = (payload.get("note") or "").strip()
+
+    assessment = ShrubAssessment.objects.create(
+        work_record=work_record,
+        assessed_at=date.today(),
+        height_m=height_m,
+        width_m=width_m,
+        vitality=vitality,
+        note=note,
+    )
+
+    return JsonResponse({
+        "status": "ok",
+        "id": assessment.pk,
+        "work_record_id": work_record.pk,
+        "height_m": assessment.height_m,
+        "width_m": assessment.width_m,
+        "vitality": assessment.vitality,
+        "note": assessment.note,
         "assessed_at": assessment.assessed_at.isoformat() if assessment.assessed_at else None,
     })
 

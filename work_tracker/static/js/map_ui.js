@@ -4,6 +4,7 @@
   const cfg = {
     workRecordDetailApiBase: null,
     assessmentApiBase: null,
+    shrubAssessmentApiBase: null,
     mapUploadPhotoUrl: null,
     projectId: null,
     addToProjectUrlTemplate: null,
@@ -73,6 +74,15 @@
   let assessmentCancelBtn;
   let assessmentCloseBtn;
   let assessmentMessage;
+  let assessmentTitle;
+  let treeAssessmentFields;
+  let shrubAssessmentFields;
+  let shrubAssessmentHeightInput;
+  let shrubAssessmentWidthInput;
+  let shrubAssessmentVitality;
+  let shrubAssessmentVitalityValue;
+  let shrubAssessmentNoteInput;
+  let currentAssessmentKind = 'tree';
 
   let interventionModal;
   let interventionForm;
@@ -96,6 +106,9 @@
     }
     if (userCfg.assessmentApiBase) {
       cfg.assessmentApiBase = userCfg.assessmentApiBase;
+    }
+    if (userCfg.shrubAssessmentApiBase) {
+      cfg.shrubAssessmentApiBase = userCfg.shrubAssessmentApiBase;
     }
     if (userCfg.mapUploadPhotoUrl) {
       cfg.mapUploadPhotoUrl = userCfg.mapUploadPhotoUrl;
@@ -328,6 +341,50 @@
     return String(record.id);
   }
 
+  function isShrubType(vegetationType) {
+    return vegetationType === 'SHRUB' || vegetationType === 'HEDGE';
+  }
+
+  function getAssessmentKind(record) {
+    if (record && isShrubType(record.vegetation_type)) {
+      return 'shrub';
+    }
+    return 'tree';
+  }
+
+  function getAssessmentLabel(record) {
+    const type = record ? record.vegetation_type : null;
+    if (type === 'HEDGE') return 'Hodnocení živého plotu';
+    if (type === 'SHRUB') return 'Hodnocení keře';
+    return 'Hodnocení stromu';
+  }
+
+  function getAssessmentApiBase(kind) {
+    if (kind === 'shrub' && cfg.shrubAssessmentApiBase) {
+      return cfg.shrubAssessmentApiBase;
+    }
+    return cfg.assessmentApiBase;
+  }
+
+  function setAssessmentMode(kind, vegetationType) {
+    currentAssessmentKind = kind || 'tree';
+    if (treeAssessmentFields) {
+      treeAssessmentFields.classList.toggle('d-none', currentAssessmentKind !== 'tree');
+    }
+    if (shrubAssessmentFields) {
+      shrubAssessmentFields.classList.toggle('d-none', currentAssessmentKind !== 'shrub');
+    }
+    if (assessmentTitle) {
+      const label =
+        vegetationType === 'HEDGE'
+          ? assessmentTitle.getAttribute('data-hedge-label')
+          : vegetationType === 'SHRUB'
+            ? assessmentTitle.getAttribute('data-shrub-label')
+            : assessmentTitle.getAttribute('data-tree-label');
+      assessmentTitle.textContent = label || getAssessmentLabel({ vegetation_type: vegetationType });
+    }
+  }
+
   function buildPhotosHtml(record, state) {
     if ((state && state.loadingPhotos) || record.photosLoading) {
       return '<div class="text-muted small mt-2 mb-0">Načítám fotografie…</div>';
@@ -420,6 +477,7 @@
         '</div>'
       : '';
 
+    const assessmentLabel = getAssessmentLabel(record);
     return (
       '<div class="wr-popup">' +
       '<div class="wr-header">' +
@@ -439,7 +497,9 @@
       assessClass +
       '" data-action="assessment" data-record-id="' +
       record.id +
-      '" title="Hodnocení stromu"><i class="bi bi-clipboard2-pulse"></i></button>' +
+      '" title="' +
+      assessmentLabel +
+      '"><i class="bi bi-clipboard2-pulse"></i></button>' +
       '<button type="button" class="wr-popup-btn intervention" data-action="intervention" data-record-id="' +
       record.id +
       '" title="Zásahy"><i class="bi bi-tools"></i></button>' +
@@ -919,6 +979,15 @@
     updateCrownAreaHint(areaVal, widthVal, heightVal);
   }
 
+  function buildAssessmentUrl(recordId, kind) {
+    const base = String(getAssessmentApiBase(kind) || '').replace(/\/?$/, '/');
+    if (!base) return '';
+    if (kind === 'shrub') {
+      return base + recordId + '/shrub-assessment/';
+    }
+    return base + recordId + '/assessment/';
+  }
+
   function perspectiveLetterFromSlider(val) {
     const n = Number(val);
     if (n === 1) return 'a';
@@ -942,34 +1011,48 @@
   }
 
   function openAssessmentForRecord(recordId) {
-    if (!assessmentModal || !cfg.assessmentApiBase || !recordId) return;
+    if (!assessmentModal || !recordId) return;
+    const record = recordCache[Number(recordId)] || {};
+    const kind = getAssessmentKind(record);
+    const url = buildAssessmentUrl(recordId, kind);
+    if (!url) return;
+    setAssessmentMode(kind, record.vegetation_type);
     if (assessmentWorkRecordIdInput) assessmentWorkRecordIdInput.value = recordId;
-    if (assessmentDbhInput) assessmentDbhInput.value = '';
-    if (assessmentHeightInput) assessmentHeightInput.value = '';
-    if (assessmentCrownWidthInput) assessmentCrownWidthInput.value = '';
-    if (assessmentCrownAreaInput) assessmentCrownAreaInput.value = '';
-    if (assessmentCrownAreaHint) assessmentCrownAreaHint.textContent = '';
-    if (assessmentPhysAge) assessmentPhysAge.value = 3;
-    if (assessmentVitality) assessmentVitality.value = 3;
-    if (assessmentHealth) assessmentHealth.value = 3;
-    if (assessmentStability) assessmentStability.value = 3;
-    if (assessmentPerspectiveSlider) {
-      assessmentPerspectiveSlider.value = 1;
-      if (assessmentPerspectiveValue) {
-        assessmentPerspectiveValue.textContent = perspectiveLabelFromLetter('a');
+
+    if (kind === 'tree') {
+      if (assessmentDbhInput) assessmentDbhInput.value = '';
+      if (assessmentHeightInput) assessmentHeightInput.value = '';
+      if (assessmentCrownWidthInput) assessmentCrownWidthInput.value = '';
+      if (assessmentCrownAreaInput) assessmentCrownAreaInput.value = '';
+      if (assessmentCrownAreaHint) assessmentCrownAreaHint.textContent = '';
+      if (assessmentPhysAge) assessmentPhysAge.value = 3;
+      if (assessmentVitality) assessmentVitality.value = 3;
+      if (assessmentHealth) assessmentHealth.value = 3;
+      if (assessmentStability) assessmentStability.value = 3;
+      if (assessmentPerspectiveSlider) {
+        assessmentPerspectiveSlider.value = 1;
+        if (assessmentPerspectiveValue) {
+          assessmentPerspectiveValue.textContent = perspectiveLabelFromLetter('a');
+        }
       }
+      updateSliderLabel(assessmentPhysAge, assessmentPhysAgeValue);
+      updateSliderLabel(assessmentVitality, assessmentVitalityValue);
+      updateSliderLabel(assessmentHealth, assessmentHealthValue);
+      updateSliderLabel(assessmentStability, assessmentStabilityValue);
+      updateCrownAreaHintFromInputs();
+    } else {
+      if (shrubAssessmentHeightInput) shrubAssessmentHeightInput.value = '';
+      if (shrubAssessmentWidthInput) shrubAssessmentWidthInput.value = '';
+      if (shrubAssessmentNoteInput) shrubAssessmentNoteInput.value = '';
+      if (shrubAssessmentVitality) shrubAssessmentVitality.value = 3;
+      updateSliderLabel(shrubAssessmentVitality, shrubAssessmentVitalityValue);
     }
-    updateSliderLabel(assessmentPhysAge, assessmentPhysAgeValue);
-    updateSliderLabel(assessmentVitality, assessmentVitalityValue);
-    updateSliderLabel(assessmentHealth, assessmentHealthValue);
-    updateSliderLabel(assessmentStability, assessmentStabilityValue);
-    updateCrownAreaHintFromInputs();
+
     if (assessmentMessage) {
       assessmentMessage.textContent = '';
       assessmentMessage.className = 'mt-2 small';
     }
 
-    const url = String(cfg.assessmentApiBase).replace(/\/?$/, '/') + recordId + '/assessment/';
     assessmentModal.classList.add('active');
 
     fetch(url, {
@@ -981,40 +1064,56 @@
         return resp.json();
       })
       .then(function (data) {
-        if (assessmentDbhInput && data.dbh_cm != null) {
-          assessmentDbhInput.value = data.dbh_cm;
+        if (kind === 'tree') {
+          if (assessmentDbhInput && data.dbh_cm != null) {
+            assessmentDbhInput.value = data.dbh_cm;
+          }
+          if (assessmentHeightInput && data.height_m != null) {
+            assessmentHeightInput.value = data.height_m;
+          }
+          if (assessmentCrownWidthInput && data.crown_width_m != null) {
+            assessmentCrownWidthInput.value = data.crown_width_m;
+          }
+          if (assessmentCrownAreaInput && data.crown_area_m2 != null) {
+            assessmentCrownAreaInput.value = data.crown_area_m2;
+          }
+          if (assessmentPhysAge && data.physiological_age) {
+            assessmentPhysAge.value = data.physiological_age;
+          }
+          if (assessmentVitality && data.vitality) {
+            assessmentVitality.value = data.vitality;
+          }
+          if (assessmentHealth && data.health_state) {
+            assessmentHealth.value = data.health_state;
+          }
+          if (assessmentStability && data.stability) {
+            assessmentStability.value = data.stability;
+          }
+          if (assessmentPerspectiveSlider && assessmentPerspectiveValue && data.perspective) {
+            const letter = data.perspective;
+            assessmentPerspectiveSlider.value = perspectiveSliderValueFromLetter(letter);
+            assessmentPerspectiveValue.textContent = perspectiveLabelFromLetter(letter);
+          }
+          updateSliderLabel(assessmentPhysAge, assessmentPhysAgeValue);
+          updateSliderLabel(assessmentVitality, assessmentVitalityValue);
+          updateSliderLabel(assessmentHealth, assessmentHealthValue);
+          updateSliderLabel(assessmentStability, assessmentStabilityValue);
+          updateCrownAreaHintFromInputs();
+        } else {
+          if (shrubAssessmentHeightInput && data.height_m != null) {
+            shrubAssessmentHeightInput.value = data.height_m;
+          }
+          if (shrubAssessmentWidthInput && data.width_m != null) {
+            shrubAssessmentWidthInput.value = data.width_m;
+          }
+          if (shrubAssessmentVitality && data.vitality) {
+            shrubAssessmentVitality.value = data.vitality;
+          }
+          if (shrubAssessmentNoteInput && data.note != null) {
+            shrubAssessmentNoteInput.value = data.note;
+          }
+          updateSliderLabel(shrubAssessmentVitality, shrubAssessmentVitalityValue);
         }
-        if (assessmentHeightInput && data.height_m != null) {
-          assessmentHeightInput.value = data.height_m;
-        }
-        if (assessmentCrownWidthInput && data.crown_width_m != null) {
-          assessmentCrownWidthInput.value = data.crown_width_m;
-        }
-        if (assessmentCrownAreaInput && data.crown_area_m2 != null) {
-          assessmentCrownAreaInput.value = data.crown_area_m2;
-        }
-        if (assessmentPhysAge && data.physiological_age) {
-          assessmentPhysAge.value = data.physiological_age;
-        }
-        if (assessmentVitality && data.vitality) {
-          assessmentVitality.value = data.vitality;
-        }
-        if (assessmentHealth && data.health_state) {
-          assessmentHealth.value = data.health_state;
-        }
-        if (assessmentStability && data.stability) {
-          assessmentStability.value = data.stability;
-        }
-        if (assessmentPerspectiveSlider && assessmentPerspectiveValue && data.perspective) {
-          const letter = data.perspective;
-          assessmentPerspectiveSlider.value = perspectiveSliderValueFromLetter(letter);
-          assessmentPerspectiveValue.textContent = perspectiveLabelFromLetter(letter);
-        }
-        updateSliderLabel(assessmentPhysAge, assessmentPhysAgeValue);
-        updateSliderLabel(assessmentVitality, assessmentVitalityValue);
-        updateSliderLabel(assessmentHealth, assessmentHealthValue);
-        updateSliderLabel(assessmentStability, assessmentStabilityValue);
-        updateCrownAreaHintFromInputs();
       })
       .catch(function () {
         if (assessmentMessage) {
@@ -1034,32 +1133,53 @@
   }
 
   function submitAssessment() {
-    if (!assessmentModal || !cfg.assessmentApiBase) return;
+    if (!assessmentModal) return;
     const recordId = assessmentWorkRecordIdInput ? assessmentWorkRecordIdInput.value : null;
     if (!recordId) {
       alert('Chybí ID úkonu.');
       return;
     }
-    const url = String(cfg.assessmentApiBase).replace(/\/?$/, '/') + recordId + '/assessment/';
-    const payload = {
-      dbh_cm: assessmentDbhInput && assessmentDbhInput.value ? assessmentDbhInput.value : null,
-      height_m:
-        assessmentHeightInput && assessmentHeightInput.value ? assessmentHeightInput.value : null,
-      crown_width_m:
-        assessmentCrownWidthInput && assessmentCrownWidthInput.value
-          ? assessmentCrownWidthInput.value
+    const kind = currentAssessmentKind || 'tree';
+    const url = buildAssessmentUrl(recordId, kind);
+    if (!url) return;
+
+    let payload = {};
+    if (kind === 'tree') {
+      payload = {
+        dbh_cm: assessmentDbhInput && assessmentDbhInput.value ? assessmentDbhInput.value : null,
+        height_m:
+          assessmentHeightInput && assessmentHeightInput.value ? assessmentHeightInput.value : null,
+        crown_width_m:
+          assessmentCrownWidthInput && assessmentCrownWidthInput.value
+            ? assessmentCrownWidthInput.value
+            : null,
+        physiological_age:
+          assessmentPhysAge && assessmentPhysAge.value ? assessmentPhysAge.value : null,
+        vitality: assessmentVitality && assessmentVitality.value ? assessmentVitality.value : null,
+        health_state:
+          assessmentHealth && assessmentHealth.value ? assessmentHealth.value : null,
+        stability:
+          assessmentStability && assessmentStability.value ? assessmentStability.value : null,
+        perspective: assessmentPerspectiveSlider
+          ? perspectiveLetterFromSlider(assessmentPerspectiveSlider.value)
           : null,
-      physiological_age:
-        assessmentPhysAge && assessmentPhysAge.value ? assessmentPhysAge.value : null,
-      vitality: assessmentVitality && assessmentVitality.value ? assessmentVitality.value : null,
-      health_state:
-        assessmentHealth && assessmentHealth.value ? assessmentHealth.value : null,
-      stability:
-        assessmentStability && assessmentStability.value ? assessmentStability.value : null,
-      perspective: assessmentPerspectiveSlider
-        ? perspectiveLetterFromSlider(assessmentPerspectiveSlider.value)
-        : null,
-    };
+      };
+    } else {
+      payload = {
+        height_m:
+          shrubAssessmentHeightInput && shrubAssessmentHeightInput.value
+            ? shrubAssessmentHeightInput.value
+            : null,
+        width_m:
+          shrubAssessmentWidthInput && shrubAssessmentWidthInput.value
+            ? shrubAssessmentWidthInput.value
+            : null,
+        vitality: shrubAssessmentVitality && shrubAssessmentVitality.value
+          ? shrubAssessmentVitality.value
+          : null,
+        note: shrubAssessmentNoteInput ? shrubAssessmentNoteInput.value : '',
+      };
+    }
 
     if (assessmentSaveBtn) assessmentSaveBtn.disabled = true;
 
@@ -1656,6 +1776,14 @@
     assessmentCancelBtn = document.getElementById('assessmentCancelBtn');
     assessmentCloseBtn = document.getElementById('assessmentCloseBtn');
     assessmentMessage = document.getElementById('assessmentMessage');
+    assessmentTitle = document.getElementById('assessmentTitle');
+    treeAssessmentFields = document.getElementById('treeAssessmentFields');
+    shrubAssessmentFields = document.getElementById('shrubAssessmentFields');
+    shrubAssessmentHeightInput = document.getElementById('shrubAssessmentHeight');
+    shrubAssessmentWidthInput = document.getElementById('shrubAssessmentWidth');
+    shrubAssessmentVitality = document.getElementById('shrubAssessmentVitality');
+    shrubAssessmentVitalityValue = document.getElementById('shrubAssessmentVitalityValue');
+    shrubAssessmentNoteInput = document.getElementById('shrubAssessmentNote');
 
     [assessmentPhysAge, assessmentVitality, assessmentHealth, assessmentStability].forEach(
       function (inputEl, idx) {
@@ -1672,6 +1800,11 @@
         });
       }
     );
+    if (shrubAssessmentVitality) {
+      shrubAssessmentVitality.addEventListener('input', function () {
+        updateSliderLabel(shrubAssessmentVitality, shrubAssessmentVitalityValue);
+      });
+    }
 
     if (assessmentPerspectiveSlider && assessmentPerspectiveValue) {
       assessmentPerspectiveSlider.addEventListener('input', function () {
