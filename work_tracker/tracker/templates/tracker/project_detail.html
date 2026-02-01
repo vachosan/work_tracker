@@ -73,6 +73,10 @@
                       class="dropdown-item" formaction="{% url 'export_selected_xlsx' project.pk %}">
                 Export dat (Excel)
               </button>
+              <button type="submit" form="project-actions-form"
+                      class="dropdown-item" formaction="{% url 'export_qgis_geojson' project.pk %}">
+                Export do QGIS (GeoJSON)
+              </button>
             </li>
             <li>
               <button type="submit" form="project-actions-form" name="export_all" value="1"
@@ -89,7 +93,11 @@
             <li>
               <button type="submit" form="project-actions-form" name="export_all" value="1"
                       class="dropdown-item" formaction="{% url 'export_selected_xlsx' project.pk %}">
-                Export dat (Excel) - celý projekt
+                Export dat (Excel) – celý projekt
+              </button>
+              <button type="submit" form="project-actions-form" name="export_all" value="1"
+                      class="dropdown-item" formaction="{% url 'export_qgis_geojson' project.pk %}">
+                Export do QGIS (GeoJSON) – celý projekt
               </button>
             </li>
           </ul>

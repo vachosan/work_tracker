@@ -32,6 +32,7 @@ urlpatterns = [
     path('project/<int:pk>/export_csv/', views.export_selected_csv, name='export_selected_csv'),
     path('project/<int:pk>/export_xml/', views.export_selected_xml, name='export_selected_xml'),
     path('project/<int:pk>/export_xlsx/', views.export_selected_xlsx, name='export_selected_xlsx'),
+    path('project/<int:pk>/export_qgis_geojson/', views.export_qgis_geojson, name='export_qgis_geojson'),
     path('project/<int:pk>/items/', views.project_detail_items, name='project_detail_items'),
     path('project/<int:pk>/bulk-approve-interventions/', views.bulk_approve_interventions, name='bulk_approve_interventions'),
     path('project/<int:pk>/bulk-handover-interventions/', views.bulk_handover_interventions, name='bulk_handover_interventions'),

@@ -71,6 +71,7 @@ from .models import (
     ShrubAssessment,
     TreeIntervention,
     Species,
+    MISTLETOE_LEVELS,
 )
 from .permissions import (
     user_projects_qs,
@@ -976,6 +977,7 @@ def _get_export_work_records(request, project):
 
 def _build_export_queryset(work_records):
     latest_assessments_qs = TreeAssessment.objects.order_by("-assessed_at", "-id")
+    latest_shrub_assessments_qs = ShrubAssessment.objects.order_by("-assessed_at", "-id")
     return (
         work_records.select_related("project")
         .prefetch_related(
@@ -983,7 +985,13 @@ def _build_export_queryset(work_records):
                 "assessments",
                 queryset=latest_assessments_qs,
                 to_attr="prefetched_assessments",
-            )
+            ),
+            Prefetch(
+                "shrub_assessments",
+                queryset=latest_shrub_assessments_qs,
+                to_attr="prefetched_shrub_assessments",
+            ),
+            "interventions__intervention_type",
         )
         .annotate(intervention_count=Count("interventions", distinct=True))
     )
@@ -991,6 +999,13 @@ def _build_export_queryset(work_records):
 
 def _latest_assessment_for_export(record):
     assessments = getattr(record, "prefetched_assessments", None)
+    if assessments:
+        return assessments[0]
+    return None
+
+
+def _latest_shrub_assessment_for_export(record):
+    assessments = getattr(record, "prefetched_shrub_assessments", None)
     if assessments:
         return assessments[0]
     return None
@@ -1070,13 +1085,15 @@ def export_selected_zip(request, pk):
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
 
-EXPORT_DATA_HEADERS = [
+EXPORT_HEADERS = [
     "work_record_id",
     "project_id",
     "project_name",
     "title",
     "external_tree_id",
+    "passport_no",
     "passport_code",
+    "vegetation_type",
     "taxon",
     "taxon_czech",
     "taxon_latin",
@@ -1084,9 +1101,21 @@ EXPORT_DATA_HEADERS = [
     "longitude",
     "date",
     "created_at",
+    "parcel_number",
+    "cadastral_area_code",
+    "cadastral_area_name",
+    "municipality_code",
+    "municipality_name",
+    "lv_number",
+    "cad_lookup_status",
+    "cad_lookup_at",
     "intervention_count",
+    "interventions_codes",
     "assessment_assessed_at",
     "assessment_dbh_cm",
+    "assessment_stem_circumference_cm",
+    "assessment_stem_diameters_cm_list",
+    "assessment_stem_circumferences_cm_list",
     "assessment_height_m",
     "assessment_crown_width_m",
     "assessment_crown_area_m2",
@@ -1094,23 +1123,65 @@ EXPORT_DATA_HEADERS = [
     "assessment_vitality",
     "assessment_health_state",
     "assessment_stability",
+    "assessment_mistletoe_level_raw",
+    "assessment_mistletoe_text",
     "assessment_perspective",
+    "shrub_assessed_at",
+    "shrub_vitality",
+    "shrub_height_m",
+    "shrub_width_m",
+    "shrub_note",
 ]
 
 
-def _export_row_native(record, assessment):
+def _format_csv_list(value):
+    if not value:
+        return ""
+    parts = [part.strip() for part in str(value).split(",")]
+    parts = [part for part in parts if part]
+    return ", ".join(parts)
+
+
+def _mistletoe_text(level):
+    if not level:
+        return "bez jmelí"
+    try:
+        key = int(level)
+    except (TypeError, ValueError):
+        return ""
+    info = MISTLETOE_LEVELS.get(key)
+    if not info:
+        return ""
+    return f"{info['code']} – {info['label']} ({info['range']} objemu koruny)"
+
+
+def _interventions_codes(record):
+    codes = set()
+    for intervention in record.interventions.all():
+        if intervention.intervention_type and intervention.intervention_type.code:
+            codes.add(intervention.intervention_type.code)
+    return ", ".join(sorted(codes))
+
+
+def _export_row_native(record, assessment, shrub_assessment):
     def to_float(value):
         if value is None:
             return None
         return float(value)
 
+    shrub_kind = record.vegetation_type in (
+        WorkRecord.VegetationType.SHRUB,
+        WorkRecord.VegetationType.HEDGE,
+    )
     return [
         record.id,
         record.project_id,
         record.project.name if record.project else None,
         record.title or None,
         record.external_tree_id or None,
+        record.passport_no,
         record.passport_code or None,
+        record.vegetation_type,
         record.taxon or None,
         record.taxon_czech or None,
         record.taxon_latin or None,
@@ -1118,9 +1189,23 @@ def _export_row_native(record, assessment):
         to_float(record.longitude) if record.longitude is not None else None,
         record.date if record.date else None,
         record.created_at if record.created_at else None,
+        record.parcel_number,
+        record.cadastral_area_code,
+        record.cadastral_area_name,
+        record.municipality_code,
+        record.municipality_name,
+        record.lv_number,
+        record.cad_lookup_status,
+        record.cad_lookup_at if record.cad_lookup_at else None,
         getattr(record, "intervention_count", None),
+        _interventions_codes(record),
         assessment.assessed_at if assessment and assessment.assessed_at else None,
         to_float(assessment.dbh_cm) if assessment and assessment.dbh_cm is not None else None,
+        to_float(assessment.stem_circumference_cm)
+        if assessment and assessment.stem_circumference_cm is not None
+        else None,
+        _format_csv_list(assessment.stem_diameters_cm_list) if assessment else "",
+        _format_csv_list(assessment.stem_circumferences_cm_list) if assessment else "",
         to_float(assessment.height_m) if assessment and assessment.height_m is not None else None,
         to_float(assessment.crown_width_m) if assessment and assessment.crown_width_m is not None else None,
         to_float(assessment.crown_area_m2) if assessment and assessment.crown_area_m2 is not None else None,
@@ -1128,7 +1213,22 @@ def _export_row_native(record, assessment):
         assessment.vitality if assessment and assessment.vitality is not None else None,
         assessment.health_state if assessment and assessment.health_state is not None else None,
         assessment.stability if assessment and assessment.stability is not None else None,
+        assessment.mistletoe_level if assessment and assessment.mistletoe_level is not None else None,
+        _mistletoe_text(assessment.mistletoe_level) if assessment else "",
         assessment.perspective if assessment and assessment.perspective is not None else None,
+        shrub_assessment.assessed_at
+        if shrub_kind and shrub_assessment and shrub_assessment.assessed_at
+        else None,
+        shrub_assessment.vitality
+        if shrub_kind and shrub_assessment and shrub_assessment.vitality is not None
+        else None,
+        to_float(shrub_assessment.height_m)
+        if shrub_kind and shrub_assessment and shrub_assessment.height_m is not None
+        else None,
+        to_float(shrub_assessment.width_m)
+        if shrub_kind and shrub_assessment and shrub_assessment.width_m is not None
+        else None,
+        shrub_assessment.note if shrub_kind and shrub_assessment else "",
     ]
 
 
@@ -1154,37 +1254,22 @@ def export_selected_csv(request, pk):
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
 
     writer = csv.writer(response, delimiter=';', quoting=csv.QUOTE_MINIMAL)
-    writer.writerow(EXPORT_DATA_HEADERS)
+    writer.writerow(EXPORT_HEADERS)
 
     for record in work_records:
         assessment = _latest_assessment_for_export(record)
+        shrub_assessment = _latest_shrub_assessment_for_export(record)
+        row = _export_row_native(record, assessment, shrub_assessment)
+        csv_row = []
+        for value in row:
+            if isinstance(value, (dt.datetime, date)):
+                csv_row.append(value.isoformat())
+            elif value is None:
+                csv_row.append("")
+            else:
+                csv_row.append(value)
         writer.writerow(
-            [
-                record.id,
-                record.project_id or "",
-                record.project.name if record.project else "",
-                record.title or "",
-                record.external_tree_id or "",
-                record.passport_code or "",
-                record.taxon or "",
-                record.taxon_czech or "",
-                record.taxon_latin or "",
-                record.latitude if record.latitude is not None else "",
-                record.longitude if record.longitude is not None else "",
-                record.date.isoformat() if record.date else "",
-                record.created_at.isoformat() if record.created_at else "",
-                getattr(record, "intervention_count", ""),
-                assessment.assessed_at.isoformat() if assessment and assessment.assessed_at else "",
-                assessment.dbh_cm if assessment and assessment.dbh_cm is not None else "",
-                assessment.height_m if assessment and assessment.height_m is not None else "",
-                assessment.crown_width_m if assessment and assessment.crown_width_m is not None else "",
-                assessment.crown_area_m2 if assessment and assessment.crown_area_m2 is not None else "",
-                assessment.physiological_age if assessment and assessment.physiological_age is not None else "",
-                assessment.vitality if assessment and assessment.vitality is not None else "",
-                assessment.health_state if assessment and assessment.health_state is not None else "",
-                assessment.stability if assessment and assessment.stability is not None else "",
-                assessment.perspective if assessment and assessment.perspective is not None else "",
-            ]
+            csv_row
         )
 
     return response
@@ -1226,16 +1311,17 @@ def export_selected_xlsx(request, pk):
     wb = Workbook()
     ws = wb.active
     ws.title = "data"
-    ws.append(EXPORT_DATA_HEADERS)
+    ws.append(EXPORT_HEADERS)
 
     for record in work_records:
         assessment = _latest_assessment_for_export(record)
-        row = _export_row_native(record, assessment)
+        shrub_assessment = _latest_shrub_assessment_for_export(record)
+        row = _export_row_native(record, assessment, shrub_assessment)
         ws.append([excel_safe(item) for item in row])
 
     ws.freeze_panes = "A2"
     last_row = ws.max_row
-    last_col_letter = get_column_letter(len(EXPORT_DATA_HEADERS))
+    last_col_letter = get_column_letter(len(EXPORT_HEADERS))
     ws.auto_filter.ref = f"A1:{last_col_letter}{last_row}"
 
     output = io.BytesIO()
@@ -1315,6 +1401,139 @@ def export_selected_xml(request, pk):
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
 
+
+@login_required
+def export_qgis_geojson(request, pk):
+    project = get_object_or_404(Project, pk=pk)
+
+    if not user_can_view_project(request.user, project.pk):
+        return redirect('work_record_list')
+
+    work_records, redirect_response = _get_export_work_records(request, project)
+    if redirect_response:
+        return redirect_response
+
+    work_records = _build_export_queryset(work_records)
+
+    tree_features = []
+    hedge_features = []
+
+    for record in work_records:
+        assessment = _latest_assessment_for_export(record)
+        shrub_assessment = _latest_shrub_assessment_for_export(record)
+
+        properties = {
+            "work_record_id": record.id,
+            "project_id": record.project_id,
+            "project_name": record.project.name if record.project else None,
+            "title": record.title or None,
+            "external_tree_id": record.external_tree_id or None,
+            "passport_no": record.passport_no,
+            "passport_code": record.passport_code or None,
+            "vegetation_type": record.vegetation_type,
+            "taxon": record.taxon or None,
+            "taxon_czech": record.taxon_czech or None,
+            "taxon_latin": record.taxon_latin or None,
+            "latitude": record.latitude,
+            "longitude": record.longitude,
+            "date": record.date.isoformat() if record.date else None,
+            "created_at": record.created_at.isoformat() if record.created_at else None,
+            "parcel_number": record.parcel_number,
+            "cadastral_area_code": record.cadastral_area_code,
+            "cadastral_area_name": record.cadastral_area_name,
+            "municipality_code": record.municipality_code,
+            "municipality_name": record.municipality_name,
+            "lv_number": record.lv_number,
+            "cad_lookup_status": record.cad_lookup_status,
+            "cad_lookup_at": record.cad_lookup_at.isoformat() if record.cad_lookup_at else None,
+            "intervention_count": getattr(record, "intervention_count", None),
+            "interventions_codes": _interventions_codes(record),
+            "assessment_assessed_at": assessment.assessed_at.isoformat()
+            if assessment and assessment.assessed_at
+            else None,
+            "assessment_dbh_cm": assessment.dbh_cm if assessment else None,
+            "assessment_stem_circumference_cm": assessment.stem_circumference_cm if assessment else None,
+            "assessment_stem_diameters_cm_list": _format_csv_list(assessment.stem_diameters_cm_list)
+            if assessment
+            else "",
+            "assessment_stem_circumferences_cm_list": _format_csv_list(
+                assessment.stem_circumferences_cm_list
+            )
+            if assessment
+            else "",
+            "assessment_height_m": assessment.height_m if assessment else None,
+            "assessment_crown_width_m": assessment.crown_width_m if assessment else None,
+            "assessment_crown_area_m2": assessment.crown_area_m2 if assessment else None,
+            "assessment_physiological_age": assessment.physiological_age if assessment else None,
+            "assessment_vitality": assessment.vitality if assessment else None,
+            "assessment_health_state": assessment.health_state if assessment else None,
+            "assessment_stability": assessment.stability if assessment else None,
+            "assessment_mistletoe_level_raw": assessment.mistletoe_level if assessment else None,
+            "assessment_mistletoe_text": _mistletoe_text(
+                assessment.mistletoe_level if assessment else None
+            ),
+            "assessment_perspective": assessment.perspective if assessment else None,
+            "shrub_assessed_at": shrub_assessment.assessed_at.isoformat()
+            if shrub_assessment and shrub_assessment.assessed_at
+            else None,
+            "shrub_vitality": shrub_assessment.vitality if shrub_assessment else None,
+            "shrub_height_m": shrub_assessment.height_m if shrub_assessment else None,
+            "shrub_width_m": shrub_assessment.width_m if shrub_assessment else None,
+            "shrub_note": shrub_assessment.note if shrub_assessment else "",
+        }
+
+        if record.vegetation_type == WorkRecord.VegetationType.HEDGE:
+            if not record.hedge_line:
+                continue
+            hedge_features.append(
+                {
+                    "type": "Feature",
+                    "geometry": record.hedge_line,
+                    "properties": properties,
+                }
+            )
+            continue
+
+        if record.latitude is None or record.longitude is None:
+            continue
+        tree_features.append(
+            {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [record.longitude, record.latitude],
+                },
+                "properties": properties,
+            }
+        )
+
+    def _json_safe(value):
+        if isinstance(value, dt.datetime):
+            return value.isoformat()
+        if isinstance(value, date):
+            return value.isoformat()
+        if isinstance(value, Decimal):
+            return float(value)
+        if isinstance(value, dict):
+            return {key: _json_safe(val) for key, val in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_json_safe(item) for item in value]
+        return value
+
+    trees_geojson = _json_safe({"type": "FeatureCollection", "features": tree_features})
+    hedges_geojson = _json_safe({"type": "FeatureCollection", "features": hedge_features})
+
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("trees_points.geojson", json.dumps(trees_geojson, ensure_ascii=False))
+        zf.writestr("hedges_lines.geojson", json.dumps(hedges_geojson, ensure_ascii=False))
+
+    output.seek(0)
+    today_str = date.today().strftime("%Y-%m-%d")
+    filename = f'{_slugify_export_name(project.name)}_{today_str}_qgis_geojson.zip'
+    response = HttpResponse(output.getvalue(), content_type="application/zip")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
 
 """
