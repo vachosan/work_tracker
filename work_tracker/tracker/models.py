@@ -8,6 +8,7 @@ from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models, transaction
 from django.db.models.signals import post_save
 from django.dispatch import receiver
@@ -53,6 +54,19 @@ PERSPECTIVE_CHOICES = [
     ("a", "a – dlouhodobě perspektivní"),
     ("b", "b – krátkodobě perspektivní"),
     ("c", "c – neperspektivní"),
+]
+
+MISTLETOE_LEVELS = {
+    1: {"code": "R", "label": "vzácné", "range": "do 5 %"},
+    2: {"code": "O", "label": "příležitostné", "range": "6–10 %"},
+    3: {"code": "F", "label": "časté", "range": "11–30 %"},
+    4: {"code": "A", "label": "hojné", "range": "31–50 %"},
+    5: {"code": "D", "label": "dominantní", "range": "> 50 %"},
+}
+
+MISTLETOE_CHOICES = [
+    (key, f"{info['code']} – {info['label']} ({info['range']} objemu koruny)")
+    for key, info in MISTLETOE_LEVELS.items()
 ]
 
 BASE36_ALPHABET = string.digits + string.ascii_uppercase
@@ -516,6 +530,14 @@ class TreeAssessment(models.Model):
         blank=True,
         choices=STABILITY_CHOICES,
         verbose_name="Stabilita",
+    )
+
+    mistletoe_level = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        choices=MISTLETOE_CHOICES,
+        validators=[MinValueValidator(1), MaxValueValidator(5)],
+        verbose_name="Zastoupení jmelí",
     )
 
     perspective = models.CharField(

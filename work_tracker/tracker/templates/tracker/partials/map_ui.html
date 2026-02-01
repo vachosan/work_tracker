@@ -1,3 +1,4 @@
+{% load tracker_extras %}
 <!-- Minimal header overlay -->
 <div id="map-mini-header">
   <a id="mapBackLink" href="{% url 'work_record_list' %}" class="map-mini-link" aria-label="Zpět">
@@ -75,7 +76,12 @@
   </div>
 </div>
 
-<div id="assessmentModal" class="capture-modal assessment-modal">
+<div
+  id="assessmentModal"
+  class="capture-modal assessment-modal"
+  data-assessment-scales='{% assessment_scales_json %}'
+  data-mistletoe-scales='{% mistletoe_scales_json %}'
+>
   <div class="capture-card assessment-modal-card">
     <div class="d-flex justify-content-between align-items-center mb-1">
       <h6
@@ -116,14 +122,6 @@
             </div>
           </div>
 
-          <div class="row g-2">
-            <div class="col-12">
-              <label for="assessmentCrownArea" class="form-label mb-1">Plocha koruny [m²]</label>
-              <input type="text" class="form-control form-control-sm" id="assessmentCrownArea" readonly>
-              <div id="assessmentCrownAreaHint" class="form-text text-muted small"></div>
-            </div>
-          </div>
-
           <div class="mb-1">
             <label class="form-label mb-1" for="assessmentPhysAge">Fyziologické stáří (1–5)</label>
             <input type="range" min="1" max="5" step="1" id="assessmentPhysAge" class="form-range">
@@ -154,6 +152,12 @@
             <div class="text-end">
               <small>Aktuální: <span id="assessmentPerspectiveValue">a – dlouhodobě perspektivní</span></small>
             </div>
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label mb-1" for="assessmentMistletoe">Zastoupení jmelí (0–5)</label>
+            <input type="range" min="0" max="5" step="1" id="assessmentMistletoe" class="form-range">
+            <div class="text-end"><small>Aktuální: <span id="assessmentMistletoeValue">–</span></small></div>
           </div>
         </div>
 

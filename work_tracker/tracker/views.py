@@ -2168,6 +2168,7 @@ def workrecord_assessment_api(request, pk):
             "vitality": assessment.vitality if assessment else None,
             "health_state": assessment.health_state if assessment else None,
             "stability": assessment.stability if assessment else None,
+            "mistletoe_level": assessment.mistletoe_level if assessment else None,
             "perspective": assessment.perspective if assessment else None,
             "assessed_at": assessment.assessed_at.isoformat() if assessment and assessment.assessed_at else None,
         }
@@ -2261,6 +2262,11 @@ def workrecord_assessment_api(request, pk):
     vitality = parse_int(payload.get("vitality"), 1, 5)
     health_state = parse_int(payload.get("health_state"), 1, 5)
     stability = parse_int(payload.get("stability"), 1, 5)
+    raw_mistletoe = payload.get("mistletoe_level")
+    if raw_mistletoe in (None, "", 0, "0"):
+        mistletoe_level = None
+    else:
+        mistletoe_level = parse_int(raw_mistletoe, 1, 5)
     perspective = payload.get("perspective") or None
     if perspective not in (None, "", "a", "b", "c"):
         perspective = None
@@ -2297,6 +2303,7 @@ def workrecord_assessment_api(request, pk):
         vitality=vitality,
         health_state=health_state,
         stability=stability,
+        mistletoe_level=mistletoe_level,
         perspective=perspective,
     )
 
@@ -2315,6 +2322,7 @@ def workrecord_assessment_api(request, pk):
         "vitality": assessment.vitality,
         "health_state": assessment.health_state,
         "stability": assessment.stability,
+        "mistletoe_level": assessment.mistletoe_level,
         "perspective": assessment.perspective,
         "assessed_at": assessment.assessed_at.isoformat() if assessment.assessed_at else None,
     })

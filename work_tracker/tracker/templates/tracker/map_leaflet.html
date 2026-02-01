@@ -117,18 +117,22 @@ document.addEventListener('DOMContentLoaded', function () {
   const assessmentVitality = document.getElementById('assessmentVitality');
   const assessmentHealth = document.getElementById('assessmentHealth');
   const assessmentStability = document.getElementById('assessmentStability');
+  const assessmentMistletoe = document.getElementById('assessmentMistletoe');
   const assessmentPerspectiveSlider = document.getElementById('assessmentPerspectiveSlider');
 
   const assessmentPhysAgeValue = document.getElementById('assessmentPhysAgeValue');
   const assessmentVitalityValue = document.getElementById('assessmentVitalityValue');
   const assessmentHealthValue = document.getElementById('assessmentHealthValue');
   const assessmentStabilityValue = document.getElementById('assessmentStabilityValue');
+  const assessmentMistletoeValue = document.getElementById('assessmentMistletoeValue');
   const assessmentPerspectiveValue = document.getElementById('assessmentPerspectiveValue');
 
   const assessmentCloseBtn = document.getElementById('assessmentCloseBtn');
   const assessmentCancelBtn = document.getElementById('assessmentCancelBtn');
   const assessmentSaveBtn = document.getElementById('assessmentSaveBtn');
   const assessmentMessage = document.getElementById('assessmentMessage');
+  let assessmentScales = {};
+  let mistletoeScales = {};
   const interventionModal = document.getElementById('interventionModal');
   const interventionForm = document.getElementById('interventionForm');
   const interventionTreeIdInput = document.getElementById('interventionTreeId');
@@ -894,9 +898,54 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   }
 
-  function updateSliderLabel(inputEl, labelEl) {
+  function updateSliderLabel(inputEl, labelEl, scaleKey) {
     if (!inputEl || !labelEl) return;
-    labelEl.textContent = inputEl.value || '–';
+    const raw = inputEl.value;
+    if (!raw) {
+      labelEl.textContent = '–';
+      return;
+    }
+    if (scaleKey && assessmentScales && assessmentScales[scaleKey]) {
+      const label = assessmentScales[scaleKey][String(raw)];
+      if (label) {
+        labelEl.textContent = label;
+        return;
+      }
+    }
+    labelEl.textContent = raw;
+  }
+
+  function updatePerspectiveLabel() {
+    if (!assessmentPerspectiveSlider || !assessmentPerspectiveValue) return;
+    const letter = perspectiveLetterFromSlider(assessmentPerspectiveSlider.value);
+    const label =
+      assessmentScales &&
+      assessmentScales.perspective &&
+      assessmentScales.perspective[letter]
+        ? assessmentScales.perspective[letter]
+        : perspectiveLabelFromLetter(letter);
+    assessmentPerspectiveValue.textContent = label;
+  }
+
+  function updateMistletoeLabel() {
+    if (!assessmentMistletoe || !assessmentMistletoeValue) return;
+    const raw = assessmentMistletoe.value;
+    if (raw === '' || raw === null || raw === undefined) {
+      assessmentMistletoeValue.textContent = '–';
+      return;
+    }
+    if (String(raw) === '0') {
+      assessmentMistletoeValue.textContent = 'bez jmelí';
+      return;
+    }
+    const info = mistletoeScales ? mistletoeScales[String(raw)] : null;
+    if (!info) {
+      assessmentMistletoeValue.textContent = raw;
+      return;
+    }
+    const code = info.code ? info.code + ' – ' : '';
+    assessmentMistletoeValue.textContent =
+      code + info.label + ' (' + info.range + ' objemu koruny)';
   }
 
   const stemRowLocks = new WeakMap();
@@ -1386,12 +1435,29 @@ document.addEventListener('DOMContentLoaded', function () {
       });
   }
 
+  if (assessmentModal) {
+    try {
+      assessmentScales = JSON.parse(assessmentModal.dataset.assessmentScales || '{}');
+    } catch (e) {
+      assessmentScales = {};
+    }
+    try {
+      mistletoeScales = JSON.parse(assessmentModal.dataset.mistletoeScales || '{}');
+    } catch (e) {
+      mistletoeScales = {};
+    }
+  }
+
   [assessmentPhysAge, assessmentVitality, assessmentHealth, assessmentStability].forEach((inputEl, idx) => {
     if (!inputEl) return;
     const labelMap = [assessmentPhysAgeValue, assessmentVitalityValue, assessmentHealthValue, assessmentStabilityValue];
     const labelEl = labelMap[idx];
-    inputEl.addEventListener('input', () => updateSliderLabel(inputEl, labelEl));
+    const scaleKeys = ['physiological_age', 'vitality', 'health_state', 'stability'];
+    inputEl.addEventListener('input', () => updateSliderLabel(inputEl, labelEl, scaleKeys[idx]));
   });
+  if (assessmentMistletoe) {
+    assessmentMistletoe.addEventListener('input', updateMistletoeLabel);
+  }
 
   if (stemAddBtn) {
     stemAddBtn.addEventListener('click', () => {
@@ -1408,10 +1474,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
 
   if (assessmentPerspectiveSlider && assessmentPerspectiveValue) {
-    assessmentPerspectiveSlider.addEventListener('input', () => {
-      const letter = perspectiveLetterFromSlider(assessmentPerspectiveSlider.value);
-      assessmentPerspectiveValue.textContent = perspectiveLabelFromLetter(letter);
-    });
+    assessmentPerspectiveSlider.addEventListener('input', updatePerspectiveLabel);
   }
 
   function openAssessmentForRecord(recordId) {
@@ -1427,16 +1490,16 @@ document.addEventListener('DOMContentLoaded', function () {
     if (assessmentVitality) assessmentVitality.value = 3;
     if (assessmentHealth) assessmentHealth.value = 3;
     if (assessmentStability) assessmentStability.value = 3;
+    if (assessmentMistletoe) assessmentMistletoe.value = 0;
     if (assessmentPerspectiveSlider) {
       assessmentPerspectiveSlider.value = 1;
-      if (assessmentPerspectiveValue) {
-        assessmentPerspectiveValue.textContent = perspectiveLabelFromLetter('a');
-      }
     }
-    updateSliderLabel(assessmentPhysAge, assessmentPhysAgeValue);
-    updateSliderLabel(assessmentVitality, assessmentVitalityValue);
-    updateSliderLabel(assessmentHealth, assessmentHealthValue);
-    updateSliderLabel(assessmentStability, assessmentStabilityValue);
+    updateSliderLabel(assessmentPhysAge, assessmentPhysAgeValue, 'physiological_age');
+    updateSliderLabel(assessmentVitality, assessmentVitalityValue, 'vitality');
+    updateSliderLabel(assessmentHealth, assessmentHealthValue, 'health_state');
+    updateSliderLabel(assessmentStability, assessmentStabilityValue, 'stability');
+    updateMistletoeLabel();
+    updatePerspectiveLabel();
     updateCrownAreaHintFromInputs();
     if (assessmentMessage) {
       assessmentMessage.textContent = '';
@@ -1479,16 +1542,20 @@ document.addEventListener('DOMContentLoaded', function () {
         if (assessmentStability && data.stability) {
           assessmentStability.value = data.stability;
         }
+        if (assessmentMistletoe) {
+          assessmentMistletoe.value = data.mistletoe_level ? data.mistletoe_level : 0;
+        }
         if (assessmentPerspectiveSlider && assessmentPerspectiveValue && data.perspective) {
           const letter = data.perspective;
           assessmentPerspectiveSlider.value = perspectiveSliderValueFromLetter(letter);
-          assessmentPerspectiveValue.textContent = perspectiveLabelFromLetter(letter);
         }
 
-        updateSliderLabel(assessmentPhysAge, assessmentPhysAgeValue);
-        updateSliderLabel(assessmentVitality, assessmentVitalityValue);
-        updateSliderLabel(assessmentHealth, assessmentHealthValue);
-        updateSliderLabel(assessmentStability, assessmentStabilityValue);
+        updateSliderLabel(assessmentPhysAge, assessmentPhysAgeValue, 'physiological_age');
+        updateSliderLabel(assessmentVitality, assessmentVitalityValue, 'vitality');
+        updateSliderLabel(assessmentHealth, assessmentHealthValue, 'health_state');
+        updateSliderLabel(assessmentStability, assessmentStabilityValue, 'stability');
+        updateMistletoeLabel();
+        updatePerspectiveLabel();
         updateCrownAreaHintFromInputs();
       })
       .catch(err => {
@@ -1733,6 +1800,9 @@ document.addEventListener('DOMContentLoaded', function () {
         vitality: assessmentVitality && assessmentVitality.value ? assessmentVitality.value : null,
         health_state: assessmentHealth && assessmentHealth.value ? assessmentHealth.value : null,
         stability: assessmentStability && assessmentStability.value ? assessmentStability.value : null,
+        mistletoe_level: assessmentMistletoe && assessmentMistletoe.value !== ''
+          ? assessmentMistletoe.value
+          : null,
         perspective: assessmentPerspectiveSlider
           ? perspectiveLetterFromSlider(assessmentPerspectiveSlider.value)
           : null,

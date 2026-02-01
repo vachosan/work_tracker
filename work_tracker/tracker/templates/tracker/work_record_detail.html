@@ -308,6 +308,12 @@
                       {% else %}–{% endif %}
                     </td>
                   </tr>
+                  {% if assessment.mistletoe_level %}
+                    <tr>
+                      <th scope="row">Zastoupení jmelí</th>
+                      <td>{{ assessment.mistletoe_level|mistletoe_label }}</td>
+                    </tr>
+                  {% endif %}
                   <tr>
                     <th scope="row">Perspektiva stromu</th>
                     <td>
@@ -355,6 +361,7 @@
                   <th>Vitalita</th>
                   <th>Zdravotní stav</th>
                   <th>Stabilita</th>
+                  <th>Jmelí</th>
                   <th>Perspektiva</th>
                 </tr>
               </thead>
@@ -396,6 +403,13 @@
                     <td>{{ a.vitality|default:"–" }}</td>
                     <td>{{ a.health_state|default:"–" }}</td>
                     <td>{{ a.stability|default:"–" }}</td>
+                    <td>
+                      {% if a.mistletoe_level %}
+                        {{ a.mistletoe_level|mistletoe_label }}
+                      {% else %}
+                        –
+                      {% endif %}
+                    </td>
                     <td>
                       {% if a.perspective == 'a' %}a – dlouhodobě perspektivní
                       {% elif a.perspective == 'b' %}b – krátkodobě perspektivní

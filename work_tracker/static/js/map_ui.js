@@ -70,10 +70,12 @@
   let assessmentVitality;
   let assessmentHealth;
   let assessmentStability;
+  let assessmentMistletoe;
   let assessmentPhysAgeValue;
   let assessmentVitalityValue;
   let assessmentHealthValue;
   let assessmentStabilityValue;
+  let assessmentMistletoeValue;
   let assessmentPerspectiveSlider;
   let assessmentPerspectiveValue;
   let assessmentSaveBtn;
@@ -89,6 +91,8 @@
   let shrubAssessmentVitalityValue;
   let shrubAssessmentNoteInput;
   let currentAssessmentKind = 'tree';
+  let assessmentScales = {};
+  let mistletoeScales = {};
 
   let interventionModal;
   let interventionForm;
@@ -951,9 +955,54 @@
 
   // ----- Assessment -----
 
-  function updateSliderLabel(inputEl, labelEl) {
+  function updateSliderLabel(inputEl, labelEl, scaleKey) {
     if (!inputEl || !labelEl) return;
-    labelEl.textContent = inputEl.value || '-';
+    const raw = inputEl.value;
+    if (!raw) {
+      labelEl.textContent = '-';
+      return;
+    }
+    if (scaleKey && assessmentScales && assessmentScales[scaleKey]) {
+      const label = assessmentScales[scaleKey][String(raw)];
+      if (label) {
+        labelEl.textContent = label;
+        return;
+      }
+    }
+    labelEl.textContent = raw;
+  }
+
+  function updatePerspectiveLabel() {
+    if (!assessmentPerspectiveSlider || !assessmentPerspectiveValue) return;
+    const letter = perspectiveLetterFromSlider(assessmentPerspectiveSlider.value);
+    const label =
+      assessmentScales &&
+      assessmentScales.perspective &&
+      assessmentScales.perspective[letter]
+        ? assessmentScales.perspective[letter]
+        : perspectiveLabelFromLetter(letter);
+    assessmentPerspectiveValue.textContent = label;
+  }
+
+  function updateMistletoeLabel() {
+    if (!assessmentMistletoe || !assessmentMistletoeValue) return;
+    const raw = assessmentMistletoe.value;
+    if (raw === '' || raw === null || raw === undefined) {
+      assessmentMistletoeValue.textContent = '-';
+      return;
+    }
+    if (String(raw) === '0') {
+      assessmentMistletoeValue.textContent = 'bez jmelí';
+      return;
+    }
+    const info = mistletoeScales ? mistletoeScales[String(raw)] : null;
+    if (!info) {
+      assessmentMistletoeValue.textContent = raw;
+      return;
+    }
+    const code = info.code ? info.code + ' – ' : '';
+    assessmentMistletoeValue.textContent =
+      code + info.label + ' (' + info.range + ' objemu koruny)';
   }
 
   function parseStemNumber(value) {
@@ -1253,23 +1302,23 @@
       if (assessmentVitality) assessmentVitality.value = 3;
       if (assessmentHealth) assessmentHealth.value = 3;
       if (assessmentStability) assessmentStability.value = 3;
+      if (assessmentMistletoe) assessmentMistletoe.value = 0;
       if (assessmentPerspectiveSlider) {
         assessmentPerspectiveSlider.value = 1;
-        if (assessmentPerspectiveValue) {
-          assessmentPerspectiveValue.textContent = perspectiveLabelFromLetter('a');
-        }
       }
-      updateSliderLabel(assessmentPhysAge, assessmentPhysAgeValue);
-      updateSliderLabel(assessmentVitality, assessmentVitalityValue);
-      updateSliderLabel(assessmentHealth, assessmentHealthValue);
-      updateSliderLabel(assessmentStability, assessmentStabilityValue);
+      updateSliderLabel(assessmentPhysAge, assessmentPhysAgeValue, 'physiological_age');
+      updateSliderLabel(assessmentVitality, assessmentVitalityValue, 'vitality');
+      updateSliderLabel(assessmentHealth, assessmentHealthValue, 'health_state');
+      updateSliderLabel(assessmentStability, assessmentStabilityValue, 'stability');
+      updateMistletoeLabel();
+      updatePerspectiveLabel();
       updateCrownAreaHintFromInputs();
     } else {
       if (shrubAssessmentHeightInput) shrubAssessmentHeightInput.value = '';
       if (shrubAssessmentWidthInput) shrubAssessmentWidthInput.value = '';
       if (shrubAssessmentNoteInput) shrubAssessmentNoteInput.value = '';
       if (shrubAssessmentVitality) shrubAssessmentVitality.value = 3;
-      updateSliderLabel(shrubAssessmentVitality, shrubAssessmentVitalityValue);
+      updateSliderLabel(shrubAssessmentVitality, shrubAssessmentVitalityValue, 'vitality');
     }
 
     if (assessmentMessage) {
@@ -1311,15 +1360,19 @@
           if (assessmentStability && data.stability) {
             assessmentStability.value = data.stability;
           }
+          if (assessmentMistletoe) {
+            assessmentMistletoe.value = data.mistletoe_level ? data.mistletoe_level : 0;
+          }
           if (assessmentPerspectiveSlider && assessmentPerspectiveValue && data.perspective) {
             const letter = data.perspective;
             assessmentPerspectiveSlider.value = perspectiveSliderValueFromLetter(letter);
-            assessmentPerspectiveValue.textContent = perspectiveLabelFromLetter(letter);
           }
-          updateSliderLabel(assessmentPhysAge, assessmentPhysAgeValue);
-          updateSliderLabel(assessmentVitality, assessmentVitalityValue);
-          updateSliderLabel(assessmentHealth, assessmentHealthValue);
-          updateSliderLabel(assessmentStability, assessmentStabilityValue);
+          updateSliderLabel(assessmentPhysAge, assessmentPhysAgeValue, 'physiological_age');
+          updateSliderLabel(assessmentVitality, assessmentVitalityValue, 'vitality');
+          updateSliderLabel(assessmentHealth, assessmentHealthValue, 'health_state');
+          updateSliderLabel(assessmentStability, assessmentStabilityValue, 'stability');
+          updateMistletoeLabel();
+          updatePerspectiveLabel();
           updateCrownAreaHintFromInputs();
         } else {
           if (shrubAssessmentHeightInput && data.height_m != null) {
@@ -1334,7 +1387,7 @@
           if (shrubAssessmentNoteInput && data.note != null) {
             shrubAssessmentNoteInput.value = data.note;
           }
-          updateSliderLabel(shrubAssessmentVitality, shrubAssessmentVitalityValue);
+          updateSliderLabel(shrubAssessmentVitality, shrubAssessmentVitalityValue, 'vitality');
         }
       })
       .catch(function () {
@@ -1397,6 +1450,10 @@
           assessmentHealth && assessmentHealth.value ? assessmentHealth.value : null,
         stability:
           assessmentStability && assessmentStability.value ? assessmentStability.value : null,
+        mistletoe_level:
+          assessmentMistletoe && assessmentMistletoe.value !== ''
+            ? assessmentMistletoe.value
+            : null,
         perspective: assessmentPerspectiveSlider
           ? perspectiveLetterFromSlider(assessmentPerspectiveSlider.value)
           : null,
@@ -2008,10 +2065,12 @@
     assessmentVitality = document.getElementById('assessmentVitality');
     assessmentHealth = document.getElementById('assessmentHealth');
     assessmentStability = document.getElementById('assessmentStability');
+    assessmentMistletoe = document.getElementById('assessmentMistletoe');
     assessmentPhysAgeValue = document.getElementById('assessmentPhysAgeValue');
     assessmentVitalityValue = document.getElementById('assessmentVitalityValue');
     assessmentHealthValue = document.getElementById('assessmentHealthValue');
     assessmentStabilityValue = document.getElementById('assessmentStabilityValue');
+    assessmentMistletoeValue = document.getElementById('assessmentMistletoeValue');
     assessmentPerspectiveSlider = document.getElementById('assessmentPerspectiveSlider');
     assessmentPerspectiveValue = document.getElementById('assessmentPerspectiveValue');
     assessmentSaveBtn = document.getElementById('assessmentSaveBtn');
@@ -2034,6 +2093,19 @@
       });
     }
 
+    if (assessmentModal) {
+      try {
+        assessmentScales = JSON.parse(assessmentModal.dataset.assessmentScales || '{}');
+      } catch (e) {
+        assessmentScales = {};
+      }
+      try {
+        mistletoeScales = JSON.parse(assessmentModal.dataset.mistletoeScales || '{}');
+      } catch (e) {
+        mistletoeScales = {};
+      }
+    }
+
     [assessmentPhysAge, assessmentVitality, assessmentHealth, assessmentStability].forEach(
       function (inputEl, idx) {
         if (!inputEl) return;
@@ -2045,21 +2117,22 @@
         ];
         const labelEl = labelMap[idx];
         inputEl.addEventListener('input', function () {
-          updateSliderLabel(inputEl, labelEl);
+          const scaleKeys = ['physiological_age', 'vitality', 'health_state', 'stability'];
+          updateSliderLabel(inputEl, labelEl, scaleKeys[idx]);
         });
       }
     );
+    if (assessmentMistletoe) {
+      assessmentMistletoe.addEventListener('input', updateMistletoeLabel);
+    }
     if (shrubAssessmentVitality) {
       shrubAssessmentVitality.addEventListener('input', function () {
-        updateSliderLabel(shrubAssessmentVitality, shrubAssessmentVitalityValue);
+        updateSliderLabel(shrubAssessmentVitality, shrubAssessmentVitalityValue, 'vitality');
       });
     }
 
     if (assessmentPerspectiveSlider && assessmentPerspectiveValue) {
-      assessmentPerspectiveSlider.addEventListener('input', function () {
-        const letter = perspectiveLetterFromSlider(assessmentPerspectiveSlider.value);
-        assessmentPerspectiveValue.textContent = perspectiveLabelFromLetter(letter);
-      });
+      assessmentPerspectiveSlider.addEventListener('input', updatePerspectiveLabel);
     }
     if (assessmentCrownWidthInput) {
       assessmentCrownWidthInput.addEventListener('input', updateCrownAreaHintFromInputs);
