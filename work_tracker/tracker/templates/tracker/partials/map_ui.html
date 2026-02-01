@@ -75,8 +75,8 @@
   </div>
 </div>
 
-<div id="assessmentModal" class="capture-modal">
-  <div class="capture-card">
+<div id="assessmentModal" class="capture-modal assessment-modal">
+  <div class="capture-card assessment-modal-card">
     <div class="d-flex justify-content-between align-items-center mb-1">
       <h6
         class="mb-0"
@@ -88,87 +88,97 @@
       <button type="button" class="btn btn-sm btn-outline-light rounded-circle px-2 py-0" id="assessmentCloseBtn" aria-label="Zavřít">&times;</button>
     </div>
 
-    <div class="vstack gap-2 small">
-      <input type="hidden" id="assessmentWorkRecordId" />
+    <div class="assessment-scroll">
+      <div class="vstack gap-2 small">
+        <input type="hidden" id="assessmentWorkRecordId" />
+        <input type="hidden" name="stem_diameter_cm" id="stem_d_cm_hidden">
+        <input type="hidden" name="stem_circumference_cm" id="stem_c_cm_hidden">
+        <input type="hidden" name="stem_diameters_cm_list" id="stem_diameters_cm_list_hidden">
+        <input type="hidden" name="stem_circumferences_cm_list" id="stem_circumferences_cm_list_hidden">
 
-      <div id="treeAssessmentFields">
-        <div class="row g-2">
-          <div class="col-6">
-            <label for="assessmentDbh" class="form-label mb-1">Průměr kmene [cm]</label>
-            <input type="number" step="0.1" class="form-control form-control-sm" id="assessmentDbh" placeholder="např. 45">
+        <div id="treeAssessmentFields">
+          <div class="stems-section">
+            <div class="d-flex align-items-center justify-content-between mb-1">
+              <label class="form-label mb-0">Kmeny</label>
+              <button type="button" class="btn btn-outline-light btn-sm stem-add-btn" id="stemAddBtn">+ Přidat kmen</button>
+            </div>
+            <div id="stems-list" class="vstack gap-2"></div>
           </div>
-          <div class="col-6">
-            <label for="assessmentHeight" class="form-label mb-1">Výška stromu [m]</label>
-            <input type="number" step="0.1" class="form-control form-control-sm" id="assessmentHeight" placeholder="např. 18">
+
+          <div class="row g-2">
+            <div class="col-6">
+              <label for="assessmentHeight" class="form-label mb-1">Výška stromu [m]</label>
+              <input type="number" step="0.1" class="form-control form-control-sm" id="assessmentHeight" placeholder="např. 18">
+            </div>
+            <div class="col-6">
+              <label for="assessmentCrownWidth" class="form-label mb-1">Šířka koruny [m]</label>
+              <input type="number" step="0.01" class="form-control form-control-sm" id="assessmentCrownWidth" placeholder="např. 6.5">
+            </div>
           </div>
-        </div>
 
-        <div class="row g-2">
-          <div class="col-6">
-            <label for="assessmentCrownWidth" class="form-label mb-1">Šířka koruny [m]</label>
-            <input type="number" step="0.01" class="form-control form-control-sm" id="assessmentCrownWidth" placeholder="např. 6.5">
+          <div class="row g-2">
+            <div class="col-12">
+              <label for="assessmentCrownArea" class="form-label mb-1">Plocha koruny [m²]</label>
+              <input type="text" class="form-control form-control-sm" id="assessmentCrownArea" readonly>
+              <div id="assessmentCrownAreaHint" class="form-text text-muted small"></div>
+            </div>
           </div>
-          <div class="col-6">
-            <label for="assessmentCrownArea" class="form-label mb-1">Plocha koruny [m²]</label>
-            <input type="text" class="form-control form-control-sm" id="assessmentCrownArea" readonly>
-            <div id="assessmentCrownAreaHint" class="form-text text-muted small"></div>
+
+          <div class="mb-1">
+            <label class="form-label mb-1" for="assessmentPhysAge">Fyziologické stáří (1–5)</label>
+            <input type="range" min="1" max="5" step="1" id="assessmentPhysAge" class="form-range">
+            <div class="text-end"><small>Aktuální: <span id="assessmentPhysAgeValue">–</span></small></div>
           </div>
-        </div>
 
-        <div class="mb-1">
-          <label class="form-label mb-1" for="assessmentPhysAge">Fyziologické stáří (1–5)</label>
-          <input type="range" min="1" max="5" step="1" id="assessmentPhysAge" class="form-range">
-          <div class="text-end"><small>Aktuální: <span id="assessmentPhysAgeValue">–</span></small></div>
-        </div>
-
-        <div class="mb-1">
-          <label class="form-label mb-1" for="assessmentVitality">Vitalita (1–5)</label>
-          <input type="range" min="1" max="5" step="1" id="assessmentVitality" class="form-range">
-          <div class="text-end"><small>Aktuální: <span id="assessmentVitalityValue">–</span></small></div>
-        </div>
-
-        <div class="mb-1">
-          <label class="form-label mb-1" for="assessmentHealth">Zdravotní stav (1–5)</label>
-          <input type="range" min="1" max="5" step="1" id="assessmentHealth" class="form-range">
-          <div class="text-end"><small>Aktuální: <span id="assessmentHealthValue">–</span></small></div>
-        </div>
-
-        <div class="mb-2">
-          <label class="form-label mb-1" for="assessmentStability">Stabilita (1–5)</label>
-          <input type="range" min="1" max="5" step="1" id="assessmentStability" class="form-range">
-          <div class="text-end"><small>Aktuální: <span id="assessmentStabilityValue">–</span></small></div>
-        </div>
-
-        <div class="mb-2">
-          <label class="form-label mb-1" for="assessmentPerspectiveSlider">Perspektiva stromu (a–c)</label>
-          <input type="range" min="1" max="3" step="1" id="assessmentPerspectiveSlider" class="form-range">
-          <div class="text-end">
-            <small>Aktuální: <span id="assessmentPerspectiveValue">a – dlouhodobě perspektivní</span></small>
+          <div class="mb-1">
+            <label class="form-label mb-1" for="assessmentVitality">Vitalita (1–5)</label>
+            <input type="range" min="1" max="5" step="1" id="assessmentVitality" class="form-range">
+            <div class="text-end"><small>Aktuální: <span id="assessmentVitalityValue">–</span></small></div>
           </div>
-        </div>
-      </div>
 
-      <div id="shrubAssessmentFields" class="d-none">
-        <div class="row g-2">
-          <div class="col-6">
-            <label for="shrubAssessmentHeight" class="form-label mb-1">Výška keře [m]</label>
-            <input type="number" step="0.1" class="form-control form-control-sm" id="shrubAssessmentHeight" placeholder="např. 1.5">
+          <div class="mb-1">
+            <label class="form-label mb-1" for="assessmentHealth">Zdravotní stav (1–5)</label>
+            <input type="range" min="1" max="5" step="1" id="assessmentHealth" class="form-range">
+            <div class="text-end"><small>Aktuální: <span id="assessmentHealthValue">–</span></small></div>
           </div>
-          <div class="col-6">
-            <label for="shrubAssessmentWidth" class="form-label mb-1">Šířka keře [m]</label>
-            <input type="number" step="0.1" class="form-control form-control-sm" id="shrubAssessmentWidth" placeholder="např. 2.0">
+
+          <div class="mb-2">
+            <label class="form-label mb-1" for="assessmentStability">Stabilita (1–5)</label>
+            <input type="range" min="1" max="5" step="1" id="assessmentStability" class="form-range">
+            <div class="text-end"><small>Aktuální: <span id="assessmentStabilityValue">–</span></small></div>
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label mb-1" for="assessmentPerspectiveSlider">Perspektiva stromu (a–c)</label>
+            <input type="range" min="1" max="3" step="1" id="assessmentPerspectiveSlider" class="form-range">
+            <div class="text-end">
+              <small>Aktuální: <span id="assessmentPerspectiveValue">a – dlouhodobě perspektivní</span></small>
+            </div>
           </div>
         </div>
 
-        <div class="mb-1">
-          <label class="form-label mb-1" for="shrubAssessmentVitality">Vitalita (1–5)</label>
-          <input type="range" min="1" max="5" step="1" id="shrubAssessmentVitality" class="form-range">
-          <div class="text-end"><small>Aktuální: <span id="shrubAssessmentVitalityValue">–</span></small></div>
-        </div>
+        <div id="shrubAssessmentFields" class="d-none">
+          <div class="row g-2">
+            <div class="col-6">
+              <label for="shrubAssessmentHeight" class="form-label mb-1">Výška keře [m]</label>
+              <input type="number" step="0.1" class="form-control form-control-sm" id="shrubAssessmentHeight" placeholder="např. 1.5">
+            </div>
+            <div class="col-6">
+              <label for="shrubAssessmentWidth" class="form-label mb-1">Šířka keře [m]</label>
+              <input type="number" step="0.1" class="form-control form-control-sm" id="shrubAssessmentWidth" placeholder="např. 2.0">
+            </div>
+          </div>
 
-        <div class="mb-2">
-          <label class="form-label mb-1" for="shrubAssessmentNote">Poznámka</label>
-          <textarea id="shrubAssessmentNote" class="form-control form-control-sm" rows="2" placeholder="Poznámka (volitelné)"></textarea>
+          <div class="mb-1">
+            <label class="form-label mb-1" for="shrubAssessmentVitality">Vitalita (1–5)</label>
+            <input type="range" min="1" max="5" step="1" id="shrubAssessmentVitality" class="form-range">
+            <div class="text-end"><small>Aktuální: <span id="shrubAssessmentVitalityValue">–</span></small></div>
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label mb-1" for="shrubAssessmentNote">Poznámka</label>
+            <textarea id="shrubAssessmentNote" class="form-control form-control-sm" rows="2" placeholder="Poznámka (volitelné)"></textarea>
+          </div>
         </div>
       </div>
     </div>

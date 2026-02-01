@@ -8,6 +8,7 @@ import unicodedata
 import re
 import tempfile
 import logging
+import math
 from urllib.parse import urlencode
 import zipstream
 import json
@@ -2157,6 +2158,9 @@ def workrecord_assessment_api(request, pk):
         data = {
             "work_record_id": work_record.pk,
             "dbh_cm": assessment.dbh_cm if assessment else None,
+            "stem_circumference_cm": assessment.stem_circumference_cm if assessment else None,
+            "stem_diameters_cm_list": assessment.stem_diameters_cm_list if assessment else "",
+            "stem_circumferences_cm_list": assessment.stem_circumferences_cm_list if assessment else "",
             "height_m": assessment.height_m if assessment else None,
             "crown_width_m": str(assessment.crown_width_m) if assessment and assessment.crown_width_m is not None else None,
             "crown_area_m2": str(assessment.crown_area_m2) if assessment and assessment.crown_area_m2 is not None else None,
@@ -2202,7 +2206,55 @@ def workrecord_assessment_api(request, pk):
         except (InvalidOperation, TypeError, ValueError):
             return None
 
-    dbh_cm = parse_float(payload.get("dbh_cm"))
+    def parse_cm_int(value):
+        if value in (None, ""):
+            return None
+        try:
+            num = float(value)
+        except (TypeError, ValueError):
+            return None
+        rounded = int(round(num))
+        if rounded <= 0:
+            return None
+        return rounded
+
+    def parse_cm_list(value):
+        if value in (None, ""):
+            return []
+        if isinstance(value, (list, tuple)):
+            raw_items = value
+        else:
+            raw_items = str(value).split(",")
+        items = []
+        for item in raw_items:
+            parsed = parse_cm_int(item)
+            if parsed is not None:
+                items.append(parsed)
+        return items
+
+    def normalize_cm_lists(diameters, circumferences):
+        length = max(len(diameters), len(circumferences))
+        norm_diameters = []
+        norm_circumferences = []
+        for i in range(length):
+            d_val = diameters[i] if i < len(diameters) else None
+            c_val = circumferences[i] if i < len(circumferences) else None
+            if d_val is None and c_val is None:
+                continue
+            if d_val is None and c_val is not None:
+                d_val = int(round(c_val / math.pi))
+            if c_val is None and d_val is not None:
+                c_val = int(round(d_val * math.pi))
+            if not d_val or not c_val:
+                continue
+            norm_diameters.append(d_val)
+            norm_circumferences.append(c_val)
+        return norm_diameters, norm_circumferences
+
+    dbh_cm = parse_cm_int(payload.get("dbh_cm"))
+    stem_circumference_cm = parse_cm_int(payload.get("stem_circumference_cm"))
+    stem_diameters_cm_list = parse_cm_list(payload.get("stem_diameters_cm_list"))
+    stem_circumferences_cm_list = parse_cm_list(payload.get("stem_circumferences_cm_list"))
     height_m = parse_float(payload.get("height_m"))
     crown_width_m = parse_decimal(payload.get("crown_width_m"))
     physiological_age = parse_int(payload.get("physiological_age"), 1, 5)
@@ -2212,11 +2264,33 @@ def workrecord_assessment_api(request, pk):
     perspective = payload.get("perspective") or None
     if perspective not in (None, "", "a", "b", "c"):
         perspective = None
+    norm_diameters, norm_circumferences = normalize_cm_lists(
+        stem_diameters_cm_list, stem_circumferences_cm_list
+    )
+    if not norm_diameters and (dbh_cm is not None or stem_circumference_cm is not None):
+        if dbh_cm is None and stem_circumference_cm is not None:
+            dbh_cm = int(round(stem_circumference_cm / math.pi))
+        elif stem_circumference_cm is None and dbh_cm is not None:
+            stem_circumference_cm = int(round(dbh_cm * math.pi))
+        if dbh_cm is not None and stem_circumference_cm is not None:
+            norm_diameters = [dbh_cm]
+            norm_circumferences = [stem_circumference_cm]
+    if norm_diameters:
+        max_idx = max(range(len(norm_diameters)), key=lambda idx: norm_diameters[idx])
+        dbh_cm = norm_diameters[max_idx]
+        stem_circumference_cm = norm_circumferences[max_idx]
+    elif dbh_cm is None and stem_circumference_cm is not None:
+        dbh_cm = int(round(stem_circumference_cm / math.pi))
+    elif stem_circumference_cm is None and dbh_cm is not None:
+        stem_circumference_cm = int(round(dbh_cm * math.pi))
 
     assessment = TreeAssessment.objects.create(
         work_record=work_record,
         assessed_at=date.today(),
         dbh_cm=dbh_cm,
+        stem_circumference_cm=stem_circumference_cm,
+        stem_diameters_cm_list=",".join(str(val) for val in norm_diameters),
+        stem_circumferences_cm_list=",".join(str(val) for val in norm_circumferences),
         height_m=height_m,
         crown_width_m=crown_width_m,
         physiological_age=physiological_age,
@@ -2231,6 +2305,9 @@ def workrecord_assessment_api(request, pk):
         "id": assessment.pk,
         "work_record_id": work_record.pk,
         "dbh_cm": assessment.dbh_cm,
+        "stem_circumference_cm": assessment.stem_circumference_cm,
+        "stem_diameters_cm_list": assessment.stem_diameters_cm_list,
+        "stem_circumferences_cm_list": assessment.stem_circumferences_cm_list,
         "height_m": assessment.height_m,
         "crown_width_m": str(assessment.crown_width_m) if assessment.crown_width_m is not None else None,
         "crown_area_m2": str(assessment.crown_area_m2) if assessment.crown_area_m2 is not None else None,

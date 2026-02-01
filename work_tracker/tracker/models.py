@@ -446,6 +446,27 @@ class TreeAssessment(models.Model):
         help_text="Průměr kmene v centimetrech v měřické výšce.",
     )
 
+    stem_circumference_cm = models.FloatField(
+        null=True,
+        blank=True,
+        verbose_name="Obvod kmene [cm]",
+        help_text="Obvod kmene v centimetrech v měřické výšce.",
+    )
+
+    stem_diameters_cm_list = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Průměry kmenů [cm] (CSV)",
+    )
+
+    stem_circumferences_cm_list = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        verbose_name="Obvody kmenů [cm] (CSV)",
+    )
+
     height_m = models.FloatField(
         null=True,
         blank=True,

@@ -1,4 +1,5 @@
 {% extends 'tracker/base.html' %}
+{% load tracker_extras %}
 {% block title %}Detail úkonu{% endblock %}
 
 {% block content %}
@@ -224,10 +225,23 @@
             <div class="table-responsive">
               <table class="table table-sm mb-0">
                 <tbody>
-                  <tr>
-                    <th scope="row" class="w-50">Průměr kmene (DBH) [cm]</th>
-                    <td>{{ assessment.dbh_cm|default:"–" }}</td>
-                  </tr>
+                  {% if assessment.stem_diameters_cm_list %}
+                    <tr>
+                      <th scope="row" class="w-50">Kmeny (DBH) [cm]</th>
+                      <td>{{ assessment.stem_diameters_cm_list|csv_with_spaces }}</td>
+                    </tr>
+                    {% if assessment.stem_circumferences_cm_list %}
+                      <tr>
+                        <th scope="row" class="w-50">Obvody [cm]</th>
+                        <td>{{ assessment.stem_circumferences_cm_list|csv_with_spaces }}</td>
+                      </tr>
+                    {% endif %}
+                  {% else %}
+                    <tr>
+                      <th scope="row" class="w-50">Průměr kmene (DBH) [cm]</th>
+                      <td>{{ assessment.dbh_cm|default:"–" }}</td>
+                    </tr>
+                  {% endif %}
                   <tr>
                     <th scope="row">Výška stromu [m]</th>
                     <td>{{ assessment.height_m|default:"–" }}</td>
@@ -332,6 +346,8 @@
                 <tr>
                   <th>Datum hodnocení</th>
                   <th>DBH [cm]</th>
+                  <th>Kmeny (DBH) [cm]</th>
+                  <th>Obvody [cm]</th>
                   <th>Výška [m]</th>
                   <th>Šířka koruny [m]</th>
                   <th>Plocha koruny [m²]</th>
@@ -347,6 +363,22 @@
                   <tr>
                     <td>{{ a.assessed_at|date:"d.m.Y" }}</td>
                     <td>{{ a.dbh_cm|default:"–" }}</td>
+                    <td>
+                      {% if a.stem_diameters_cm_list %}
+                        {{ a.stem_diameters_cm_list|csv_with_spaces }}
+                      {% else %}
+                        {{ a.dbh_cm|default:"–" }}
+                      {% endif %}
+                    </td>
+                    <td>
+                      {% if a.stem_circumferences_cm_list %}
+                        {{ a.stem_circumferences_cm_list|csv_with_spaces }}
+                      {% elif a.stem_diameters_cm_list %}
+                        –
+                      {% else %}
+                        {{ a.stem_circumference_cm|default:"–" }}
+                      {% endif %}
+                    </td>
                     <td>{{ a.height_m|default:"–" }}</td>
                     <td>{{ a.crown_width_m|default:"-" }}</td>
                     <td>

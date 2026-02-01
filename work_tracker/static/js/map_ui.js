@@ -55,7 +55,13 @@
 
   let assessmentModal;
   let assessmentWorkRecordIdInput;
-  let assessmentDbhInput;
+  let assessmentStemDiameterHidden;
+  let assessmentStemCircumferenceHidden;
+  let assessmentStemDiametersListHidden;
+  let assessmentStemCircumferencesListHidden;
+  let stemsList;
+  let stemAddBtn;
+  let stemRowLocks;
   let assessmentHeightInput;
   let assessmentCrownWidthInput;
   let assessmentCrownAreaInput;
@@ -950,6 +956,224 @@
     labelEl.textContent = inputEl.value || '-';
   }
 
+  function parseStemNumber(value) {
+    if (value === null || value === undefined) return null;
+    const normalized = String(value).trim().replace(',', '.');
+    if (!normalized) return null;
+    const parsed = parseFloat(normalized);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return parsed;
+  }
+
+  function roundStemInt(value) {
+    if (!Number.isFinite(value)) return null;
+    const rounded = Math.round(value);
+    if (rounded <= 0) return null;
+    return rounded;
+  }
+
+  function parseStemInt(value) {
+    const numberVal = parseStemNumber(value);
+    if (numberVal === null) return null;
+    return roundStemInt(numberVal);
+  }
+
+  function parseStemList(value) {
+    if (!value) return [];
+    if (Array.isArray(value)) {
+      return value
+        .map(parseStemInt)
+        .filter(function (item) {
+          return item !== null;
+        });
+    }
+    return String(value)
+      .split(',')
+      .map(function (part) {
+        return parseStemInt(part);
+      })
+      .filter(function (item) {
+        return item !== null;
+      });
+  }
+
+  function stemRowLock(rowEl, locked) {
+    if (!stemRowLocks) stemRowLocks = new WeakMap();
+    if (locked === undefined) return !!stemRowLocks.get(rowEl);
+    stemRowLocks.set(rowEl, locked);
+  }
+
+  function setRowValues(rowEl, diameter, circumference) {
+    const diameterInput = rowEl.querySelector('.stem-diameter-input');
+    const circumferenceInput = rowEl.querySelector('.stem-circumference-input');
+    if (diameterInput) diameterInput.value = diameter !== null ? String(diameter) : '';
+    if (circumferenceInput) circumferenceInput.value = circumference !== null ? String(circumference) : '';
+  }
+
+  function syncRowFromInput(rowEl, source) {
+    if (!rowEl || stemRowLock(rowEl)) return;
+    const diameterInput = rowEl.querySelector('.stem-diameter-input');
+    const circumferenceInput = rowEl.querySelector('.stem-circumference-input');
+    if (!diameterInput || !circumferenceInput) return;
+    const diameterNum = parseStemNumber(diameterInput.value);
+    const circumferenceNum = parseStemNumber(circumferenceInput.value);
+    stemRowLock(rowEl, true);
+    if (source === 'diameter' && diameterNum !== null) {
+      const computed = roundStemInt(Math.PI * diameterNum);
+      if (computed !== null) circumferenceInput.value = String(computed);
+    } else if (source === 'circumference' && circumferenceNum !== null) {
+      const computed = roundStemInt(circumferenceNum / Math.PI);
+      if (computed !== null) diameterInput.value = String(computed);
+    }
+    stemRowLock(rowEl, false);
+  }
+
+  function updateStemLists() {
+    if (!stemsList) return;
+    const diameterList = [];
+    const circumferenceList = [];
+    const rows = stemsList.querySelectorAll('.stem-row');
+    rows.forEach(function (rowEl) {
+      const diameterInput = rowEl.querySelector('.stem-diameter-input');
+      const circumferenceInput = rowEl.querySelector('.stem-circumference-input');
+      if (!diameterInput || !circumferenceInput) return;
+      const diameterNum = parseStemNumber(diameterInput.value);
+      const circumferenceNum = parseStemNumber(circumferenceInput.value);
+      if (diameterNum === null && circumferenceNum === null) return;
+      let diameterVal = diameterNum !== null ? roundStemInt(diameterNum) : null;
+      let circumferenceVal = circumferenceNum !== null ? roundStemInt(circumferenceNum) : null;
+      if (diameterVal === null && circumferenceVal !== null) {
+        diameterVal = roundStemInt(circumferenceVal / Math.PI);
+      } else if (circumferenceVal === null && diameterVal !== null) {
+        circumferenceVal = roundStemInt(Math.PI * diameterVal);
+      }
+      if (diameterVal === null || circumferenceVal === null) return;
+      diameterList.push(diameterVal);
+      circumferenceList.push(circumferenceVal);
+    });
+
+    if (assessmentStemDiametersListHidden) {
+      assessmentStemDiametersListHidden.value = diameterList.join(',');
+    }
+    if (assessmentStemCircumferencesListHidden) {
+      assessmentStemCircumferencesListHidden.value = circumferenceList.join(',');
+    }
+
+    if (!assessmentStemDiameterHidden || !assessmentStemCircumferenceHidden) return;
+    if (!diameterList.length) {
+      assessmentStemDiameterHidden.value = '';
+      assessmentStemCircumferenceHidden.value = '';
+      return;
+    }
+    let maxIdx = 0;
+    for (let i = 1; i < diameterList.length; i += 1) {
+      if (diameterList[i] > diameterList[maxIdx]) maxIdx = i;
+    }
+    assessmentStemDiameterHidden.value = String(diameterList[maxIdx]);
+    assessmentStemCircumferenceHidden.value = String(circumferenceList[maxIdx]);
+  }
+
+  function createStemRow(diameter, circumference) {
+    if (!stemsList) return null;
+    const rowEl = document.createElement('div');
+    rowEl.className = 'stem-row d-flex gap-2 align-items-end';
+    rowEl.innerHTML =
+      '<div class="flex-grow-1">' +
+      '<label class="form-label mb-1 small" for="">Průměr (cm)</label>' +
+      '<input type="number" step="1" inputmode="numeric" class="form-control form-control-sm stem-diameter-input" placeholder="např. 30">' +
+      '</div>' +
+      '<div class="flex-grow-1">' +
+      '<label class="form-label mb-1 small" for="">Obvod (cm)</label>' +
+      '<input type="number" step="1" inputmode="numeric" class="form-control form-control-sm stem-circumference-input" placeholder="např. 94">' +
+      '</div>' +
+      '<button type="button" class="btn btn-outline-danger btn-sm stem-remove-btn" aria-label="Smazat kmen">&times;</button>';
+    const diameterInput = rowEl.querySelector('.stem-diameter-input');
+    const circumferenceInput = rowEl.querySelector('.stem-circumference-input');
+    const removeBtn = rowEl.querySelector('.stem-remove-btn');
+    if (diameterInput) {
+      diameterInput.addEventListener('input', function () {
+        syncRowFromInput(rowEl, 'diameter');
+        updateStemLists();
+      });
+      diameterInput.addEventListener('blur', function () {
+        const numberVal = parseStemNumber(diameterInput.value);
+        if (numberVal === null) return;
+        const rounded = roundStemInt(numberVal);
+        if (rounded === null) return;
+        diameterInput.value = String(rounded);
+        if (!parseStemNumber(circumferenceInput.value)) {
+          const computed = roundStemInt(Math.PI * rounded);
+          if (computed !== null) circumferenceInput.value = String(computed);
+        }
+        updateStemLists();
+      });
+    }
+    if (circumferenceInput) {
+      circumferenceInput.addEventListener('input', function () {
+        syncRowFromInput(rowEl, 'circumference');
+        updateStemLists();
+      });
+      circumferenceInput.addEventListener('blur', function () {
+        const numberVal = parseStemNumber(circumferenceInput.value);
+        if (numberVal === null) return;
+        const rounded = roundStemInt(numberVal);
+        if (rounded === null) return;
+        circumferenceInput.value = String(rounded);
+        if (!parseStemNumber(diameterInput.value)) {
+          const computed = roundStemInt(rounded / Math.PI);
+          if (computed !== null) diameterInput.value = String(computed);
+        }
+        updateStemLists();
+      });
+    }
+    if (removeBtn) {
+      removeBtn.addEventListener('click', function () {
+        rowEl.remove();
+        updateStemLists();
+      });
+    }
+    stemsList.appendChild(rowEl);
+    setRowValues(rowEl, diameter, circumference);
+    return rowEl;
+  }
+
+  function clearStemRows() {
+    if (!stemsList) return;
+    stemsList.innerHTML = '';
+  }
+
+  function initStemRowsFromData(data) {
+    clearStemRows();
+    const diameters = parseStemList(data && data.stem_diameters_cm_list);
+    const circumferences = parseStemList(data && data.stem_circumferences_cm_list);
+    if (diameters.length || circumferences.length) {
+      const length = Math.max(diameters.length, circumferences.length);
+      for (let i = 0; i < length; i += 1) {
+        const d = i < diameters.length ? diameters[i] : null;
+        const c = i < circumferences.length ? circumferences[i] : null;
+        createStemRow(d, c);
+      }
+      updateStemLists();
+      return;
+    }
+    const fallbackDiameter = parseStemInt(data && data.dbh_cm);
+    const fallbackCirc = parseStemInt(data && data.stem_circumference_cm);
+    if (fallbackDiameter !== null || fallbackCirc !== null) {
+      let diameterVal = fallbackDiameter;
+      let circumferenceVal = fallbackCirc;
+      if (diameterVal === null && circumferenceVal !== null) {
+        diameterVal = Math.round(circumferenceVal / Math.PI);
+      } else if (circumferenceVal === null && diameterVal !== null) {
+        circumferenceVal = Math.round(Math.PI * diameterVal);
+      }
+      createStemRow(diameterVal, circumferenceVal);
+      updateStemLists();
+      return;
+    }
+    createStemRow(null, null);
+    updateStemLists();
+  }
+
   function updateCrownAreaHint(areaValue, widthValue, heightValue) {
     if (assessmentCrownAreaInput) {
       assessmentCrownAreaInput.value = areaValue || '';
@@ -1020,7 +1244,7 @@
     if (assessmentWorkRecordIdInput) assessmentWorkRecordIdInput.value = recordId;
 
     if (kind === 'tree') {
-      if (assessmentDbhInput) assessmentDbhInput.value = '';
+      initStemRowsFromData(null);
       if (assessmentHeightInput) assessmentHeightInput.value = '';
       if (assessmentCrownWidthInput) assessmentCrownWidthInput.value = '';
       if (assessmentCrownAreaInput) assessmentCrownAreaInput.value = '';
@@ -1065,9 +1289,7 @@
       })
       .then(function (data) {
         if (kind === 'tree') {
-          if (assessmentDbhInput && data.dbh_cm != null) {
-            assessmentDbhInput.value = data.dbh_cm;
-          }
+          initStemRowsFromData(data);
           if (assessmentHeightInput && data.height_m != null) {
             assessmentHeightInput.value = data.height_m;
           }
@@ -1146,7 +1368,22 @@
     let payload = {};
     if (kind === 'tree') {
       payload = {
-        dbh_cm: assessmentDbhInput && assessmentDbhInput.value ? assessmentDbhInput.value : null,
+        dbh_cm:
+          assessmentStemDiameterHidden && assessmentStemDiameterHidden.value
+            ? assessmentStemDiameterHidden.value
+            : null,
+        stem_circumference_cm:
+          assessmentStemCircumferenceHidden && assessmentStemCircumferenceHidden.value
+            ? assessmentStemCircumferenceHidden.value
+            : null,
+        stem_diameters_cm_list:
+          assessmentStemDiametersListHidden && assessmentStemDiametersListHidden.value
+            ? assessmentStemDiametersListHidden.value
+            : '',
+        stem_circumferences_cm_list:
+          assessmentStemCircumferencesListHidden && assessmentStemCircumferencesListHidden.value
+            ? assessmentStemCircumferencesListHidden.value
+            : '',
         height_m:
           assessmentHeightInput && assessmentHeightInput.value ? assessmentHeightInput.value : null,
         crown_width_m:
@@ -1757,7 +1994,12 @@
     // Assessment modal
     assessmentModal = document.getElementById('assessmentModal');
     assessmentWorkRecordIdInput = document.getElementById('assessmentWorkRecordId');
-    assessmentDbhInput = document.getElementById('assessmentDbh');
+    assessmentStemDiameterHidden = document.getElementById('stem_d_cm_hidden');
+    assessmentStemCircumferenceHidden = document.getElementById('stem_c_cm_hidden');
+    assessmentStemDiametersListHidden = document.getElementById('stem_diameters_cm_list_hidden');
+    assessmentStemCircumferencesListHidden = document.getElementById('stem_circumferences_cm_list_hidden');
+    stemsList = document.getElementById('stems-list');
+    stemAddBtn = document.getElementById('stemAddBtn');
     assessmentHeightInput = document.getElementById('assessmentHeight');
     assessmentCrownWidthInput = document.getElementById('assessmentCrownWidth');
     assessmentCrownAreaInput = document.getElementById('assessmentCrownArea');
@@ -1784,6 +2026,13 @@
     shrubAssessmentVitality = document.getElementById('shrubAssessmentVitality');
     shrubAssessmentVitalityValue = document.getElementById('shrubAssessmentVitalityValue');
     shrubAssessmentNoteInput = document.getElementById('shrubAssessmentNote');
+
+    if (stemAddBtn) {
+      stemAddBtn.addEventListener('click', function () {
+        createStemRow(null, null);
+        updateStemLists();
+      });
+    }
 
     [assessmentPhysAge, assessmentVitality, assessmentHealth, assessmentStability].forEach(
       function (inputEl, idx) {
