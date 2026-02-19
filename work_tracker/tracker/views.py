@@ -1039,8 +1039,13 @@ def export_selected_zip(request, pk):
     # vytvoření streamovacího ZIP objektu
     z = zipstream.ZipFile(mode='w', compression=zipfile.ZIP_DEFLATED)
 
+    used_folders = set()
     for record in work_records:
-        folder = _slugify_export_name(record.title or f"ukon_{record.id}")
+        base_label = record.preferred_id_label or f"ukon_{record.id}"
+        folder = _slugify_export_name(base_label) or f"ukon_{record.id}"
+        if folder in used_folders:
+            folder = f"{folder}_{record.id}"
+        used_folders.add(folder)
         photos = PhotoDocumentation.objects.filter(work_record=record)
 
         for photo in photos:

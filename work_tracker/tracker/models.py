@@ -285,6 +285,27 @@ class WorkRecord(models.Model):
             return str(self.pk)
         return "WorkRecord (unsaved)"
 
+    @property
+    def preferred_id_label(self) -> str:
+        """
+        Preferred identifier for UI/exports:
+        external_tree_id > passport_code (T-0086) > formatted passport_no > fallback.
+        """
+        if self.external_tree_id:
+            return self.external_tree_id
+        if self.passport_code:
+            return self.passport_code
+        if self.passport_no:
+            return self._format_passport_code(self.passport_no)
+        if self.title:
+            return self.title
+        internal_code = self.generate_internal_code()
+        if internal_code:
+            return internal_code
+        if self.pk:
+            return str(self.pk)
+        return "WorkRecord (unsaved)"
+
     def _passport_number_from_code(self) -> int | None:
         if not self.passport_code:
             return None
