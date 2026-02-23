@@ -75,6 +75,21 @@ ACCESS_OBSTACLE_LEVEL_CHOICES = [
     (2, "Omezená přístupnost / plné spouštění"),
 ]
 
+ACCESS_OBSTACLE_MULTIPLIERS = {
+    0: 1.00,
+    1: 1.30,
+    2: 1.60,
+}
+
+MISTLETOE_MULTIPLIERS = {
+    0: 1.00,
+    1: 1.15,
+    2: 1.15,
+    3: 1.30,
+    4: 1.50,
+    5: 1.50,
+}
+
 BASE36_ALPHABET = string.digits + string.ascii_uppercase
 
 
@@ -591,6 +606,37 @@ class TreeAssessment(models.Model):
 
     def get_access_obstacle_label(self):
         return dict(ACCESS_OBSTACLE_LEVEL_CHOICES).get(self.access_obstacle_level, "")
+
+    def get_access_obstacle_multiplier(self):
+        return ACCESS_OBSTACLE_MULTIPLIERS.get(self.access_obstacle_level, 1.00)
+
+    def get_mistletoe_label(self):
+        level = self.mistletoe_level
+        if level in (None, "", 0):
+            return "bez jmelí"
+        info = MISTLETOE_LEVELS.get(level)
+        if not info:
+            return ""
+        return f"{info['code']} – {info['label']} ({info['range']} objemu koruny)"
+
+    def get_mistletoe_multiplier(self):
+        level = self.mistletoe_level
+        if level in (None, "", 0):
+            return MISTLETOE_MULTIPLIERS[0]
+        return MISTLETOE_MULTIPLIERS.get(level, 1.00)
+
+    def get_pricing_context(self):
+        access_multiplier = self.get_access_obstacle_multiplier()
+        mistletoe_multiplier = self.get_mistletoe_multiplier()
+        return {
+            "access_obstacle_level": self.access_obstacle_level,
+            "access_obstacle_label": self.get_access_obstacle_label(),
+            "access_obstacle_multiplier": access_multiplier,
+            "mistletoe_level": self.mistletoe_level,
+            "mistletoe_label": self.get_mistletoe_label(),
+            "mistletoe_multiplier": mistletoe_multiplier,
+            "combined_multiplier": access_multiplier * mistletoe_multiplier,
+        }
 
     def _compute_crown_area_m2(self):
         width = self.crown_width_m

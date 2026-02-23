@@ -73,6 +73,8 @@ from .models import (
     Species,
     MISTLETOE_LEVELS,
     ACCESS_OBSTACLE_LEVEL_CHOICES,
+    ACCESS_OBSTACLE_MULTIPLIERS,
+    MISTLETOE_MULTIPLIERS,
 )
 from .permissions import (
     user_projects_qs,
@@ -1091,6 +1093,18 @@ def export_selected_zip(request, pk):
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
 
+EXPORT_INCLUDE_PRICING_MULTIPLIERS = False
+
+PRICING_EXPORT_HEADERS = [
+    "access_obstacle_level",
+    "access_obstacle_label",
+    "access_obstacle_multiplier",
+    "mistletoe_level",
+    "mistletoe_label",
+    "mistletoe_multiplier",
+    "combined_multiplier",
+]
+
 EXPORT_HEADERS = [
     "work_record_id",
     "project_id",
@@ -1140,6 +1154,9 @@ EXPORT_HEADERS = [
     "shrub_note",
 ]
 
+if EXPORT_INCLUDE_PRICING_MULTIPLIERS:
+    EXPORT_HEADERS = EXPORT_HEADERS + PRICING_EXPORT_HEADERS
+
 
 def _format_csv_list(value):
     if not value:
@@ -1162,6 +1179,16 @@ def _mistletoe_text(level):
     return f"{info['code']} – {info['label']} ({info['range']} objemu koruny)"
 
 
+def _mistletoe_multiplier(level):
+    if level in (None, "", 0):
+        return MISTLETOE_MULTIPLIERS[0]
+    try:
+        key = int(level)
+    except (TypeError, ValueError):
+        return MISTLETOE_MULTIPLIERS[0]
+    return MISTLETOE_MULTIPLIERS.get(key, 1.00)
+
+
 def _access_obstacle_text(level, include_level=False):
     if level is None:
         return ""
@@ -1175,6 +1202,16 @@ def _access_obstacle_text(level, include_level=False):
     if include_level:
         return f"{label} ({key})"
     return label
+
+
+def _access_obstacle_multiplier(level):
+    if level is None:
+        return ACCESS_OBSTACLE_MULTIPLIERS[0]
+    try:
+        key = int(level)
+    except (TypeError, ValueError):
+        return ACCESS_OBSTACLE_MULTIPLIERS[0]
+    return ACCESS_OBSTACLE_MULTIPLIERS.get(key, 1.00)
 
 
 def _interventions_codes(record):
@@ -1195,7 +1232,7 @@ def _export_row_native(record, assessment, shrub_assessment):
         WorkRecord.VegetationType.SHRUB,
         WorkRecord.VegetationType.HEDGE,
     )
-    return [
+    base_row = [
         record.id,
         record.project_id,
         record.project.name if record.project else None,
@@ -1252,6 +1289,21 @@ def _export_row_native(record, assessment, shrub_assessment):
         if shrub_kind and shrub_assessment and shrub_assessment.width_m is not None
         else None,
         shrub_assessment.note if shrub_kind and shrub_assessment else "",
+    ]
+    if not EXPORT_INCLUDE_PRICING_MULTIPLIERS:
+        return base_row
+    access_level = assessment.access_obstacle_level if assessment else None
+    mistletoe_level = assessment.mistletoe_level if assessment else None
+    access_multiplier = _access_obstacle_multiplier(access_level)
+    mistletoe_multiplier = _mistletoe_multiplier(mistletoe_level)
+    return base_row + [
+        access_level,
+        _access_obstacle_text(access_level),
+        access_multiplier,
+        mistletoe_level,
+        _mistletoe_text(mistletoe_level),
+        mistletoe_multiplier,
+        access_multiplier * mistletoe_multiplier,
     ]
 
 
@@ -1415,6 +1467,20 @@ def export_selected_xml(request, pk):
                 attrs["access_obstacle_label"] = _access_obstacle_text(
                     assessment.access_obstacle_level
                 )
+                attrs["access_obstacle_multiplier"] = str(
+                    _access_obstacle_multiplier(assessment.access_obstacle_level)
+                )
+            if assessment.mistletoe_level is not None:
+                attrs["mistletoe_level"] = str(assessment.mistletoe_level)
+                attrs["mistletoe_label"] = _mistletoe_text(assessment.mistletoe_level)
+                attrs["mistletoe_multiplier"] = str(
+                    _mistletoe_multiplier(assessment.mistletoe_level)
+                )
+            if assessment.access_obstacle_level is not None or assessment.mistletoe_level is not None:
+                attrs["combined_multiplier"] = str(
+                    _access_obstacle_multiplier(assessment.access_obstacle_level)
+                    * _mistletoe_multiplier(assessment.mistletoe_level)
+                )
             if assessment.perspective:
                 attrs["perspective"] = assessment.perspective
             if assessment.assessed_at:
@@ -1502,10 +1568,23 @@ def export_qgis_geojson(request, pk):
             "assessment_access_obstacle_label": _access_obstacle_text(
                 assessment.access_obstacle_level if assessment else None
             ),
+            "assessment_access_obstacle_multiplier": _access_obstacle_multiplier(
+                assessment.access_obstacle_level if assessment else None
+            ),
             "assessment_mistletoe_level_raw": assessment.mistletoe_level if assessment else None,
+            "assessment_mistletoe_label": _mistletoe_text(
+                assessment.mistletoe_level if assessment else None
+            ),
             "assessment_mistletoe_text": _mistletoe_text(
                 assessment.mistletoe_level if assessment else None
             ),
+            "assessment_mistletoe_multiplier": _mistletoe_multiplier(
+                assessment.mistletoe_level if assessment else None
+            ),
+            "assessment_combined_multiplier": _access_obstacle_multiplier(
+                assessment.access_obstacle_level if assessment else None
+            )
+            * _mistletoe_multiplier(assessment.mistletoe_level if assessment else None),
             "assessment_perspective": assessment.perspective if assessment else None,
             "shrub_assessed_at": shrub_assessment.assessed_at.isoformat()
             if shrub_assessment and shrub_assessment.assessed_at
@@ -1834,6 +1913,7 @@ def workrecords_geojson(request):
     )
     qs = qs.annotate(
         crown_width_m=Subquery(latest_assessment.values("crown_width_m")[:1]),
+        mistletoe_level=Subquery(latest_assessment.values("mistletoe_level")[:1]),
         access_obstacle_level=Subquery(latest_assessment.values("access_obstacle_level")[:1]),
         shrub_width_m=Subquery(latest_shrub.values("width_m")[:1]),
         has_approved_intervention=Exists(approved_interventions),
@@ -1892,6 +1972,18 @@ def workrecords_geojson(request):
                     "access_obstacle_label": _access_obstacle_text(
                         getattr(wr, "access_obstacle_level", None)
                     ),
+                    "access_obstacle_multiplier": _access_obstacle_multiplier(
+                        getattr(wr, "access_obstacle_level", None)
+                    ),
+                    "mistletoe_level": getattr(wr, "mistletoe_level", None),
+                    "mistletoe_label": _mistletoe_text(getattr(wr, "mistletoe_level", None)),
+                    "mistletoe_multiplier": _mistletoe_multiplier(
+                        getattr(wr, "mistletoe_level", None)
+                    ),
+                    "combined_multiplier": _access_obstacle_multiplier(
+                        getattr(wr, "access_obstacle_level", None)
+                    )
+                    * _mistletoe_multiplier(getattr(wr, "mistletoe_level", None)),
                     "intervention_stage": intervention_stage,
                 },
             }
@@ -2413,6 +2505,18 @@ def workrecord_assessment_api(request, pk):
 
     if request.method == "GET":
         assessment = work_record.latest_assessment
+        if assessment:
+            pricing = assessment.get_pricing_context()
+        else:
+            pricing = {
+                "access_obstacle_level": None,
+                "access_obstacle_label": "",
+                "access_obstacle_multiplier": _access_obstacle_multiplier(None),
+                "mistletoe_level": None,
+                "mistletoe_label": "",
+                "mistletoe_multiplier": _mistletoe_multiplier(None),
+                "combined_multiplier": None,
+            }
         data = {
             "work_record_id": work_record.pk,
             "dbh_cm": assessment.dbh_cm if assessment else None,
@@ -2430,7 +2534,11 @@ def workrecord_assessment_api(request, pk):
             "access_obstacle_label": _access_obstacle_text(
                 assessment.access_obstacle_level if assessment else None
             ),
+            "access_obstacle_multiplier": pricing["access_obstacle_multiplier"],
             "mistletoe_level": assessment.mistletoe_level if assessment else None,
+            "mistletoe_label": pricing["mistletoe_label"],
+            "mistletoe_multiplier": pricing["mistletoe_multiplier"],
+            "combined_multiplier": pricing["combined_multiplier"],
             "perspective": assessment.perspective if assessment else None,
             "assessed_at": assessment.assessed_at.isoformat() if assessment and assessment.assessed_at else None,
         }
@@ -2588,7 +2696,14 @@ def workrecord_assessment_api(request, pk):
         "stability": assessment.stability,
         "access_obstacle_level": assessment.access_obstacle_level,
         "access_obstacle_label": _access_obstacle_text(assessment.access_obstacle_level),
+        "access_obstacle_multiplier": assessment.get_access_obstacle_multiplier(),
         "mistletoe_level": assessment.mistletoe_level,
+        "mistletoe_label": assessment.get_mistletoe_label(),
+        "mistletoe_multiplier": assessment.get_mistletoe_multiplier(),
+        "combined_multiplier": (
+            assessment.get_access_obstacle_multiplier()
+            * assessment.get_mistletoe_multiplier()
+        ),
         "perspective": assessment.perspective,
         "assessed_at": assessment.assessed_at.isoformat() if assessment.assessed_at else None,
     })
