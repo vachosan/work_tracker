@@ -23,7 +23,8 @@ local_settings.py
 /staticfiles/
 /media/
 work_tracker/media/
-
+/imports/
+work_tracker/imports/
 # --- IDE / vývojové nástroje ---
 .vscode/
 .idea/
@@ -39,3 +40,4 @@ tiles-build/
 # RUIAN downloads / cache
 # runtime / cache
 var/
+
