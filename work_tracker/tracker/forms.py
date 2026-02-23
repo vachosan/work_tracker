@@ -167,7 +167,10 @@ class TreeInterventionForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        queryset = InterventionType.objects.filter(is_active=True).order_by('order', 'name')
+        queryset = InterventionType.objects.filter(
+            is_active=True,
+            is_selectable=True,
+        ).order_by('order', 'name')
         self.fields['intervention_type'].queryset = queryset
 
     @property

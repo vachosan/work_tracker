@@ -92,8 +92,8 @@ class ProjectMembershipAdmin(admin.ModelAdmin):
 
 @admin.register(InterventionType)
 class InterventionTypeAdmin(admin.ModelAdmin):
-    list_display = ("name", "is_active", "order")
-    list_filter = ("is_active",)
+    list_display = ("name", "is_active", "is_selectable", "order")
+    list_filter = ("is_active", "is_selectable")
     ordering = ("order", "name")
 
 

@@ -857,6 +857,7 @@ class InterventionType(models.Model):
     note_required = models.BooleanField(default=False, verbose_name="Vyžaduje doplnění poznámky")
     note_hint = models.TextField(blank=True, verbose_name="Pokyny k doplnění")
     is_active = models.BooleanField(default=True, verbose_name="Aktivní")
+    is_selectable = models.BooleanField(default=True, verbose_name="Zobrazit ve výběru")
     order = models.PositiveIntegerField(default=0, verbose_name="Pořadí")
 
     class Meta:
