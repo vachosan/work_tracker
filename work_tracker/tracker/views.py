@@ -796,6 +796,8 @@ def tree_intervention_api(request, tree_id):
             'code': intervention.intervention_type.code,
             'urgency': intervention.get_urgency_display(),
             'status': intervention.get_status_display(),
+            'estimated_price_czk': intervention.estimated_price_czk,
+            'estimated_price_breakdown': intervention.estimated_price_breakdown,
         },
     })
 
@@ -822,6 +824,8 @@ def tree_intervention_api(request, tree_id):
             'status_code': obj.status,
             'status_note': obj.status_note or '',
             'description': obj.description or '',
+            'estimated_price_czk': obj.estimated_price_czk,
+            'estimated_price_breakdown': obj.estimated_price_breakdown,
             'transition_url': reverse('tree_intervention_transition', args=[obj.pk]),
             'created_at': obj.created_at.isoformat() if obj.created_at else None,
             'handed_over_for_check_at': (

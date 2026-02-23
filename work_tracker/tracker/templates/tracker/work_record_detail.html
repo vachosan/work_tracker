@@ -478,6 +478,15 @@
                   {% if intervention.status_note %}
                     <div class="small text-muted">Pozn.: {{ intervention.status_note }}</div>
                   {% endif %}
+                  {% if intervention.estimated_price_czk %}
+                    <div class="small text-muted">Odhad ceny: {{ intervention.estimated_price_czk }} Kč</div>
+                    {% if intervention.estimated_price_breakdown %}
+                      <div class="small text-muted">
+                        Základ: {{ intervention.estimated_price_breakdown.base_price_czk|default:"-" }} Kč,
+                        faktor: {{ intervention.estimated_price_breakdown.combined_multiplier|default:"-" }}
+                      </div>
+                    {% endif %}
+                  {% endif %}
 
                   <div class="d-flex flex-wrap gap-1 mt-2">
                     {% if intervention.allowed_mark_done %}
@@ -555,10 +564,19 @@
                   <td>{{ intervention.get_urgency_display }}</td>
                   <td>
                     <span class="badge bg-success">Potvrzeno</span>
-                    {% if intervention.status_note %}
-                      <div class="small text-muted">Pozn.: {{ intervention.status_note }}</div>
+                  {% if intervention.status_note %}
+                    <div class="small text-muted">Pozn.: {{ intervention.status_note }}</div>
+                  {% endif %}
+                  {% if intervention.estimated_price_czk %}
+                    <div class="small text-muted">Odhad ceny: {{ intervention.estimated_price_czk }} Kč</div>
+                    {% if intervention.estimated_price_breakdown %}
+                      <div class="small text-muted">
+                        Základ: {{ intervention.estimated_price_breakdown.base_price_czk|default:"-" }} Kč,
+                        faktor: {{ intervention.estimated_price_breakdown.combined_multiplier|default:"-" }}
+                      </div>
                     {% endif %}
-                  </td>
+                  {% endif %}
+                </td>
                   <td>
                     <div class="small text-muted">Vytvořeno: {{ intervention.created_at|date:"d.m.Y H:i" }}</div>
                     {% if intervention.handed_over_for_check_at %}

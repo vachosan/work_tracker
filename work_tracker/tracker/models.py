@@ -940,6 +940,16 @@ class TreeIntervention(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Vytvořeno")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Aktualizováno")
+    estimated_price_czk = models.IntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Odhad ceny [Kč]",
+    )
+    estimated_price_breakdown = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name="Rozpad odhadu ceny",
+    )
 
     class Meta:
         verbose_name = "Zásah na stromě"
@@ -1452,3 +1462,19 @@ def _assign_cadastre_on_create(sender, instance, created, **kwargs):
     except Exception:
         # Do not block creation if cadastral lookup fails.
         pass
+
+
+@receiver(post_save, sender=TreeIntervention)
+def _estimate_intervention_price_on_save(sender, instance, **kwargs):
+    from .pricing import apply_intervention_estimate
+
+    apply_intervention_estimate(instance)
+
+
+@receiver(post_save, sender=TreeAssessment)
+def _recalculate_intervention_prices_on_assessment(sender, instance, **kwargs):
+    from .pricing import apply_intervention_estimate
+
+    interventions = instance.work_record.interventions.all()
+    for intervention in interventions:
+        apply_intervention_estimate(intervention)
