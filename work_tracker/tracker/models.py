@@ -870,6 +870,96 @@ class InterventionType(models.Model):
         return self.name
 
 
+class PriceListVersion(models.Model):
+    code = models.CharField(
+        max_length=32,
+        unique=True,
+        verbose_name="Kód ceníku",
+    )
+    label = models.CharField(
+        max_length=255,
+        verbose_name="Název ceníku",
+    )
+    imported_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Naposledy importováno",
+    )
+
+    class Meta:
+        verbose_name = "Verze ceníku"
+        verbose_name_plural = "Verze ceníků"
+        ordering = ["-imported_at", "code"]
+
+    def __str__(self):
+        return self.label or self.code
+
+
+class PriceListItem(models.Model):
+    version = models.ForeignKey(
+        PriceListVersion,
+        on_delete=models.CASCADE,
+        related_name="items",
+        verbose_name="Verze ceníku",
+    )
+    activity_code = models.CharField(
+        max_length=20,
+        verbose_name="Kód aktivity",
+    )
+    item_code = models.CharField(
+        max_length=20,
+        verbose_name="Kód položky",
+    )
+    label = models.TextField(verbose_name="Popis položky")
+    unit = models.CharField(
+        max_length=20,
+        default="ks",
+        verbose_name="Jednotka",
+    )
+    price_czk = models.PositiveIntegerField(verbose_name="Cena [Kč]")
+    band_min_m2 = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Pásmo od [m²]",
+    )
+    band_max_m2 = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="Pásmo do [m²]",
+    )
+    operation_type = models.CharField(
+        max_length=32,
+        default="jine",
+        verbose_name="Typ operace",
+    )
+    is_combo = models.BooleanField(
+        default=False,
+        verbose_name="Kombinační položka",
+    )
+    is_memorial_or_special = models.BooleanField(
+        default=False,
+        verbose_name="Památné / výjimečné",
+    )
+    metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name="Metadata",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Vytvořeno")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Aktualizováno")
+
+    class Meta:
+        verbose_name = "Položka ceníku"
+        verbose_name_plural = "Položky ceníku"
+        unique_together = ("version", "item_code")
+        indexes = [
+            models.Index(fields=["version", "item_code"]),
+            models.Index(fields=["activity_code", "operation_type"]),
+        ]
+
+    def __str__(self):
+        return f"{self.item_code} – {self.label}"
+
+
 class TreeIntervention(models.Model):
     def mark_approved(self):
         self.status = "done_pending_owner"
