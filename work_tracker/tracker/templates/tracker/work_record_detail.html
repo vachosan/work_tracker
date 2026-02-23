@@ -308,6 +308,10 @@
                       {% else %}–{% endif %}
                     </td>
                   </tr>
+                  <tr>
+                    <th scope="row">Překážky</th>
+                    <td>{{ assessment.get_access_obstacle_label|default:"–" }}</td>
+                  </tr>
                   {% if assessment.mistletoe_level %}
                     <tr>
                       <th scope="row">Zastoupení jmelí</th>
@@ -361,6 +365,7 @@
                   <th>Vitalita</th>
                   <th>Zdravotní stav</th>
                   <th>Stabilita</th>
+                  <th>Překážky</th>
                   <th>Jmelí</th>
                   <th>Perspektiva</th>
                 </tr>
@@ -403,6 +408,7 @@
                     <td>{{ a.vitality|default:"–" }}</td>
                     <td>{{ a.health_state|default:"–" }}</td>
                     <td>{{ a.stability|default:"–" }}</td>
+                    <td>{{ a.get_access_obstacle_label|default:"–" }}</td>
                     <td>
                       {% if a.mistletoe_level %}
                         {{ a.mistletoe_level|mistletoe_label }}

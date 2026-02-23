@@ -9,6 +9,7 @@ from tracker.models import (
     PERSPECTIVE_CHOICES,
     STABILITY_CHOICES,
     VITALITY_CHOICES,
+    ACCESS_OBSTACLE_LEVEL_CHOICES,
     MISTLETOE_LEVELS,
 )
 
@@ -36,6 +37,7 @@ def assessment_scales_json():
         "health_state": _choices_to_map(HEALTH_STATE_CHOICES),
         "stability": _choices_to_map(STABILITY_CHOICES),
         "perspective": _choices_to_map(PERSPECTIVE_CHOICES),
+        "access_obstacle_level": _choices_to_map(ACCESS_OBSTACLE_LEVEL_CHOICES),
     }
     return mark_safe(json.dumps(data, ensure_ascii=False))
 

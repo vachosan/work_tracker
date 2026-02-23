@@ -24,6 +24,23 @@ class PhotoDocumentationInline(admin.TabularInline):
 class TreeAssessmentInline(admin.StackedInline):
     model = TreeAssessment
     extra = 1
+    fields = (
+        "assessed_at",
+        "dbh_cm",
+        "stem_circumference_cm",
+        "stem_diameters_cm_list",
+        "stem_circumferences_cm_list",
+        "height_m",
+        "crown_width_m",
+        "crown_area_m2",
+        "physiological_age",
+        "vitality",
+        "health_state",
+        "stability",
+        "mistletoe_level",
+        "perspective",
+        "access_obstacle_level",
+    )
 
 class ProjectMembershipInline(admin.TabularInline):
     model = ProjectMembership
@@ -92,7 +109,22 @@ class TreeInterventionAdmin(admin.ModelAdmin):
     urgency_label.short_description = "Naléhavost"
 
 
-admin.site.register(TreeAssessment)
+@admin.register(TreeAssessment)
+class TreeAssessmentAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "work_record",
+        "assessed_at",
+        "access_obstacle_level",
+        "access_obstacle_label",
+    )
+    list_filter = ("assessed_at", "access_obstacle_level")
+    search_fields = ("work_record__title", "work_record__external_tree_id")
+
+    def access_obstacle_label(self, obj):
+        return obj.get_access_obstacle_label()
+
+    access_obstacle_label.short_description = "Překážky"
 
 
 @admin.register(Dataset)

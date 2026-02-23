@@ -70,11 +70,13 @@
   let assessmentVitality;
   let assessmentHealth;
   let assessmentStability;
+  let assessmentAccessObstacle;
   let assessmentMistletoe;
   let assessmentPhysAgeValue;
   let assessmentVitalityValue;
   let assessmentHealthValue;
   let assessmentStabilityValue;
+  let assessmentAccessObstacleValue;
   let assessmentMistletoeValue;
   let assessmentPerspectiveSlider;
   let assessmentPerspectiveValue;
@@ -1302,6 +1304,7 @@
       if (assessmentVitality) assessmentVitality.value = 3;
       if (assessmentHealth) assessmentHealth.value = 3;
       if (assessmentStability) assessmentStability.value = 3;
+      if (assessmentAccessObstacle) assessmentAccessObstacle.value = 0;
       if (assessmentMistletoe) assessmentMistletoe.value = 0;
       if (assessmentPerspectiveSlider) {
         assessmentPerspectiveSlider.value = 1;
@@ -1310,6 +1313,7 @@
       updateSliderLabel(assessmentVitality, assessmentVitalityValue, 'vitality');
       updateSliderLabel(assessmentHealth, assessmentHealthValue, 'health_state');
       updateSliderLabel(assessmentStability, assessmentStabilityValue, 'stability');
+      updateSliderLabel(assessmentAccessObstacle, assessmentAccessObstacleValue, 'access_obstacle_level');
       updateMistletoeLabel();
       updatePerspectiveLabel();
       updateCrownAreaHintFromInputs();
@@ -1360,6 +1364,9 @@
           if (assessmentStability && data.stability) {
             assessmentStability.value = data.stability;
           }
+          if (assessmentAccessObstacle && data.access_obstacle_level !== null && data.access_obstacle_level !== undefined) {
+            assessmentAccessObstacle.value = data.access_obstacle_level;
+          }
           if (assessmentMistletoe) {
             assessmentMistletoe.value = data.mistletoe_level ? data.mistletoe_level : 0;
           }
@@ -1371,6 +1378,7 @@
           updateSliderLabel(assessmentVitality, assessmentVitalityValue, 'vitality');
           updateSliderLabel(assessmentHealth, assessmentHealthValue, 'health_state');
           updateSliderLabel(assessmentStability, assessmentStabilityValue, 'stability');
+          updateSliderLabel(assessmentAccessObstacle, assessmentAccessObstacleValue, 'access_obstacle_level');
           updateMistletoeLabel();
           updatePerspectiveLabel();
           updateCrownAreaHintFromInputs();
@@ -1450,6 +1458,10 @@
           assessmentHealth && assessmentHealth.value ? assessmentHealth.value : null,
         stability:
           assessmentStability && assessmentStability.value ? assessmentStability.value : null,
+        access_obstacle_level:
+          assessmentAccessObstacle && assessmentAccessObstacle.value !== ''
+            ? assessmentAccessObstacle.value
+            : null,
         mistletoe_level:
           assessmentMistletoe && assessmentMistletoe.value !== ''
             ? assessmentMistletoe.value
@@ -2065,11 +2077,13 @@
     assessmentVitality = document.getElementById('assessmentVitality');
     assessmentHealth = document.getElementById('assessmentHealth');
     assessmentStability = document.getElementById('assessmentStability');
+    assessmentAccessObstacle = document.getElementById('assessmentAccessObstacle');
     assessmentMistletoe = document.getElementById('assessmentMistletoe');
     assessmentPhysAgeValue = document.getElementById('assessmentPhysAgeValue');
     assessmentVitalityValue = document.getElementById('assessmentVitalityValue');
     assessmentHealthValue = document.getElementById('assessmentHealthValue');
     assessmentStabilityValue = document.getElementById('assessmentStabilityValue');
+    assessmentAccessObstacleValue = document.getElementById('assessmentAccessObstacleValue');
     assessmentMistletoeValue = document.getElementById('assessmentMistletoeValue');
     assessmentPerspectiveSlider = document.getElementById('assessmentPerspectiveSlider');
     assessmentPerspectiveValue = document.getElementById('assessmentPerspectiveValue');
@@ -2106,7 +2120,7 @@
       }
     }
 
-    [assessmentPhysAge, assessmentVitality, assessmentHealth, assessmentStability].forEach(
+    [assessmentPhysAge, assessmentVitality, assessmentHealth, assessmentStability, assessmentAccessObstacle].forEach(
       function (inputEl, idx) {
         if (!inputEl) return;
         const labelMap = [
@@ -2114,10 +2128,11 @@
           assessmentVitalityValue,
           assessmentHealthValue,
           assessmentStabilityValue,
+          assessmentAccessObstacleValue,
         ];
         const labelEl = labelMap[idx];
         inputEl.addEventListener('input', function () {
-          const scaleKeys = ['physiological_age', 'vitality', 'health_state', 'stability'];
+          const scaleKeys = ['physiological_age', 'vitality', 'health_state', 'stability', 'access_obstacle_level'];
           updateSliderLabel(inputEl, labelEl, scaleKeys[idx]);
         });
       }

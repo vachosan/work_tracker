@@ -69,6 +69,12 @@ MISTLETOE_CHOICES = [
     for key, info in MISTLETOE_LEVELS.items()
 ]
 
+ACCESS_OBSTACLE_LEVEL_CHOICES = [
+    (0, "Volné stanoviště"),
+    (1, "Pomístní překážky"),
+    (2, "Omezená přístupnost / plné spouštění"),
+]
+
 BASE36_ALPHABET = string.digits + string.ascii_uppercase
 
 
@@ -569,12 +575,22 @@ class TreeAssessment(models.Model):
         verbose_name="Perspektiva stromu",
     )
 
+    access_obstacle_level = models.PositiveSmallIntegerField(
+        default=0,
+        choices=ACCESS_OBSTACLE_LEVEL_CHOICES,
+        verbose_name="Překážky",
+        help_text="Kategorie překážek a přístupnosti pro plánování zásahu.",
+    )
+
     class Meta:
         verbose_name = "Hodnocení stromu"
         verbose_name_plural = "Hodnocení stromů"
 
     def __str__(self):
         return f"Hodnocení pro WorkRecord #{self.work_record_id}"
+
+    def get_access_obstacle_label(self):
+        return dict(ACCESS_OBSTACLE_LEVEL_CHOICES).get(self.access_obstacle_level, "")
 
     def _compute_crown_area_m2(self):
         width = self.crown_width_m

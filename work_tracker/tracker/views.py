@@ -72,6 +72,7 @@ from .models import (
     TreeIntervention,
     Species,
     MISTLETOE_LEVELS,
+    ACCESS_OBSTACLE_LEVEL_CHOICES,
 )
 from .permissions import (
     user_projects_qs,
@@ -1128,6 +1129,7 @@ EXPORT_HEADERS = [
     "assessment_vitality",
     "assessment_health_state",
     "assessment_stability",
+    "Překážky",
     "assessment_mistletoe_level_raw",
     "assessment_mistletoe_text",
     "assessment_perspective",
@@ -1158,6 +1160,21 @@ def _mistletoe_text(level):
     if not info:
         return ""
     return f"{info['code']} – {info['label']} ({info['range']} objemu koruny)"
+
+
+def _access_obstacle_text(level, include_level=False):
+    if level is None:
+        return ""
+    try:
+        key = int(level)
+    except (TypeError, ValueError):
+        return ""
+    label = dict(ACCESS_OBSTACLE_LEVEL_CHOICES).get(key)
+    if not label:
+        return ""
+    if include_level:
+        return f"{label} ({key})"
+    return label
 
 
 def _interventions_codes(record):
@@ -1218,6 +1235,7 @@ def _export_row_native(record, assessment, shrub_assessment):
         assessment.vitality if assessment and assessment.vitality is not None else None,
         assessment.health_state if assessment and assessment.health_state is not None else None,
         assessment.stability if assessment and assessment.stability is not None else None,
+        _access_obstacle_text(assessment.access_obstacle_level if assessment else None),
         assessment.mistletoe_level if assessment and assessment.mistletoe_level is not None else None,
         _mistletoe_text(assessment.mistletoe_level) if assessment else "",
         assessment.perspective if assessment and assessment.perspective is not None else None,
@@ -1392,6 +1410,11 @@ def export_selected_xml(request, pk):
                 attrs["health_state"] = str(assessment.health_state)
             if assessment.stability is not None:
                 attrs["stability"] = str(assessment.stability)
+            if assessment.access_obstacle_level is not None:
+                attrs["access_obstacle_level"] = str(assessment.access_obstacle_level)
+                attrs["access_obstacle_label"] = _access_obstacle_text(
+                    assessment.access_obstacle_level
+                )
             if assessment.perspective:
                 attrs["perspective"] = assessment.perspective
             if assessment.assessed_at:
@@ -1473,6 +1496,12 @@ def export_qgis_geojson(request, pk):
             "assessment_vitality": assessment.vitality if assessment else None,
             "assessment_health_state": assessment.health_state if assessment else None,
             "assessment_stability": assessment.stability if assessment else None,
+            "assessment_access_obstacle_level": assessment.access_obstacle_level
+            if assessment
+            else None,
+            "assessment_access_obstacle_label": _access_obstacle_text(
+                assessment.access_obstacle_level if assessment else None
+            ),
             "assessment_mistletoe_level_raw": assessment.mistletoe_level if assessment else None,
             "assessment_mistletoe_text": _mistletoe_text(
                 assessment.mistletoe_level if assessment else None
@@ -1805,6 +1834,7 @@ def workrecords_geojson(request):
     )
     qs = qs.annotate(
         crown_width_m=Subquery(latest_assessment.values("crown_width_m")[:1]),
+        access_obstacle_level=Subquery(latest_assessment.values("access_obstacle_level")[:1]),
         shrub_width_m=Subquery(latest_shrub.values("width_m")[:1]),
         has_approved_intervention=Exists(approved_interventions),
         has_done_intervention=Exists(done_interventions),
@@ -1858,6 +1888,10 @@ def workrecords_geojson(request):
                     "crown_width_m": to_float(getattr(wr, "crown_width_m", None)),
                     "hedge_line": wr.hedge_line,
                     "shrub_width_m": shrub_width_value,
+                    "access_obstacle_level": getattr(wr, "access_obstacle_level", None),
+                    "access_obstacle_label": _access_obstacle_text(
+                        getattr(wr, "access_obstacle_level", None)
+                    ),
                     "intervention_stage": intervention_stage,
                 },
             }
@@ -2392,6 +2426,10 @@ def workrecord_assessment_api(request, pk):
             "vitality": assessment.vitality if assessment else None,
             "health_state": assessment.health_state if assessment else None,
             "stability": assessment.stability if assessment else None,
+            "access_obstacle_level": assessment.access_obstacle_level if assessment else None,
+            "access_obstacle_label": _access_obstacle_text(
+                assessment.access_obstacle_level if assessment else None
+            ),
             "mistletoe_level": assessment.mistletoe_level if assessment else None,
             "perspective": assessment.perspective if assessment else None,
             "assessed_at": assessment.assessed_at.isoformat() if assessment and assessment.assessed_at else None,
@@ -2486,6 +2524,7 @@ def workrecord_assessment_api(request, pk):
     vitality = parse_int(payload.get("vitality"), 1, 5)
     health_state = parse_int(payload.get("health_state"), 1, 5)
     stability = parse_int(payload.get("stability"), 1, 5)
+    access_obstacle_level = parse_int(payload.get("access_obstacle_level"), 0, 2)
     raw_mistletoe = payload.get("mistletoe_level")
     if raw_mistletoe in (None, "", 0, "0"):
         mistletoe_level = None
@@ -2527,6 +2566,7 @@ def workrecord_assessment_api(request, pk):
         vitality=vitality,
         health_state=health_state,
         stability=stability,
+        access_obstacle_level=access_obstacle_level if access_obstacle_level is not None else 0,
         mistletoe_level=mistletoe_level,
         perspective=perspective,
     )
@@ -2546,6 +2586,8 @@ def workrecord_assessment_api(request, pk):
         "vitality": assessment.vitality,
         "health_state": assessment.health_state,
         "stability": assessment.stability,
+        "access_obstacle_level": assessment.access_obstacle_level,
+        "access_obstacle_label": _access_obstacle_text(assessment.access_obstacle_level),
         "mistletoe_level": assessment.mistletoe_level,
         "perspective": assessment.perspective,
         "assessed_at": assessment.assessed_at.isoformat() if assessment.assessed_at else None,
