@@ -1912,6 +1912,9 @@ def workrecords_geojson(request):
         tree=OuterRef("pk"),
         status="completed",
     )
+    any_interventions = TreeIntervention.objects.filter(
+        tree=OuterRef("pk"),
+    )
     done_interventions = TreeIntervention.objects.filter(
         tree=OuterRef("pk"),
         status="done_pending_owner",
@@ -1922,6 +1925,7 @@ def workrecords_geojson(request):
         access_obstacle_level=Subquery(latest_assessment.values("access_obstacle_level")[:1]),
         shrub_width_m=Subquery(latest_shrub.values("width_m")[:1]),
         has_approved_intervention=Exists(approved_interventions),
+        has_interventions=Exists(any_interventions),
         has_done_intervention=Exists(done_interventions),
     )
 
@@ -1947,8 +1951,16 @@ def workrecords_geojson(request):
 
     records = list(qs)
     intervention_types_by_tree = defaultdict(set)
+    intervention_statuses_by_tree = defaultdict(set)
     project_intervention_types = set()
     project_intervention_type_labels = {}
+    project_intervention_type_trees = defaultdict(set)
+    project_intervention_statuses = set()
+    project_intervention_status_trees = defaultdict(set)
+    project_intervention_status_labels = dict(TreeIntervention._meta.get_field("status").choices)
+    project_intervention_status_order = [
+        value for value, _ in TreeIntervention._meta.get_field("status").choices
+    ]
     interventions_qs = (
         TreeIntervention.objects.filter(tree_id__in=project_scope_qs.values("id"))
         .select_related("intervention_type")
@@ -1956,19 +1968,53 @@ def workrecords_geojson(request):
             "tree_id",
             "intervention_type__code",
             "intervention_type__name",
+            "status",
         )
     )
     for item in interventions_qs:
         code = (item.get("intervention_type__code") or "").strip()
-        if not code:
-            continue
         tree_id = item.get("tree_id")
-        intervention_types_by_tree[tree_id].add(code)
-        project_intervention_types.add(code)
-        if code not in project_intervention_type_labels:
-            name = (item.get("intervention_type__name") or "").strip()
-            if name:
-                project_intervention_type_labels[code] = name
+        status = (item.get("status") or "").strip()
+        if code:
+            intervention_types_by_tree[tree_id].add(code)
+            project_intervention_types.add(code)
+            project_intervention_type_trees[code].add(tree_id)
+            if code not in project_intervention_type_labels:
+                name = (item.get("intervention_type__name") or "").strip()
+                if name:
+                    project_intervention_type_labels[code] = name
+        if status:
+            intervention_statuses_by_tree[tree_id].add(status)
+            project_intervention_statuses.add(status)
+            project_intervention_status_trees[status].add(tree_id)
+
+    vegetation_agg = project_scope_qs.aggregate(
+        tree_total=Count(
+            "id",
+            filter=(
+                Q(vegetation_type=WorkRecord.VegetationType.TREE)
+                | Q(vegetation_type__isnull=True)
+                | Q(vegetation_type="")
+            ),
+        ),
+        shrub_total=Count("id", filter=Q(vegetation_type=WorkRecord.VegetationType.SHRUB)),
+        hedge_total=Count("id", filter=Q(vegetation_type=WorkRecord.VegetationType.HEDGE)),
+    )
+    vegetation_counts = {
+        WorkRecord.VegetationType.TREE: int(vegetation_agg.get("tree_total") or 0),
+        WorkRecord.VegetationType.SHRUB: int(vegetation_agg.get("shrub_total") or 0),
+        WorkRecord.VegetationType.HEDGE: int(vegetation_agg.get("hedge_total") or 0),
+    }
+
+    sorted_project_intervention_statuses = sorted(
+        project_intervention_statuses,
+        key=lambda value: (
+            project_intervention_status_order.index(value)
+            if value in project_intervention_status_order
+            else len(project_intervention_status_order),
+            value,
+        ),
+    )
 
     features = []
     for wr in records:
@@ -1985,6 +2031,15 @@ def workrecords_geojson(request):
             shrub_width_value = to_float(getattr(wr, "shrub_width_m", None))
 
         intervention_types = sorted(intervention_types_by_tree.get(wr.id, set()))
+        intervention_statuses = sorted(
+            intervention_statuses_by_tree.get(wr.id, set()),
+            key=lambda value: (
+                project_intervention_status_order.index(value)
+                if value in project_intervention_status_order
+                else len(project_intervention_status_order),
+                value,
+            ),
+        )
         features.append(
             {
                 "type": "Feature",
@@ -2019,9 +2074,21 @@ def workrecords_geojson(request):
                     * _mistletoe_multiplier(getattr(wr, "mistletoe_level", None)),
                     "intervention_stage": intervention_stage,
                     "intervention_types": intervention_types,
+                    "intervention_statuses": intervention_statuses,
+                    "has_interventions": bool(getattr(wr, "has_interventions", False)),
                 },
             }
         )
+
+    project_intervention_type_counts = {
+        code: len(project_intervention_type_trees.get(code, set()))
+        for code in sorted(project_intervention_types)
+    }
+    project_intervention_status_counts = {
+        status: len(project_intervention_status_trees.get(status, set()))
+        for status in sorted_project_intervention_statuses
+    }
+    project_no_intervention_count = project_scope_qs.filter(has_interventions=False).count()
 
     return JsonResponse(
         {
@@ -2029,6 +2096,12 @@ def workrecords_geojson(request):
             "features": features,
             "project_intervention_types": sorted(project_intervention_types),
             "project_intervention_type_labels": project_intervention_type_labels,
+            "project_intervention_type_counts": project_intervention_type_counts,
+            "project_intervention_statuses": sorted_project_intervention_statuses,
+            "project_intervention_status_labels": project_intervention_status_labels,
+            "project_intervention_status_counts": project_intervention_status_counts,
+            "project_vegetation_counts": vegetation_counts,
+            "project_no_intervention_count": project_no_intervention_count,
         },
         safe=False,
     )

@@ -71,7 +71,10 @@ class WorkrecordsGeojsonTests(TestCase):
             title="InProject", latitude=49.1, longitude=17.1
         )
         self.in_project_far = WorkRecord.objects.create(
-            title="InProjectFar", latitude=49.8, longitude=17.8
+            title="InProjectFar", latitude=49.8, longitude=17.8, vegetation_type=None
+        )
+        self.in_project_blank = WorkRecord.objects.create(
+            title="InProjectBlank", latitude=49.7, longitude=17.7, vegetation_type=""
         )
         self.other_project = WorkRecord.objects.create(
             title="OtherProject", latitude=49.2, longitude=17.2
@@ -81,6 +84,7 @@ class WorkrecordsGeojsonTests(TestCase):
         )
         self.project1.trees.add(self.in_project)
         self.project1.trees.add(self.in_project_far)
+        self.project1.trees.add(self.in_project_blank)
         self.project2.trees.add(self.other_project)
 
     def test_workrecords_geojson_non_project_uses_m2m(self):
@@ -92,6 +96,7 @@ class WorkrecordsGeojsonTests(TestCase):
         ids = {f["properties"]["id"] for f in payload.get("features", [])}
         self.assertIn(self.in_project.pk, ids)
         self.assertIn(self.in_project_far.pk, ids)
+        self.assertIn(self.in_project_blank.pk, ids)
         self.assertNotIn(self.other_project.pk, ids)
         self.assertNotIn(self.orphan.pk, ids)
 
@@ -99,7 +104,11 @@ class WorkrecordsGeojsonTests(TestCase):
         type_a = InterventionType.objects.create(code="A", name="Typ A")
         type_b = InterventionType.objects.create(code="B", name="Typ B")
         TreeIntervention.objects.create(tree=self.in_project, intervention_type=type_a)
-        TreeIntervention.objects.create(tree=self.in_project_far, intervention_type=type_b)
+        TreeIntervention.objects.create(
+            tree=self.in_project_far,
+            intervention_type=type_b,
+            status="completed",
+        )
 
         self.client.force_login(self.user)
         url = reverse("workrecords_geojson")
@@ -115,8 +124,18 @@ class WorkrecordsGeojsonTests(TestCase):
         ids = {f["properties"]["id"] for f in payload.get("features", [])}
         self.assertEqual(ids, {self.in_project.pk})
         self.assertEqual(payload.get("project_intervention_types"), ["A", "B"])
+        self.assertEqual(payload.get("project_intervention_type_counts"), {"A": 1, "B": 1})
+        self.assertEqual(payload.get("project_intervention_statuses"), ["proposed", "completed"])
+        self.assertEqual(
+            payload.get("project_intervention_status_counts"),
+            {"proposed": 1, "completed": 1},
+        )
+        self.assertEqual(payload.get("project_vegetation_counts", {}).get("TREE"), 3)
+        self.assertEqual(payload.get("project_no_intervention_count"), 1)
         feature = payload["features"][0]
         self.assertEqual(feature["properties"]["intervention_types"], ["A"])
+        self.assertEqual(feature["properties"]["intervention_statuses"], ["proposed"])
+        self.assertTrue(feature["properties"]["has_interventions"])
 
 
 class CadastreAreaCodeDerivationTests(TestCase):

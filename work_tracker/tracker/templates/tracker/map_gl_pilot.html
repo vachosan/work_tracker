@@ -140,7 +140,12 @@
     const WORKRECORD_APPROVED_COLOR = '#10b981';
     const WORKRECORD_SELECTED_COLOR = '#111827';
     const VEGETATION_TYPES = ['TREE', 'SHRUB', 'HEDGE'];
+    const VEGETATION_LABELS = { TREE: 'Stromy', SHRUB: 'Keře', HEDGE: 'Živé ploty' };
+    const FILTER_UI_STORAGE_PREFIX = 'arbomap.filters.ui.v2.';
+    const VEGETATION_FILTER_STORAGE_PREFIX = 'arbomap.filters.vegetation.';
     const INTERVENTION_FILTER_STORAGE_PREFIX = 'arbomap.filters.interventions.';
+    const INTERVENTION_STATUS_FILTER_STORAGE_PREFIX = 'arbomap.filters.intervention_statuses.';
+    const NO_INTERVENTION_FILTER_KEY = '__no_interventions__';
     const INTERVENTION_FILTER_LAYER_IDS = [
       'workrecord-unclustered',
       'workrecord-hitarea',
@@ -152,9 +157,19 @@
     ];
     let projectInterventionTypes = [];
     let projectInterventionTypeLabels = {};
+    let projectInterventionTypeCounts = {};
+    let projectInterventionStatuses = [];
+    let projectInterventionStatusLabels = {};
+    let projectInterventionStatusCounts = {};
+    let projectNoInterventionCount = 0;
+    let projectVegetationCounts = {};
+    let vegetationFilterState = { TREE: true, SHRUB: true, HEDGE: true };
     let interventionFilterState = {};
+    let interventionStatusFilterState = {};
+    let includeNoInterventions = true;
     let interventionFiltersInitialized = false;
     let bannedInterventionTypeSet = new Set();
+    let bannedInterventionStatusSet = new Set();
     const interventionLayerFilters = new Map();
     const CONTEXT_POINT_COLOR = '#888';
     const CONTEXT_POINT_OPACITY = 0.7;
@@ -804,49 +819,138 @@
       return value;
     };
 
-    const ensureVegetationFilterControls = () => {
-      const panel = document.getElementById('mapControlsPanel');
-      if (!panel) return;
-      const body = panel.querySelector('.map-controls-body .d-flex');
-      if (!body || body.querySelector('#vegTreeCheckbox')) return;
-      const block = document.createElement('div');
-      block.className = 'd-flex flex-column gap-1';
-      block.innerHTML = `
-        <div class="small fw-semibold">Vegetace</div>
-        <div class="form-check">
-          <input class="form-check-input" type="checkbox" id="vegTreeCheckbox" checked>
-          <label class="form-check-label small" for="vegTreeCheckbox">Stromy</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input" type="checkbox" id="vegShrubCheckbox" checked>
-          <label class="form-check-label small" for="vegShrubCheckbox">Keře</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input" type="checkbox" id="vegHedgeCheckbox" checked>
-          <label class="form-check-label small" for="vegHedgeCheckbox">Živé ploty</label>
-        </div>
-      `;
-      body.appendChild(block);
+    const getUiStorageKey = (suffix) => {
+      const projectKey = projectParam ? String(projectParam) : 'all';
+      return `${FILTER_UI_STORAGE_PREFIX}${projectKey}.${suffix}`;
     };
-
+    const getVegetationStorageKey = () => {
+      const projectKey = projectParam ? String(projectParam) : 'all';
+      return `${VEGETATION_FILTER_STORAGE_PREFIX}${projectKey}`;
+    };
     const getInterventionStorageKey = () => {
       const projectKey = projectParam ? String(projectParam) : 'all';
       return `${INTERVENTION_FILTER_STORAGE_PREFIX}${projectKey}`;
     };
+    const getInterventionStatusStorageKey = () => {
+      const projectKey = projectParam ? String(projectParam) : 'all';
+      return `${INTERVENTION_STATUS_FILTER_STORAGE_PREFIX}${projectKey}`;
+    };
+    const loadBooleanStorage = (key, defaultValue) => {
+      let raw = null;
+      try {
+        raw = window.localStorage ? window.localStorage.getItem(key) : null;
+      } catch (err) {
+        raw = null;
+      }
+      if (raw === '1') return true;
+      if (raw === '0') return false;
+      return defaultValue;
+    };
+    const persistBooleanStorage = (key, value) => {
+      try {
+        if (!window.localStorage) return;
+        window.localStorage.setItem(key, value ? '1' : '0');
+      } catch (err) {
+        // ignore storage issues
+      }
+    };
+    const ensureFilterControls = () => {
+      const panel = document.getElementById('mapControlsPanel');
+      if (!panel) return;
+      const body = panel.querySelector('.map-controls-body .d-flex');
+      if (!body || body.querySelector('#vegetationDetails')) return;
+      const block = document.createElement('div');
+      block.id = 'projectFilterSections';
+      block.className = 'd-flex flex-column gap-2 mt-2 pt-2 border-top';
+      block.innerHTML = `
+        <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="mapFiltersEnableAllBtn">Vše zapnout</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="mapFiltersDisableAllBtn">Vše vypnout</button>
+        </div>
+        <details id="vegetationDetails">
+          <summary class="small fw-semibold">Vegetace</summary>
+          <div class="d-flex flex-column gap-1 pt-2">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="vegTreeCheckbox" checked>
+              <label class="form-check-label small" id="vegTreeLabel" for="vegTreeCheckbox">Stromy (0)</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="vegShrubCheckbox" checked>
+              <label class="form-check-label small" id="vegShrubLabel" for="vegShrubCheckbox">Keře (0)</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="vegHedgeCheckbox" checked>
+              <label class="form-check-label small" id="vegHedgeLabel" for="vegHedgeCheckbox">Živé ploty (0)</label>
+            </div>
+          </div>
+        </details>
+        <details id="interventionDetails">
+          <summary class="small fw-semibold">Filtr zásahů</summary>
+          <div class="d-flex flex-column gap-2 pt-2">
+            <details id="interventionTypesDetails">
+              <summary class="small text-muted">Typy zásahů</summary>
+              <div class="d-flex flex-column gap-2 pt-2">
+                <div class="d-flex flex-wrap gap-2">
+                  <button type="button" class="btn btn-outline-secondary btn-sm" id="interventionEnableAllBtn">Vše zapnout</button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm" id="interventionDisableAllBtn">Vše vypnout</button>
+                </div>
+                <div id="interventionTypesList" class="d-flex flex-column gap-1"></div>
+              </div>
+            </details>
+            <details id="interventionStatusesDetails">
+              <summary class="small text-muted">Stav zásahu</summary>
+              <div class="d-flex flex-column gap-2 pt-2">
+                <div class="d-flex flex-wrap gap-2">
+                  <button type="button" class="btn btn-outline-secondary btn-sm" id="interventionStatusEnableAllBtn">Vše zapnout</button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm" id="interventionStatusDisableAllBtn">Vše vypnout</button>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="interventionStatusNoInterventionCheckbox">
+                  <label class="form-check-label small" id="interventionStatusNoInterventionLabel" for="interventionStatusNoInterventionCheckbox">Stromy bez zásahu (0)</label>
+                </div>
+                <div id="interventionStatusesList" class="d-flex flex-column gap-1"></div>
+              </div>
+            </details>
+          </div>
+        </details>
+      `;
+      body.appendChild(block);
+      const detailsDefaults = [
+        ['vegetationDetails', false],
+        ['interventionDetails', false],
+        ['interventionTypesDetails', false],
+        ['interventionStatusesDetails', false],
+      ];
+      detailsDefaults.forEach(([id, defaultOpen]) => {
+        const details = document.getElementById(id);
+        if (!details) return;
+        details.open = loadBooleanStorage(getUiStorageKey(`details.${id}`), defaultOpen);
+        details.addEventListener('toggle', () => {
+          persistBooleanStorage(getUiStorageKey(`details.${id}`), details.open);
+        });
+      });
+    };
+
     const normalizeInterventionTypes = (value) => {
       if (!Array.isArray(value)) return [];
       return value
         .map((item) => (item === null || item === undefined ? '' : String(item).trim()))
         .filter((item) => item);
     };
-    const loadInterventionFilterState = (types) => {
+    const normalizeInterventionStatuses = (value) => {
+      if (!Array.isArray(value)) return [];
+      return value
+        .map((item) => (item === null || item === undefined ? '' : String(item).trim()))
+        .filter((item) => item);
+    };
+    const loadFilterState = (codes, storageKey) => {
       const next = {};
-      types.forEach((code) => {
+      codes.forEach((code) => {
         next[code] = true;
       });
       let raw = null;
       try {
-        raw = window.localStorage ? window.localStorage.getItem(getInterventionStorageKey()) : null;
+        raw = window.localStorage ? window.localStorage.getItem(storageKey) : null;
       } catch (err) {
         raw = null;
       }
@@ -854,13 +958,57 @@
       try {
         const stored = JSON.parse(raw);
         if (!stored || typeof stored !== 'object') return next;
-        for (const code of types) {
+        for (const code of codes) {
           if (stored[code] === false) {
             next[code] = false;
           } else if (stored[code] === true) {
             next[code] = true;
           }
         }
+      } catch (err) {
+        return next;
+      }
+      return next;
+    };
+    const loadInterventionFilterState = (types) => {
+      return loadFilterState(types, getInterventionStorageKey());
+    };
+    const loadInterventionStatusFilterState = (statuses) => {
+      const next = loadFilterState(statuses, getInterventionStatusStorageKey());
+      next[NO_INTERVENTION_FILTER_KEY] = true;
+      let raw = null;
+      try {
+        raw = window.localStorage ? window.localStorage.getItem(getInterventionStatusStorageKey()) : null;
+      } catch (err) {
+        raw = null;
+      }
+      if (!raw) return next;
+      try {
+        const stored = JSON.parse(raw);
+        if (stored && typeof stored === 'object' && stored[NO_INTERVENTION_FILTER_KEY] === false) {
+          next[NO_INTERVENTION_FILTER_KEY] = false;
+        }
+      } catch (err) {
+        return next;
+      }
+      return next;
+    };
+    const loadVegetationFilterState = () => {
+      const next = { TREE: true, SHRUB: true, HEDGE: true };
+      let raw = null;
+      try {
+        raw = window.localStorage ? window.localStorage.getItem(getVegetationStorageKey()) : null;
+      } catch (err) {
+        raw = null;
+      }
+      if (!raw) return next;
+      try {
+        const stored = JSON.parse(raw);
+        if (!stored || typeof stored !== 'object') return next;
+        VEGETATION_TYPES.forEach((key) => {
+          if (stored[key] === false) next[key] = false;
+          if (stored[key] === true) next[key] = true;
+        });
       } catch (err) {
         return next;
       }
@@ -874,20 +1022,58 @@
         // ignore storage issues
       }
     };
+    const persistInterventionStatusFilterState = () => {
+      try {
+        if (!window.localStorage) return;
+        interventionStatusFilterState[NO_INTERVENTION_FILTER_KEY] = includeNoInterventions;
+        window.localStorage.setItem(getInterventionStatusStorageKey(), JSON.stringify(interventionStatusFilterState));
+      } catch (err) {
+        // ignore storage issues
+      }
+    };
+    const persistVegetationFilterState = () => {
+      try {
+        if (!window.localStorage) return;
+        window.localStorage.setItem(getVegetationStorageKey(), JSON.stringify(vegetationFilterState));
+      } catch (err) {
+        // ignore storage issues
+      }
+    };
+    const renderVegetationControls = () => {
+      if (vegTreeCheckbox) vegTreeCheckbox.checked = vegetationFilterState.TREE !== false;
+      if (vegShrubCheckbox) vegShrubCheckbox.checked = vegetationFilterState.SHRUB !== false;
+      if (vegHedgeCheckbox) vegHedgeCheckbox.checked = vegetationFilterState.HEDGE !== false;
+    };
+    const renderVegetationLabels = () => {
+      const treeLabel = document.getElementById('vegTreeLabel');
+      const shrubLabel = document.getElementById('vegShrubLabel');
+      const hedgeLabel = document.getElementById('vegHedgeLabel');
+      if (treeLabel) treeLabel.textContent = `${VEGETATION_LABELS.TREE} (${Number(projectVegetationCounts.TREE || 0)})`;
+      if (shrubLabel) shrubLabel.textContent = `${VEGETATION_LABELS.SHRUB} (${Number(projectVegetationCounts.SHRUB || 0)})`;
+      if (hedgeLabel) hedgeLabel.textContent = `${VEGETATION_LABELS.HEDGE} (${Number(projectVegetationCounts.HEDGE || 0)})`;
+    };
     const syncInterventionFilters = () => {
-      const next = new Set();
+      const nextTypes = new Set();
       for (const code of projectInterventionTypes) {
         if (!interventionFilterState[code]) {
-          next.add(code);
+          nextTypes.add(code);
         }
       }
-      bannedInterventionTypeSet = next;
+      bannedInterventionTypeSet = nextTypes;
+      const nextStatuses = new Set();
+      for (const status of projectInterventionStatuses) {
+        if (!interventionStatusFilterState[status]) {
+          nextStatuses.add(status);
+        }
+      }
+      bannedInterventionStatusSet = nextStatuses;
+      includeNoInterventions = interventionStatusFilterState[NO_INTERVENTION_FILTER_KEY] !== false;
     };
-    const buildInterventionFilterExpression = (bannedTypes) => {
-      if (!bannedTypes || !bannedTypes.length) return null;
-      const clauses = bannedTypes.map((code) => [
+    const buildPropertyFilterExpression = (bannedValues, propertyName) => {
+      if (!bannedValues || !bannedValues.length) return null;
+      const clauses = bannedValues.map((value) => [
         '!',
-        ['in', code, ['coalesce', ['get', 'intervention_types'], ['literal', []]]],
+        ['in', value, ['coalesce', ['get', propertyName], ['literal', []]]],
       ]);
       return ['all', ...clauses];
     };
@@ -899,7 +1085,16 @@
     };
     const applyInterventionLayerFilters = () => {
       const banned = Array.from(bannedInterventionTypeSet);
-      const expr = buildInterventionFilterExpression(banned);
+      const bannedStatuses = Array.from(bannedInterventionStatusSet);
+      const typeExpr = buildPropertyFilterExpression(banned, 'intervention_types');
+      const statusExpr = buildPropertyFilterExpression(bannedStatuses, 'intervention_statuses');
+      let expr = null;
+      const parts = [typeExpr, statusExpr].filter(Boolean);
+      if (parts.length === 1) {
+        expr = parts[0];
+      } else if (parts.length > 1) {
+        expr = ['all', ...parts];
+      }
       for (const layerId of INTERVENTION_FILTER_LAYER_IDS) {
         if (!map.getLayer(layerId)) continue;
         const baseFilter = interventionLayerFilters.has(layerId)
@@ -914,46 +1109,51 @@
     };
     const formatInterventionLabel = (code) => {
       const name = projectInterventionTypeLabels[code];
-      if (name) return `${code} – ${name}`;
-      return code;
+      const count = Number(projectInterventionTypeCounts[code] || 0);
+      if (name) return `${code} – ${name} (${count})`;
+      return `${code} (${count})`;
     };
-    const setInterventionFilterState = (types, labels) => {
+    const formatInterventionStatusLabel = (status) => {
+      const name = projectInterventionStatusLabels[status] || status;
+      const count = Number(projectInterventionStatusCounts[status] || 0);
+      return `${name} (${count})`;
+    };
+    const formatNoInterventionLabel = () => {
+      return `Stromy bez zásahu (${Number(projectNoInterventionCount || 0)})`;
+    };
+    const setInterventionFilterState = (types, labels, counts) => {
       projectInterventionTypes = normalizeInterventionTypes(types);
       projectInterventionTypeLabels = labels && typeof labels === 'object' ? { ...labels } : {};
+      projectInterventionTypeCounts = counts && typeof counts === 'object' ? { ...counts } : {};
       interventionFilterState = loadInterventionFilterState(projectInterventionTypes);
+      renderVegetationLabels();
       syncInterventionFilters();
-      ensureInterventionFilterControls();
+      ensureFilterControls();
       renderInterventionFilterControls();
       applyInterventionLayerFilters();
     };
-    const ensureInterventionFilterControls = () => {
-      const panel = document.getElementById('mapControlsPanel');
-      if (!panel) return;
-      const body = panel.querySelector('.map-controls-body .d-flex');
-      if (!body || body.querySelector('#interventionFilterBlock')) return;
-      const block = document.createElement('div');
-      block.id = 'interventionFilterBlock';
-      block.className = 'd-flex flex-column gap-2 mt-2 pt-2 border-top';
-      block.innerHTML = `
-        <div class="small fw-semibold">Filtr zásahů</div>
-        <div class="small text-muted">Typy zásahů</div>
-        <div class="d-flex flex-wrap gap-2">
-          <button type="button" class="btn btn-outline-secondary btn-sm" id="interventionEnableAllBtn">Vše zapnout</button>
-          <button type="button" class="btn btn-outline-secondary btn-sm" id="interventionDisableAllBtn">Vše vypnout</button>
-        </div>
-        <div id="interventionTypesList" class="d-flex flex-column gap-1"></div>
-      `;
-      body.appendChild(block);
+    const setInterventionStatusFilterState = (statuses, labels, counts) => {
+      projectInterventionStatuses = normalizeInterventionStatuses(statuses);
+      projectInterventionStatusLabels = labels && typeof labels === 'object' ? { ...labels } : {};
+      projectInterventionStatusCounts = counts && typeof counts === 'object' ? { ...counts } : {};
+      interventionStatusFilterState = loadInterventionStatusFilterState(projectInterventionStatuses);
+      includeNoInterventions = interventionStatusFilterState[NO_INTERVENTION_FILTER_KEY] !== false;
+      syncInterventionFilters();
+      ensureFilterControls();
+      renderInterventionFilterControls();
+      applyInterventionLayerFilters();
     };
     const renderInterventionFilterControls = () => {
-      const block = document.getElementById('interventionFilterBlock');
       const list = document.getElementById('interventionTypesList');
-      if (!block || !list) return;
+      const statusList = document.getElementById('interventionStatusesList');
+      const typeDetails = document.getElementById('interventionTypesDetails');
+      const statusDetails = document.getElementById('interventionStatusesDetails');
+      if (!list || !statusList || !typeDetails || !statusDetails) return;
       if (!projectInterventionTypes.length) {
-        block.classList.add('d-none');
-        return;
+        typeDetails.classList.add('d-none');
+      } else {
+        typeDetails.classList.remove('d-none');
       }
-      block.classList.remove('d-none');
       list.innerHTML = '';
       projectInterventionTypes.forEach((code) => {
         const safeId = `interventionType_${String(code).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
@@ -971,6 +1171,7 @@
             interventionFilterState[code] = checkbox.checked;
             syncInterventionFilters();
             persistInterventionFilterState();
+            persistInterventionStatusFilterState();
             applyInterventionLayerFilters();
             applyVegetationFilters();
           });
@@ -990,6 +1191,7 @@
           renderInterventionFilterControls();
           syncInterventionFilters();
           persistInterventionFilterState();
+          persistInterventionStatusFilterState();
           applyInterventionLayerFilters();
           applyVegetationFilters();
         };
@@ -1002,16 +1204,146 @@
           renderInterventionFilterControls();
           syncInterventionFilters();
           persistInterventionFilterState();
+          persistInterventionStatusFilterState();
           applyInterventionLayerFilters();
           applyVegetationFilters();
         };
       }
+
+      if (!projectInterventionStatuses.length) {
+        statusDetails.classList.add('d-none');
+      } else {
+        statusDetails.classList.remove('d-none');
+      }
+      const noInterventionCheckbox = document.getElementById('interventionStatusNoInterventionCheckbox');
+      const noInterventionLabel = document.getElementById('interventionStatusNoInterventionLabel');
+      if (noInterventionLabel) {
+        noInterventionLabel.textContent = formatNoInterventionLabel();
+      }
+      if (noInterventionCheckbox) {
+        noInterventionCheckbox.checked = includeNoInterventions;
+        noInterventionCheckbox.onchange = () => {
+          includeNoInterventions = noInterventionCheckbox.checked;
+          interventionStatusFilterState[NO_INTERVENTION_FILTER_KEY] = includeNoInterventions;
+          syncInterventionFilters();
+          persistInterventionFilterState();
+          persistInterventionStatusFilterState();
+          applyInterventionLayerFilters();
+          applyVegetationFilters();
+        };
+      }
+      statusList.innerHTML = '';
+      projectInterventionStatuses.forEach((status) => {
+        const safeId = `interventionStatus_${String(status).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'form-check';
+        wrapper.innerHTML = `
+          <input class="form-check-input" type="checkbox" id="${safeId}" data-status="${status}">
+          <label class="form-check-label small" for="${safeId}"></label>
+        `;
+        const checkbox = wrapper.querySelector('input');
+        const label = wrapper.querySelector('label');
+        if (checkbox) {
+          checkbox.checked = interventionStatusFilterState[status] !== false;
+          checkbox.addEventListener('change', () => {
+            interventionStatusFilterState[status] = checkbox.checked;
+            syncInterventionFilters();
+            persistInterventionFilterState();
+            persistInterventionStatusFilterState();
+            applyInterventionLayerFilters();
+            applyVegetationFilters();
+          });
+        }
+        if (label) {
+          label.textContent = formatInterventionStatusLabel(status);
+        }
+        statusList.appendChild(wrapper);
+      });
+      const statusEnableAllBtn = document.getElementById('interventionStatusEnableAllBtn');
+      const statusDisableAllBtn = document.getElementById('interventionStatusDisableAllBtn');
+      if (statusEnableAllBtn) {
+        statusEnableAllBtn.onclick = () => {
+          projectInterventionStatuses.forEach((status) => {
+            interventionStatusFilterState[status] = true;
+          });
+          includeNoInterventions = true;
+          interventionStatusFilterState[NO_INTERVENTION_FILTER_KEY] = true;
+          renderInterventionFilterControls();
+          syncInterventionFilters();
+          persistInterventionFilterState();
+          persistInterventionStatusFilterState();
+          applyInterventionLayerFilters();
+          applyVegetationFilters();
+        };
+      }
+      if (statusDisableAllBtn) {
+        statusDisableAllBtn.onclick = () => {
+          projectInterventionStatuses.forEach((status) => {
+            interventionStatusFilterState[status] = false;
+          });
+          includeNoInterventions = false;
+          interventionStatusFilterState[NO_INTERVENTION_FILTER_KEY] = false;
+          renderInterventionFilterControls();
+          syncInterventionFilters();
+          persistInterventionFilterState();
+          persistInterventionStatusFilterState();
+          applyInterventionLayerFilters();
+          applyVegetationFilters();
+        };
+      }
+      const globalEnableBtn = document.getElementById('mapFiltersEnableAllBtn');
+      const globalDisableBtn = document.getElementById('mapFiltersDisableAllBtn');
+      if (globalEnableBtn) {
+        globalEnableBtn.onclick = () => {
+          VEGETATION_TYPES.forEach((type) => {
+            vegetationFilterState[type] = true;
+          });
+          projectInterventionTypes.forEach((code) => {
+            interventionFilterState[code] = true;
+          });
+          projectInterventionStatuses.forEach((status) => {
+            interventionStatusFilterState[status] = true;
+          });
+          includeNoInterventions = true;
+          interventionStatusFilterState[NO_INTERVENTION_FILTER_KEY] = true;
+          renderVegetationControls();
+          renderInterventionFilterControls();
+          persistVegetationFilterState();
+          persistInterventionFilterState();
+          persistInterventionStatusFilterState();
+          applyFiltersToMap();
+        };
+      }
+      if (globalDisableBtn) {
+        globalDisableBtn.onclick = () => {
+          VEGETATION_TYPES.forEach((type) => {
+            vegetationFilterState[type] = false;
+          });
+          vegetationFilterState.TREE = true;
+          projectInterventionTypes.forEach((code) => {
+            interventionFilterState[code] = false;
+          });
+          projectInterventionStatuses.forEach((status) => {
+            interventionStatusFilterState[status] = false;
+          });
+          includeNoInterventions = false;
+          interventionStatusFilterState[NO_INTERVENTION_FILTER_KEY] = false;
+          renderVegetationControls();
+          renderInterventionFilterControls();
+          persistVegetationFilterState();
+          persistInterventionFilterState();
+          persistInterventionStatusFilterState();
+          applyFiltersToMap();
+        };
+      }
     };
 
-    ensureVegetationFilterControls();
+    ensureFilterControls();
     const vegTreeCheckbox = document.getElementById('vegTreeCheckbox');
     const vegShrubCheckbox = document.getElementById('vegShrubCheckbox');
     const vegHedgeCheckbox = document.getElementById('vegHedgeCheckbox');
+    vegetationFilterState = loadVegetationFilterState();
+    renderVegetationControls();
     let enabledVegetationTypes = new Set(VEGETATION_TYPES);
 
     const getCrownDiameterM = (properties) => {
@@ -1225,7 +1557,11 @@
     });
     const handleVegetationFilterChange = () => {
       if (!map) return;
-      applyVegetationFilters();
+      vegetationFilterState.TREE = vegTreeCheckbox ? vegTreeCheckbox.checked : true;
+      vegetationFilterState.SHRUB = vegShrubCheckbox ? vegShrubCheckbox.checked : true;
+      vegetationFilterState.HEDGE = vegHedgeCheckbox ? vegHedgeCheckbox.checked : true;
+      persistVegetationFilterState();
+      applyFiltersToMap();
     };
     [vegTreeCheckbox, vegShrubCheckbox, vegHedgeCheckbox].forEach((checkbox) => {
       if (!checkbox) return;
@@ -1411,17 +1747,42 @@
     const normalizeVegetationType = (value) => value || 'TREE';
     const isVegetationVisible = (value) => enabledVegetationTypes.has(normalizeVegetationType(value));
     const normalizeInterventionTypesForFeature = (value) => {
-      if (!Array.isArray(value)) return [];
-      return value
-        .map((item) => (item === null || item === undefined ? '' : String(item).trim()))
-        .filter((item) => item);
+      return normalizeInterventionTypes(value);
     };
-    const isInterventionVisible = (value) => {
-      if (!bannedInterventionTypeSet || bannedInterventionTypeSet.size === 0) return true;
-      const types = normalizeInterventionTypesForFeature(value);
-      if (!types.length) return true;
-      for (const code of types) {
-        if (bannedInterventionTypeSet.has(code)) {
+    const normalizeInterventionStatusesForFeature = (value) => {
+      return normalizeInterventionStatuses(value);
+    };
+    const hasInterventionsForFeature = (typesValue, statusesValue, hasInterventionsValue) => {
+      if (typeof hasInterventionsValue === 'boolean') {
+        return hasInterventionsValue;
+      }
+      const hasTypes = normalizeInterventionTypesForFeature(typesValue).length > 0;
+      const hasStatuses = normalizeInterventionStatusesForFeature(statusesValue).length > 0;
+      return hasTypes || hasStatuses;
+    };
+    const isInterventionVisible = (typesValue, statusesValue, hasInterventionsValue) => {
+      if (bannedInterventionTypeSet && bannedInterventionTypeSet.size > 0) {
+        const types = normalizeInterventionTypesForFeature(typesValue);
+        if (types.length) {
+          for (const code of types) {
+            if (bannedInterventionTypeSet.has(code)) {
+              return false;
+            }
+          }
+        }
+      }
+      if (bannedInterventionStatusSet && bannedInterventionStatusSet.size > 0) {
+        const statuses = normalizeInterventionStatusesForFeature(statusesValue);
+        if (statuses.length) {
+          for (const status of statuses) {
+            if (bannedInterventionStatusSet.has(status)) {
+              return false;
+            }
+          }
+        }
+      }
+      if (!includeNoInterventions) {
+        if (!hasInterventionsForFeature(typesValue, statusesValue, hasInterventionsValue)) {
           return false;
         }
       }
@@ -1435,7 +1796,9 @@
       const filtered = features.filter((feature) => {
         const typeValue = feature && feature.properties ? feature.properties.vegetation_type : null;
         const interventionTypes = feature && feature.properties ? feature.properties.intervention_types : null;
-        return isVegetationVisible(typeValue) && isInterventionVisible(interventionTypes);
+        const interventionStatuses = feature && feature.properties ? feature.properties.intervention_statuses : null;
+        const hasInterventions = feature && feature.properties ? feature.properties.has_interventions : null;
+        return isVegetationVisible(typeValue) && isInterventionVisible(interventionTypes, interventionStatuses, hasInterventions);
       });
       return { type: 'FeatureCollection', features: filtered };
     };
@@ -1477,11 +1840,116 @@
       }
       return {};
     };
+    const extractProjectInterventionTypeCounts = (fc, types, fallbackFeatures) => {
+      const counts = fc && fc.project_intervention_type_counts;
+      if (counts && typeof counts === 'object') {
+        return { ...counts };
+      }
+      const features = Array.isArray(fallbackFeatures) ? fallbackFeatures : [];
+      const next = {};
+      types.forEach((code) => {
+        next[code] = 0;
+      });
+      for (const feature of features) {
+        const values = feature && feature.properties ? feature.properties.intervention_types : null;
+        const uniqueCodes = new Set(normalizeInterventionTypes(values));
+        uniqueCodes.forEach((code) => {
+          next[code] = Number(next[code] || 0) + 1;
+        });
+      }
+      return next;
+    };
+    const extractProjectInterventionStatuses = (fc, fallbackFeatures) => {
+      const fromPayload = fc && Array.isArray(fc.project_intervention_statuses)
+        ? normalizeInterventionStatuses(fc.project_intervention_statuses)
+        : [];
+      if (fromPayload.length) return fromPayload;
+      const features = Array.isArray(fallbackFeatures) ? fallbackFeatures : [];
+      const found = new Set();
+      for (const feature of features) {
+        const statuses = feature && feature.properties ? feature.properties.intervention_statuses : null;
+        for (const status of normalizeInterventionStatuses(statuses)) {
+          found.add(status);
+        }
+      }
+      return Array.from(found);
+    };
+    const extractProjectInterventionStatusLabels = (fc, statuses) => {
+      const labels = fc && fc.project_intervention_status_labels;
+      const next = labels && typeof labels === 'object' ? { ...labels } : {};
+      statuses.forEach((status) => {
+        if (!next[status]) {
+          next[status] = status;
+        }
+      });
+      return next;
+    };
+    const extractProjectInterventionStatusCounts = (fc, statuses, fallbackFeatures) => {
+      const counts = fc && fc.project_intervention_status_counts;
+      if (counts && typeof counts === 'object') {
+        return { ...counts };
+      }
+      const features = Array.isArray(fallbackFeatures) ? fallbackFeatures : [];
+      const next = {};
+      statuses.forEach((status) => {
+        next[status] = 0;
+      });
+      for (const feature of features) {
+        const values = feature && feature.properties ? feature.properties.intervention_statuses : null;
+        const uniqueStatuses = new Set(normalizeInterventionStatuses(values));
+        uniqueStatuses.forEach((status) => {
+          next[status] = Number(next[status] || 0) + 1;
+        });
+      }
+      return next;
+    };
+    const extractProjectVegetationCounts = (fc, fallbackFeatures) => {
+      const counts = fc && fc.project_vegetation_counts;
+      if (counts && typeof counts === 'object') {
+        return {
+          TREE: Number(counts.TREE || 0),
+          SHRUB: Number(counts.SHRUB || 0),
+          HEDGE: Number(counts.HEDGE || 0),
+        };
+      }
+      const features = Array.isArray(fallbackFeatures) ? fallbackFeatures : [];
+      const next = { TREE: 0, SHRUB: 0, HEDGE: 0 };
+      for (const feature of features) {
+        const vegetationType = normalizeVegetationType(
+          feature && feature.properties ? feature.properties.vegetation_type : null
+        );
+        if (next[vegetationType] !== undefined) {
+          next[vegetationType] += 1;
+        }
+      }
+      return next;
+    };
+    const extractProjectNoInterventionCount = (fc, fallbackFeatures) => {
+      const fromPayload = fc && Number.isFinite(Number(fc.project_no_intervention_count))
+        ? Number(fc.project_no_intervention_count)
+        : null;
+      if (fromPayload !== null) return fromPayload;
+      const features = Array.isArray(fallbackFeatures) ? fallbackFeatures : [];
+      let count = 0;
+      for (const feature of features) {
+        const properties = feature && feature.properties ? feature.properties : {};
+        const hasInterventions = hasInterventionsForFeature(
+          properties.intervention_types,
+          properties.intervention_statuses,
+          properties.has_interventions
+        );
+        if (!hasInterventions) {
+          count += 1;
+        }
+      }
+      return count;
+    };
     const syncVegetationFilters = () => {
       const next = new Set();
-      const treeEnabled = vegTreeCheckbox ? vegTreeCheckbox.checked : true;
-      const shrubEnabled = vegShrubCheckbox ? vegShrubCheckbox.checked : true;
-      const hedgeEnabled = vegHedgeCheckbox ? vegHedgeCheckbox.checked : true;
+      const treeEnabled = vegetationFilterState.TREE !== false;
+      const shrubEnabled = vegetationFilterState.SHRUB !== false;
+      const hedgeEnabled = vegetationFilterState.HEDGE !== false;
+      renderVegetationControls();
       if (treeEnabled) next.add('TREE');
       if (shrubEnabled) next.add('SHRUB');
       if (hedgeEnabled) next.add('HEDGE');
@@ -1513,6 +1981,11 @@
         contextSrc.setData(filtered);
         renderLabelOverlay();
       }
+    };
+    const applyFiltersToMap = () => {
+      syncInterventionFilters();
+      applyInterventionLayerFilters();
+      applyVegetationFilters();
     };
 
     const renderLabelOverlay = () => {
@@ -1802,7 +2275,15 @@
             if (!interventionFiltersInitialized) {
               const projectTypes = extractProjectInterventionTypes(fc, features);
               const projectLabels = extractProjectInterventionTypeLabels(fc);
-              setInterventionFilterState(projectTypes, projectLabels);
+              const projectTypeCounts = extractProjectInterventionTypeCounts(fc, projectTypes, features);
+              const projectStatuses = extractProjectInterventionStatuses(fc, features);
+              const projectStatusLabels = extractProjectInterventionStatusLabels(fc, projectStatuses);
+              const projectStatusCounts = extractProjectInterventionStatusCounts(fc, projectStatuses, features);
+              projectVegetationCounts = extractProjectVegetationCounts(fc, features);
+              projectNoInterventionCount = extractProjectNoInterventionCount(fc, features);
+              renderVegetationLabels();
+              setInterventionFilterState(projectTypes, projectLabels, projectTypeCounts);
+              setInterventionStatusFilterState(projectStatuses, projectStatusLabels, projectStatusCounts);
               interventionFiltersInitialized = true;
             }
             workrecordFeatureCollectionRaw = fc;
