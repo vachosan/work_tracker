@@ -140,6 +140,22 @@
     const WORKRECORD_APPROVED_COLOR = '#10b981';
     const WORKRECORD_SELECTED_COLOR = '#111827';
     const VEGETATION_TYPES = ['TREE', 'SHRUB', 'HEDGE'];
+    const INTERVENTION_FILTER_STORAGE_PREFIX = 'arbomap.filters.interventions.';
+    const INTERVENTION_FILTER_LAYER_IDS = [
+      'workrecord-unclustered',
+      'workrecord-hitarea',
+      'workrecord-clusters',
+      'workrecord-cluster-count',
+      'wr-squares',
+      'wr-squares-outline',
+      CONTEXT_LAYER_ID,
+    ];
+    let projectInterventionTypes = [];
+    let projectInterventionTypeLabels = {};
+    let interventionFilterState = {};
+    let interventionFiltersInitialized = false;
+    let bannedInterventionTypeSet = new Set();
+    const interventionLayerFilters = new Map();
     const CONTEXT_POINT_COLOR = '#888';
     const CONTEXT_POINT_OPACITY = 0.7;
     const CROWN_DIAMETER_KEYS = ['crown_diameter_m', 'crown_width_m', 'diameter_crown', 'crown_diameter'];
@@ -813,6 +829,185 @@
       body.appendChild(block);
     };
 
+    const getInterventionStorageKey = () => {
+      const projectKey = projectParam ? String(projectParam) : 'all';
+      return `${INTERVENTION_FILTER_STORAGE_PREFIX}${projectKey}`;
+    };
+    const normalizeInterventionTypes = (value) => {
+      if (!Array.isArray(value)) return [];
+      return value
+        .map((item) => (item === null || item === undefined ? '' : String(item).trim()))
+        .filter((item) => item);
+    };
+    const loadInterventionFilterState = (types) => {
+      const next = {};
+      types.forEach((code) => {
+        next[code] = true;
+      });
+      let raw = null;
+      try {
+        raw = window.localStorage ? window.localStorage.getItem(getInterventionStorageKey()) : null;
+      } catch (err) {
+        raw = null;
+      }
+      if (!raw) return next;
+      try {
+        const stored = JSON.parse(raw);
+        if (!stored || typeof stored !== 'object') return next;
+        for (const code of types) {
+          if (stored[code] === false) {
+            next[code] = false;
+          } else if (stored[code] === true) {
+            next[code] = true;
+          }
+        }
+      } catch (err) {
+        return next;
+      }
+      return next;
+    };
+    const persistInterventionFilterState = () => {
+      try {
+        if (!window.localStorage) return;
+        window.localStorage.setItem(getInterventionStorageKey(), JSON.stringify(interventionFilterState));
+      } catch (err) {
+        // ignore storage issues
+      }
+    };
+    const syncInterventionFilters = () => {
+      const next = new Set();
+      for (const code of projectInterventionTypes) {
+        if (!interventionFilterState[code]) {
+          next.add(code);
+        }
+      }
+      bannedInterventionTypeSet = next;
+    };
+    const buildInterventionFilterExpression = (bannedTypes) => {
+      if (!bannedTypes || !bannedTypes.length) return null;
+      const clauses = bannedTypes.map((code) => [
+        '!',
+        ['in', code, ['coalesce', ['get', 'intervention_types'], ['literal', []]]],
+      ]);
+      return ['all', ...clauses];
+    };
+    const registerInterventionLayerFilters = () => {
+      for (const layerId of INTERVENTION_FILTER_LAYER_IDS) {
+        if (!map.getLayer(layerId)) continue;
+        interventionLayerFilters.set(layerId, map.getFilter(layerId));
+      }
+    };
+    const applyInterventionLayerFilters = () => {
+      const banned = Array.from(bannedInterventionTypeSet);
+      const expr = buildInterventionFilterExpression(banned);
+      for (const layerId of INTERVENTION_FILTER_LAYER_IDS) {
+        if (!map.getLayer(layerId)) continue;
+        const baseFilter = interventionLayerFilters.has(layerId)
+          ? interventionLayerFilters.get(layerId)
+          : map.getFilter(layerId);
+        let nextFilter = baseFilter || null;
+        if (expr) {
+          nextFilter = baseFilter ? ['all', baseFilter, expr] : expr;
+        }
+        map.setFilter(layerId, nextFilter);
+      }
+    };
+    const formatInterventionLabel = (code) => {
+      const name = projectInterventionTypeLabels[code];
+      if (name) return `${code} – ${name}`;
+      return code;
+    };
+    const setInterventionFilterState = (types, labels) => {
+      projectInterventionTypes = normalizeInterventionTypes(types);
+      projectInterventionTypeLabels = labels && typeof labels === 'object' ? { ...labels } : {};
+      interventionFilterState = loadInterventionFilterState(projectInterventionTypes);
+      syncInterventionFilters();
+      ensureInterventionFilterControls();
+      renderInterventionFilterControls();
+      applyInterventionLayerFilters();
+    };
+    const ensureInterventionFilterControls = () => {
+      const panel = document.getElementById('mapControlsPanel');
+      if (!panel) return;
+      const body = panel.querySelector('.map-controls-body .d-flex');
+      if (!body || body.querySelector('#interventionFilterBlock')) return;
+      const block = document.createElement('div');
+      block.id = 'interventionFilterBlock';
+      block.className = 'd-flex flex-column gap-2 mt-2 pt-2 border-top';
+      block.innerHTML = `
+        <div class="small fw-semibold">Filtr zásahů</div>
+        <div class="small text-muted">Typy zásahů</div>
+        <div class="d-flex flex-wrap gap-2">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="interventionEnableAllBtn">Vše zapnout</button>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="interventionDisableAllBtn">Vše vypnout</button>
+        </div>
+        <div id="interventionTypesList" class="d-flex flex-column gap-1"></div>
+      `;
+      body.appendChild(block);
+    };
+    const renderInterventionFilterControls = () => {
+      const block = document.getElementById('interventionFilterBlock');
+      const list = document.getElementById('interventionTypesList');
+      if (!block || !list) return;
+      if (!projectInterventionTypes.length) {
+        block.classList.add('d-none');
+        return;
+      }
+      block.classList.remove('d-none');
+      list.innerHTML = '';
+      projectInterventionTypes.forEach((code) => {
+        const safeId = `interventionType_${String(code).replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'form-check';
+        wrapper.innerHTML = `
+          <input class="form-check-input" type="checkbox" id="${safeId}" data-code="${code}">
+          <label class="form-check-label small" for="${safeId}"></label>
+        `;
+        const checkbox = wrapper.querySelector('input');
+        const label = wrapper.querySelector('label');
+        if (checkbox) {
+          checkbox.checked = interventionFilterState[code] !== false;
+          checkbox.addEventListener('change', () => {
+            interventionFilterState[code] = checkbox.checked;
+            syncInterventionFilters();
+            persistInterventionFilterState();
+            applyInterventionLayerFilters();
+            applyVegetationFilters();
+          });
+        }
+        if (label) {
+          label.textContent = formatInterventionLabel(code);
+        }
+        list.appendChild(wrapper);
+      });
+      const enableAllBtn = document.getElementById('interventionEnableAllBtn');
+      const disableAllBtn = document.getElementById('interventionDisableAllBtn');
+      if (enableAllBtn) {
+        enableAllBtn.onclick = () => {
+          projectInterventionTypes.forEach((code) => {
+            interventionFilterState[code] = true;
+          });
+          renderInterventionFilterControls();
+          syncInterventionFilters();
+          persistInterventionFilterState();
+          applyInterventionLayerFilters();
+          applyVegetationFilters();
+        };
+      }
+      if (disableAllBtn) {
+        disableAllBtn.onclick = () => {
+          projectInterventionTypes.forEach((code) => {
+            interventionFilterState[code] = false;
+          });
+          renderInterventionFilterControls();
+          syncInterventionFilters();
+          persistInterventionFilterState();
+          applyInterventionLayerFilters();
+          applyVegetationFilters();
+        };
+      }
+    };
+
     ensureVegetationFilterControls();
     const vegTreeCheckbox = document.getElementById('vegTreeCheckbox');
     const vegShrubCheckbox = document.getElementById('vegShrubCheckbox');
@@ -1215,6 +1410,23 @@
     };
     const normalizeVegetationType = (value) => value || 'TREE';
     const isVegetationVisible = (value) => enabledVegetationTypes.has(normalizeVegetationType(value));
+    const normalizeInterventionTypesForFeature = (value) => {
+      if (!Array.isArray(value)) return [];
+      return value
+        .map((item) => (item === null || item === undefined ? '' : String(item).trim()))
+        .filter((item) => item);
+    };
+    const isInterventionVisible = (value) => {
+      if (!bannedInterventionTypeSet || bannedInterventionTypeSet.size === 0) return true;
+      const types = normalizeInterventionTypesForFeature(value);
+      if (!types.length) return true;
+      for (const code of types) {
+        if (bannedInterventionTypeSet.has(code)) {
+          return false;
+        }
+      }
+      return true;
+    };
     const filterFeatureCollection = (fc) => {
       if (!fc || fc.type !== 'FeatureCollection') {
         return { type: 'FeatureCollection', features: [] };
@@ -1222,7 +1434,8 @@
       const features = Array.isArray(fc.features) ? fc.features : [];
       const filtered = features.filter((feature) => {
         const typeValue = feature && feature.properties ? feature.properties.vegetation_type : null;
-        return isVegetationVisible(typeValue);
+        const interventionTypes = feature && feature.properties ? feature.properties.intervention_types : null;
+        return isVegetationVisible(typeValue) && isInterventionVisible(interventionTypes);
       });
       return { type: 'FeatureCollection', features: filtered };
     };
@@ -1241,6 +1454,28 @@
           };
         })
         .filter(Boolean);
+    };
+    const extractProjectInterventionTypes = (fc, fallbackFeatures) => {
+      const fromPayload = fc && Array.isArray(fc.project_intervention_types)
+        ? normalizeInterventionTypes(fc.project_intervention_types)
+        : [];
+      if (fromPayload.length) return fromPayload;
+      const features = Array.isArray(fallbackFeatures) ? fallbackFeatures : [];
+      const found = new Set();
+      for (const feature of features) {
+        const types = feature && feature.properties ? feature.properties.intervention_types : null;
+        for (const code of normalizeInterventionTypes(types)) {
+          found.add(code);
+        }
+      }
+      return Array.from(found);
+    };
+    const extractProjectInterventionTypeLabels = (fc) => {
+      const labels = fc && fc.project_intervention_type_labels;
+      if (labels && typeof labels === 'object') {
+        return { ...labels };
+      }
+      return {};
     };
     const syncVegetationFilters = () => {
       const next = new Set();
@@ -1564,6 +1799,12 @@
             const features = Array.isArray(fc && fc.features) ? fc.features : [];
             logFetchDebug('workrecords features', features.length);
             logFetchDebug('workrecords sample labels', features.slice(0, 3).map(f => f && f.properties ? f.properties.label : null));
+            if (!interventionFiltersInitialized) {
+              const projectTypes = extractProjectInterventionTypes(fc, features);
+              const projectLabels = extractProjectInterventionTypeLabels(fc);
+              setInterventionFilterState(projectTypes, projectLabels);
+              interventionFiltersInitialized = true;
+            }
             workrecordFeatureCollectionRaw = fc;
             const filtered = filterFeatureCollection(fc);
             workrecordFeatures = rebuildWorkrecordFeatures(filtered.features);
@@ -1934,6 +2175,9 @@
           'circle-radius': 16,
         },
       });
+
+      registerInterventionLayerFilters();
+      applyInterventionLayerFilters();
 
       map.addSource('new-record-point', {
         type: 'geojson',

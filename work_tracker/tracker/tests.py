@@ -7,11 +7,13 @@ from django.test import TestCase
 from django.urls import reverse
 
 from .models import (
+    InterventionType,
     Project,
     ProjectMembership,
     RuianCadastralArea,
     RuianCadastralAreaMunicipality,
     RuianMunicipality,
+    TreeIntervention,
     WorkRecord,
 )
 
@@ -68,6 +70,9 @@ class WorkrecordsGeojsonTests(TestCase):
         self.in_project = WorkRecord.objects.create(
             title="InProject", latitude=49.1, longitude=17.1
         )
+        self.in_project_far = WorkRecord.objects.create(
+            title="InProjectFar", latitude=49.8, longitude=17.8
+        )
         self.other_project = WorkRecord.objects.create(
             title="OtherProject", latitude=49.2, longitude=17.2
         )
@@ -75,6 +80,7 @@ class WorkrecordsGeojsonTests(TestCase):
             title="Orphan", latitude=49.3, longitude=17.3
         )
         self.project1.trees.add(self.in_project)
+        self.project1.trees.add(self.in_project_far)
         self.project2.trees.add(self.other_project)
 
     def test_workrecords_geojson_non_project_uses_m2m(self):
@@ -85,8 +91,32 @@ class WorkrecordsGeojsonTests(TestCase):
         payload = resp.json()
         ids = {f["properties"]["id"] for f in payload.get("features", [])}
         self.assertIn(self.in_project.pk, ids)
+        self.assertIn(self.in_project_far.pk, ids)
         self.assertNotIn(self.other_project.pk, ids)
         self.assertNotIn(self.orphan.pk, ids)
+
+    def test_workrecords_geojson_project_intervention_types_ignore_bbox(self):
+        type_a = InterventionType.objects.create(code="A", name="Typ A")
+        type_b = InterventionType.objects.create(code="B", name="Typ B")
+        TreeIntervention.objects.create(tree=self.in_project, intervention_type=type_a)
+        TreeIntervention.objects.create(tree=self.in_project_far, intervention_type=type_b)
+
+        self.client.force_login(self.user)
+        url = reverse("workrecords_geojson")
+        resp = self.client.get(
+            url,
+            {
+                "project": self.project1.pk,
+                "bbox": "17.05,49.05,17.2,49.2",
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        ids = {f["properties"]["id"] for f in payload.get("features", [])}
+        self.assertEqual(ids, {self.in_project.pk})
+        self.assertEqual(payload.get("project_intervention_types"), ["A", "B"])
+        feature = payload["features"][0]
+        self.assertEqual(feature["properties"]["intervention_types"], ["A"])
 
 
 class CadastreAreaCodeDerivationTests(TestCase):

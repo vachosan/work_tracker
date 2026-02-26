@@ -9,6 +9,7 @@ import re
 import tempfile
 import logging
 import math
+from collections import defaultdict
 from urllib.parse import urlencode
 import zipstream
 import json
@@ -1924,6 +1925,8 @@ def workrecords_geojson(request):
         has_done_intervention=Exists(done_interventions),
     )
 
+    project_scope_qs = qs
+
     # TODO: this pilot endpoint will be replaced by the registry-driven map feed later.
     bbox_param = request.GET.get("bbox")
     if bbox_param:
@@ -1942,8 +1945,33 @@ def workrecords_geojson(request):
             latitude__lte=max_lat,
         )
 
+    records = list(qs)
+    intervention_types_by_tree = defaultdict(set)
+    project_intervention_types = set()
+    project_intervention_type_labels = {}
+    interventions_qs = (
+        TreeIntervention.objects.filter(tree_id__in=project_scope_qs.values("id"))
+        .select_related("intervention_type")
+        .values(
+            "tree_id",
+            "intervention_type__code",
+            "intervention_type__name",
+        )
+    )
+    for item in interventions_qs:
+        code = (item.get("intervention_type__code") or "").strip()
+        if not code:
+            continue
+        tree_id = item.get("tree_id")
+        intervention_types_by_tree[tree_id].add(code)
+        project_intervention_types.add(code)
+        if code not in project_intervention_type_labels:
+            name = (item.get("intervention_type__name") or "").strip()
+            if name:
+                project_intervention_type_labels[code] = name
+
     features = []
-    for wr in qs:
+    for wr in records:
         label = wr.display_label
 
         intervention_stage = "none"
@@ -1956,6 +1984,7 @@ def workrecords_geojson(request):
         if wr.vegetation_type == WorkRecord.VegetationType.HEDGE:
             shrub_width_value = to_float(getattr(wr, "shrub_width_m", None))
 
+        intervention_types = sorted(intervention_types_by_tree.get(wr.id, set()))
         features.append(
             {
                 "type": "Feature",
@@ -1989,6 +2018,7 @@ def workrecords_geojson(request):
                     )
                     * _mistletoe_multiplier(getattr(wr, "mistletoe_level", None)),
                     "intervention_stage": intervention_stage,
+                    "intervention_types": intervention_types,
                 },
             }
         )
@@ -1997,6 +2027,8 @@ def workrecords_geojson(request):
         {
             "type": "FeatureCollection",
             "features": features,
+            "project_intervention_types": sorted(project_intervention_types),
+            "project_intervention_type_labels": project_intervention_type_labels,
         },
         safe=False,
     )
