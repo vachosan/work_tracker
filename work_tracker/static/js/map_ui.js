@@ -457,6 +457,59 @@
     return detailUrl + '?' + params.join('&');
   }
 
+  function toFiniteNumber(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  function getRecordLngLat(record) {
+    if (!record || typeof record !== 'object') return null;
+    const directLng = toFiniteNumber(record.lon);
+    const directLat = toFiniteNumber(record.lat);
+    if (directLng !== null && directLat !== null) {
+      return { lng: directLng, lat: directLat };
+    }
+    const altLng = toFiniteNumber(record.longitude);
+    const altLat = toFiniteNumber(record.latitude);
+    if (altLng !== null && altLat !== null) {
+      return { lng: altLng, lat: altLat };
+    }
+    if (
+      record.geometry &&
+      Array.isArray(record.geometry.coordinates) &&
+      record.geometry.coordinates.length >= 2
+    ) {
+      const geometryLng = toFiniteNumber(record.geometry.coordinates[0]);
+      const geometryLat = toFiniteNumber(record.geometry.coordinates[1]);
+      if (geometryLng !== null && geometryLat !== null) {
+        return { lng: geometryLng, lat: geometryLat };
+      }
+    }
+    return null;
+  }
+
+  function buildMapyShowMapUrl(lng, lat, zoom) {
+    const lngNum = toFiniteNumber(lng);
+    const latNum = toFiniteNumber(lat);
+    if (lngNum === null || latNum === null) return '';
+    const zoomNumRaw = toFiniteNumber(zoom);
+    const zoomNum = zoomNumRaw === null ? 18 : Math.max(0, Math.round(zoomNumRaw));
+    const params = new URLSearchParams();
+    params.set('center', lngNum + ',' + latNum);
+    params.set('zoom', String(zoomNum));
+    params.set('marker', 'true');
+    return 'https://mapy.com/fnc/v1/showmap?' + params.toString();
+  }
+
+  function openMapyForRecord(record) {
+    const lngLat = getRecordLngLat(record);
+    if (!lngLat) return;
+    const url = buildMapyShowMapUrl(lngLat.lng, lngLat.lat, 18);
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
   function buildPopupHtml(record, state, opts) {
     const detailUrl = buildDetailUrl(record.id);
     const displayLabel = getRecordDisplayLabel(record);
@@ -488,6 +541,8 @@
         addToProjectMessage +
         '</div>'
       : '';
+    const mapyLngLat = getRecordLngLat(record);
+    const mapyDisabled = !mapyLngLat;
 
     const assessmentLabel = getAssessmentLabel(record);
     return (
@@ -515,6 +570,13 @@
       '<button type="button" class="wr-popup-btn intervention" data-action="intervention" data-record-id="' +
       record.id +
       '" title="Zásahy"><i class="bi bi-tools"></i></button>' +
+      '<button type="button" class="wr-popup-btn" data-action="mapy-showmap" data-record-id="' +
+      record.id +
+      '"' +
+      (mapyDisabled ? ' disabled' : '') +
+      ' title="' +
+      (mapyDisabled ? 'Chybí souřadnice' : 'Navigovat (Mapy.com)') +
+      '"><i class="bi bi-map"></i></button>' +
       addToProjectButtonHtml +
       (record.can_edit && getSetLocationUrl(record.id)
         ? '<button type="button" class="wr-popup-btn move-location" data-action="move-location" data-record-id="' +
@@ -650,6 +712,13 @@
         ev.preventDefault();
         ev.stopPropagation();
         openInterventionModal(record.id);
+      });
+    });
+    treePanel.querySelectorAll('.wr-popup-btn[data-action="mapy-showmap"]').forEach(function (btn) {
+      btn.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        openMapyForRecord(record);
       });
     });
     treePanel.querySelectorAll('.wr-popup-btn[data-action="move-location"]').forEach(function (btn) {
