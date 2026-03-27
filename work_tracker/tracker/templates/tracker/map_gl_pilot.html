@@ -99,6 +99,9 @@
     const CONTEXT_ZOOM = 18;
     const CONTEXT_SOURCE_ID = 'workrecords-context';
     const CONTEXT_LAYER_ID = 'workrecords-context-points';
+    const CONTEXT_CROWN_SOURCE_ID = 'tree_crowns_context';
+    const CONTEXT_CROWN_FILL_LAYER_ID = 'tree_crowns_context_fill';
+    const CONTEXT_CROWN_LINE_LAYER_ID = 'tree_crowns_context_line';
     const CROWN_SOURCE_ID = 'tree_crowns';
     const CROWN_FILL_LAYER_ID = 'tree_crowns_fill';
     const CROWN_LINE_LAYER_ID = 'tree_crowns_line';
@@ -173,6 +176,8 @@
     const interventionLayerFilters = new Map();
     const CONTEXT_POINT_COLOR = '#888';
     const CONTEXT_POINT_OPACITY = 0.7;
+    const CONTEXT_CROWN_FILL_COLOR = '#9ca3af';
+    const CONTEXT_CROWN_LINE_COLOR = '#6b7280';
     const CROWN_DIAMETER_KEYS = ['crown_diameter_m', 'crown_width_m', 'diameter_crown', 'crown_diameter'];
     const CROWN_STEPS = 64;
     const HEDGE_DEFAULT_WIDTH_M = 1.0;
@@ -1386,6 +1391,25 @@
       if (!source || typeof source.setData !== 'function') return;
       source.setData(crownsToGeoJSON(pointsGeoJSON));
     };
+    const isTreeLikeFeature = (feature) => {
+      if (!feature || !feature.properties) return true;
+      const hasVegetationType = Object.prototype.hasOwnProperty.call(feature.properties, 'vegetation_type');
+      if (!hasVegetationType) return true;
+      const vegetationType = feature.properties.vegetation_type;
+      return vegetationType === 'TREE' || vegetationType === null || vegetationType === '';
+    };
+    const filterTreeLikeFeatures = (pointsGeoJSON) => {
+      if (!pointsGeoJSON || pointsGeoJSON.type !== 'FeatureCollection') {
+        return { type: 'FeatureCollection', features: [] };
+      }
+      const features = Array.isArray(pointsGeoJSON.features) ? pointsGeoJSON.features : [];
+      return { type: 'FeatureCollection', features: features.filter(isTreeLikeFeature) };
+    };
+    const updateContextCrownsSource = (pointsGeoJSON) => {
+      const source = map.getSource(CONTEXT_CROWN_SOURCE_ID);
+      if (!source || typeof source.setData !== 'function') return;
+      source.setData(crownsToGeoJSON(filterTreeLikeFeatures(pointsGeoJSON)));
+    };
 
     const parseHedgeLine = (value) => {
       if (!value) return null;
@@ -1687,6 +1711,12 @@
         if (map.getLayer(CONTEXT_LAYER_ID)) {
           map.setLayoutProperty(CONTEXT_LAYER_ID, 'visibility', 'none');
         }
+        if (map.getLayer(CONTEXT_CROWN_FILL_LAYER_ID)) {
+          map.setLayoutProperty(CONTEXT_CROWN_FILL_LAYER_ID, 'visibility', 'none');
+        }
+        if (map.getLayer(CONTEXT_CROWN_LINE_LAYER_ID)) {
+          map.setLayoutProperty(CONTEXT_CROWN_LINE_LAYER_ID, 'visibility', 'none');
+        }
         if (contextFeatures.length) {
           contextFeatures = [];
           renderLabelOverlay();
@@ -1698,6 +1728,12 @@
       if (map.getLayer(CONTEXT_LAYER_ID)) {
         map.setLayoutProperty(CONTEXT_LAYER_ID, 'visibility', 'visible');
       }
+      if (map.getLayer(CONTEXT_CROWN_FILL_LAYER_ID)) {
+        map.setLayoutProperty(CONTEXT_CROWN_FILL_LAYER_ID, 'visibility', 'visible');
+      }
+      if (map.getLayer(CONTEXT_CROWN_LINE_LAYER_ID)) {
+        map.setLayoutProperty(CONTEXT_CROWN_LINE_LAYER_ID, 'visibility', 'visible');
+      }
         fetch(url)
           .then(resp => resp.json())
           .then(fc => {
@@ -1705,6 +1741,7 @@
             const filtered = filterFeatureCollection(fc);
             contextFeatures = rebuildWorkrecordFeatures(filtered.features);
             source.setData(filtered);
+            updateContextCrownsSource(filtered);
             renderLabelOverlay();
           })
           .catch(err => logFetchDebug('context fetch error', err));
@@ -1979,6 +2016,7 @@
         const filtered = filterFeatureCollection(contextFeatureCollectionRaw);
         contextFeatures = rebuildWorkrecordFeatures(filtered.features);
         contextSrc.setData(filtered);
+        updateContextCrownsSource(filtered);
         renderLabelOverlay();
       }
     };
@@ -2318,6 +2356,10 @@
           type: 'geojson',
           data: { type: 'FeatureCollection', features: [] },
         });
+        map.addSource(CONTEXT_CROWN_SOURCE_ID, {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        });
         map.addLayer({
           id: CONTEXT_LAYER_ID,
           type: 'circle',
@@ -2325,6 +2367,8 @@
           filter: [
             'any',
             ['==', ['get', 'vegetation_type'], 'TREE'],
+            ['==', ['get', 'vegetation_type'], null],
+            ['==', ['get', 'vegetation_type'], ''],
             ['!', ['has', 'vegetation_type']],
           ],
           paint: {
@@ -2382,6 +2426,35 @@
       });
 
       // Add crowns before marker layers so markers stay on top.
+      if (projectParam) {
+        map.addLayer({
+          id: CONTEXT_CROWN_FILL_LAYER_ID,
+          type: 'fill',
+          source: CONTEXT_CROWN_SOURCE_ID,
+          minzoom: CONTEXT_ZOOM,
+          paint: {
+            'fill-color': CONTEXT_CROWN_FILL_COLOR,
+            'fill-opacity': 0.08,
+          },
+          layout: {
+            visibility: 'none',
+          },
+        }, CONTEXT_LAYER_ID);
+        map.addLayer({
+          id: CONTEXT_CROWN_LINE_LAYER_ID,
+          type: 'line',
+          source: CONTEXT_CROWN_SOURCE_ID,
+          minzoom: CONTEXT_ZOOM,
+          paint: {
+            'line-color': CONTEXT_CROWN_LINE_COLOR,
+            'line-width': 1,
+            'line-opacity': 0.45,
+          },
+          layout: {
+            visibility: 'none',
+          },
+        }, CONTEXT_LAYER_ID);
+      }
       map.addLayer({
         id: CROWN_FILL_LAYER_ID,
         type: 'fill',
@@ -2576,6 +2649,8 @@
             'any',
             ['==', ['get', 'vegetation_type'], 'TREE'],
             ['==', ['get', 'vegetation_type'], null],
+            ['==', ['get', 'vegetation_type'], ''],
+            ['!', ['has', 'vegetation_type']],
           ],
         ],
         paint: {
