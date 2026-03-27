@@ -111,7 +111,11 @@
   let interventionDescriptionToggle;
   let interventionDescriptionInput;
   const PANEL_HISTORY_KEY = 'workTrackerMapPanel';
-  let handlingPanelPopstate = false;
+  const PANEL_MODAL_ASSESSMENT = 'assessment';
+  const PANEL_MODAL_INTERVENTION = 'intervention';
+  const PANEL_MODAL_PHOTO = 'photo';
+  const PANEL_MODAL_CAPTURE = 'capture';
+  let handlingPopstate = false;
   function mergeConfig() {
     const userCfg = window.workTrackerMapUiConfig || {};
     if (!userCfg || typeof userCfg !== 'object') return;
@@ -207,25 +211,47 @@
     return Number.isFinite(recordId) ? recordId : null;
   }
 
-  function withPanelHistoryState(recordId) {
+  function getPanelModalFromState(state) {
+    if (!state || typeof state !== 'object') return null;
+    const panelState = state[PANEL_HISTORY_KEY];
+    if (!panelState || typeof panelState !== 'object') return null;
+    const modal = panelState.modal;
+    if (
+      modal === PANEL_MODAL_ASSESSMENT ||
+      modal === PANEL_MODAL_INTERVENTION ||
+      modal === PANEL_MODAL_PHOTO ||
+      modal === PANEL_MODAL_CAPTURE
+    ) {
+      return modal;
+    }
+    return null;
+  }
+
+  function withPanelHistoryState(recordId, modal) {
     const current =
       window.history && window.history.state && typeof window.history.state === 'object'
         ? window.history.state
         : {};
     const next = { ...current };
-    if (recordId) {
-      next[PANEL_HISTORY_KEY] = { recordId: Number(recordId) };
-    } else {
-      next[PANEL_HISTORY_KEY] = { recordId: null };
-    }
+    const normalizedRecordId = Number(recordId);
+    const safeRecordId = Number.isFinite(normalizedRecordId) ? normalizedRecordId : null;
+    const safeModal =
+      modal === PANEL_MODAL_ASSESSMENT ||
+      modal === PANEL_MODAL_INTERVENTION ||
+      modal === PANEL_MODAL_PHOTO ||
+      modal === PANEL_MODAL_CAPTURE
+        ? modal
+        : null;
+    next[PANEL_HISTORY_KEY] = { recordId: safeRecordId, modal: safeModal };
     return next;
   }
 
   function ensurePanelHistoryBaseState() {
     if (!window.history || typeof window.history.replaceState !== 'function') return;
     const currentPanelId = getPanelRecordIdFromState(window.history.state);
-    if (currentPanelId === null) return;
-    window.history.replaceState(withPanelHistoryState(null), '');
+    const currentModal = getPanelModalFromState(window.history.state);
+    if (currentPanelId === null && currentModal === null) return;
+    window.history.replaceState(withPanelHistoryState(null, null), '');
   }
 
   function syncPanelOpenHistory(recordId, opts) {
@@ -234,8 +260,9 @@
     const nextId = Number(recordId);
     if (!Number.isFinite(nextId)) return;
     const currentId = getPanelRecordIdFromState(window.history.state);
-    if (currentId === nextId) return;
-    const nextState = withPanelHistoryState(nextId);
+    const currentModal = getPanelModalFromState(window.history.state);
+    if (currentId === nextId && currentModal === null) return;
+    const nextState = withPanelHistoryState(nextId, null);
     if (options.replace && typeof window.history.replaceState === 'function') {
       window.history.replaceState(nextState, '');
     } else {
@@ -246,14 +273,41 @@
   function syncPanelClosedHistory() {
     if (!window.history || typeof window.history.replaceState !== 'function') return;
     const currentId = getPanelRecordIdFromState(window.history.state);
-    if (currentId === null) return;
-    window.history.replaceState(withPanelHistoryState(null), '');
+    const currentModal = getPanelModalFromState(window.history.state);
+    if (currentId === null && currentModal === null) return;
+    window.history.replaceState(withPanelHistoryState(null, null), '');
+  }
+
+  function syncPanelModalOpenHistory(recordId, modal) {
+    if (!window.history || typeof window.history.pushState !== 'function') return;
+    const nextId = Number(recordId);
+    if (!Number.isFinite(nextId)) return;
+    if (
+      modal !== PANEL_MODAL_ASSESSMENT &&
+      modal !== PANEL_MODAL_INTERVENTION &&
+      modal !== PANEL_MODAL_PHOTO &&
+      modal !== PANEL_MODAL_CAPTURE
+    ) {
+      return;
+    }
+    const currentId = getPanelRecordIdFromState(window.history.state);
+    const currentModal = getPanelModalFromState(window.history.state);
+    if (currentId === nextId && currentModal === modal) return;
+    window.history.pushState(withPanelHistoryState(nextId, modal), '');
+  }
+
+  function syncModalClosedHistory() {
+    if (!window.history || typeof window.history.replaceState !== 'function') return;
+    const currentId = getPanelRecordIdFromState(window.history.state);
+    const currentModal = getPanelModalFromState(window.history.state);
+    if (currentModal === null) return;
+    window.history.replaceState(withPanelHistoryState(currentId, null), '');
   }
 
   function closeTreePanelWithOptions(opts) {
     const options = opts || {};
     if (!treePanel) return;
-    if (!options.skipHistorySync && !handlingPanelPopstate) {
+    if (!options.skipHistorySync && !handlingPopstate) {
       const currentId = getPanelRecordIdFromState(window.history && window.history.state);
       if (options.preferHistoryBack && currentId !== null && window.history && window.history.length > 1) {
         window.history.back();
@@ -935,7 +989,7 @@
       cancelMoveLocationMode();
     }
     setCurrentWorkRecord(idNum);
-    if (!prefill.skipHistorySync && !handlingPanelPopstate) {
+    if (!prefill.skipHistorySync && !handlingPopstate) {
       syncPanelOpenHistory(idNum, { replace: prefill.replaceHistoryState === true });
     }
     updateBackLink(idNum);
@@ -993,12 +1047,21 @@
 
   // ----- Photo viewer & capture -----
 
-  function openPhotoViewer(recordId, index) {
+  function openPhotoViewer(recordId, index, opts) {
+    const options = opts || {};
     if (!photoViewer || !photoViewerImg) return;
-    const record = recordCache[Number(recordId)];
+    const targetId = Number(recordId || currentWorkRecordId);
+    if (!options.skipHistorySync && !handlingPopstate && Number.isFinite(targetId)) {
+      syncPanelModalOpenHistory(targetId, PANEL_MODAL_PHOTO);
+    }
+    hideAssessmentModal({ skipHistorySync: true });
+    hideInterventionModal({ skipHistorySync: true });
+    closeCaptureModal({ skipHistorySync: true });
+    const record = recordCache[Number(targetId)];
     if (!record || !Array.isArray(record.photos) || !record.photos.length) return;
     currentAlbum = record.photos.slice();
-    showPhoto(index);
+    const nextIndex = Number.isFinite(Number(index)) ? Number(index) : 0;
+    showPhoto(nextIndex);
   }
 
   function showPhoto(index) {
@@ -1013,8 +1076,22 @@
     photoViewer.classList.add('active');
   }
 
-  function closePhotoViewer() {
+  function closePhotoViewer(opts) {
+    const options = opts || {};
     if (!photoViewer) return;
+    if (!options.skipHistorySync && !handlingPopstate) {
+      const currentModal = getPanelModalFromState(window.history && window.history.state);
+      if (
+        options.preferHistoryBack &&
+        currentModal === PANEL_MODAL_PHOTO &&
+        window.history &&
+        window.history.length > 1
+      ) {
+        window.history.back();
+        return;
+      }
+      syncModalClosedHistory();
+    }
     photoViewer.classList.remove('active');
     currentAlbum = [];
     currentPhotoIndex = 0;
@@ -1066,8 +1143,9 @@
       })
       .then(function (data) {
         if (data.status === 'ok') {
-          closeCaptureModal();
-          openWorkRecordPanel(captureRecordId);
+          const recordIdForRefresh = captureRecordId;
+          closeCaptureModal({ preferHistoryBack: false });
+          openWorkRecordPanel(recordIdForRefresh);
         } else {
           alert(data.msg || 'Nepodařilo se uložit fotku.');
         }
@@ -1080,12 +1158,38 @@
       });
   }
 
-  function openCaptureModal() {
+  function openCaptureModal(recordId, opts) {
+    const options = opts || {};
+    const targetId = Number(recordId || captureRecordId || currentWorkRecordId);
+    if (!options.skipHistorySync && !handlingPopstate && Number.isFinite(targetId)) {
+      syncPanelModalOpenHistory(targetId, PANEL_MODAL_CAPTURE);
+    }
+    closePhotoViewer({ skipHistorySync: true });
+    hideAssessmentModal({ skipHistorySync: true });
+    hideInterventionModal({ skipHistorySync: true });
+    if (Number.isFinite(targetId)) {
+      captureRecordId = targetId;
+    }
     if (photoCaptureModal) photoCaptureModal.classList.add('active');
   }
 
-  function closeCaptureModal() {
-    if (photoCaptureModal) photoCaptureModal.classList.remove('active');
+  function closeCaptureModal(opts) {
+    const options = opts || {};
+    if (!photoCaptureModal) return;
+    if (!options.skipHistorySync && !handlingPopstate) {
+      const currentModal = getPanelModalFromState(window.history && window.history.state);
+      if (
+        options.preferHistoryBack &&
+        currentModal === PANEL_MODAL_CAPTURE &&
+        window.history &&
+        window.history.length > 1
+      ) {
+        window.history.back();
+        return;
+      }
+      syncModalClosedHistory();
+    }
+    photoCaptureModal.classList.remove('active');
     captureFile = null;
     captureRecordId = null;
     if (photoCaptureInput) photoCaptureInput.value = '';
@@ -1424,8 +1528,15 @@
     return 1;
   }
 
-  function openAssessmentForRecord(recordId) {
+  function openAssessmentForRecord(recordId, opts) {
+    const options = opts || {};
     if (!assessmentModal || !recordId) return;
+    if (!options.skipHistorySync && !handlingPopstate) {
+      syncPanelModalOpenHistory(recordId, PANEL_MODAL_ASSESSMENT);
+    }
+    hideInterventionModal({ skipHistorySync: true });
+    closePhotoViewer({ skipHistorySync: true });
+    closeCaptureModal({ skipHistorySync: true });
     const record = recordCache[Number(recordId)] || {};
     const kind = getAssessmentKind(record);
     const url = buildAssessmentUrl(recordId, kind);
@@ -1545,8 +1656,22 @@
       });
   }
 
-  function hideAssessmentModal() {
+  function hideAssessmentModal(opts) {
+    const options = opts || {};
     if (!assessmentModal) return;
+    if (!options.skipHistorySync && !handlingPopstate) {
+      const currentModal = getPanelModalFromState(window.history && window.history.state);
+      if (
+        options.preferHistoryBack &&
+        currentModal === PANEL_MODAL_ASSESSMENT &&
+        window.history &&
+        window.history.length > 1
+      ) {
+        window.history.back();
+        return;
+      }
+      syncModalClosedHistory();
+    }
     assessmentModal.classList.remove('active');
     if (assessmentMessage) {
       assessmentMessage.textContent = '';
@@ -1644,7 +1769,7 @@
         return resp.json();
       })
       .then(function () {
-        hideAssessmentModal();
+        hideAssessmentModal({ preferHistoryBack: false });
         openWorkRecordPanel(recordId);
       })
       .catch(function () {
@@ -1925,8 +2050,15 @@
       });
   }
 
-  function openInterventionModal(recordId) {
+  function openInterventionModal(recordId, opts) {
+    const options = opts || {};
     if (!interventionModal || !interventionForm || !recordId) return;
+    if (!options.skipHistorySync && !handlingPopstate) {
+      syncPanelModalOpenHistory(recordId, PANEL_MODAL_INTERVENTION);
+    }
+    hideAssessmentModal({ skipHistorySync: true });
+    closePhotoViewer({ skipHistorySync: true });
+    closeCaptureModal({ skipHistorySync: true });
     if (interventionTreeIdInput) {
       interventionTreeIdInput.value = recordId;
     }
@@ -1941,8 +2073,22 @@
     interventionModal.classList.add('active');
   }
 
-  function hideInterventionModal() {
+  function hideInterventionModal(opts) {
+    const options = opts || {};
     if (!interventionModal) return;
+    if (!options.skipHistorySync && !handlingPopstate) {
+      const currentModal = getPanelModalFromState(window.history && window.history.state);
+      if (
+        options.preferHistoryBack &&
+        currentModal === PANEL_MODAL_INTERVENTION &&
+        window.history &&
+        window.history.length > 1
+      ) {
+        window.history.back();
+        return;
+      }
+      syncModalClosedHistory();
+    }
     interventionModal.classList.remove('active');
   }
 
@@ -2000,7 +2146,7 @@
           loadInterventionsForRecord(rid);
         }
         setInterventionMessage('Zásah byl uložen.', false);
-        hideInterventionModal();
+        hideInterventionModal({ preferHistoryBack: false });
         console.debug('intervention saved', { recordId: rid });
       })
       .catch(function (err) {
@@ -2102,11 +2248,11 @@
       photoViewerClose = photoViewer.querySelector('.pv-close');
 
       photoViewer.addEventListener('click', function (e) {
-        if (e.target === photoViewer) closePhotoViewer();
+        if (e.target === photoViewer) closePhotoViewer({ preferHistoryBack: true });
       });
       if (photoViewerClose) {
         photoViewerClose.addEventListener('click', function () {
-          closePhotoViewer();
+          closePhotoViewer({ preferHistoryBack: true });
         });
       }
       if (photoViewerPrev) {
@@ -2127,7 +2273,7 @@
       }
       document.addEventListener('keydown', function (e) {
         if (!photoViewer || !photoViewer.classList.contains('active')) return;
-        if (e.key === 'Escape') closePhotoViewer();
+        if (e.key === 'Escape') closePhotoViewer({ preferHistoryBack: true });
         if (e.key === 'ArrowRight') {
           const next = (currentPhotoIndex + 1) % currentAlbum.length;
           showPhoto(next);
@@ -2188,16 +2334,24 @@
       });
     }
     if (captureCancelBtn) {
-      captureCancelBtn.addEventListener('click', closeCaptureModal);
+      captureCancelBtn.addEventListener('click', function () {
+        closeCaptureModal({ preferHistoryBack: true });
+      });
     }
     if (captureSaveBtn) {
       captureSaveBtn.addEventListener('click', uploadCapturedPhoto);
     }
     if (photoCaptureModal) {
       photoCaptureModal.addEventListener('click', function (e) {
-        if (e.target === photoCaptureModal) closeCaptureModal();
+        if (e.target === photoCaptureModal) closeCaptureModal({ preferHistoryBack: true });
       });
     }
+    document.addEventListener('keydown', function (e) {
+      if (!photoCaptureModal || !photoCaptureModal.classList.contains('active')) return;
+      if (e.key === 'Escape') {
+        closeCaptureModal({ preferHistoryBack: true });
+      }
+    });
 
     // Assessment modal
     assessmentModal = document.getElementById('assessmentModal');
@@ -2295,14 +2449,18 @@
       assessmentHeightInput.addEventListener('input', updateCrownAreaHintFromInputs);
     }
     if (assessmentCancelBtn) {
-      assessmentCancelBtn.addEventListener('click', hideAssessmentModal);
+      assessmentCancelBtn.addEventListener('click', function () {
+        hideAssessmentModal({ preferHistoryBack: true });
+      });
     }
     if (assessmentCloseBtn) {
-      assessmentCloseBtn.addEventListener('click', hideAssessmentModal);
+      assessmentCloseBtn.addEventListener('click', function () {
+        hideAssessmentModal({ preferHistoryBack: true });
+      });
     }
     if (assessmentModal) {
       assessmentModal.addEventListener('click', function (e) {
-        if (e.target === assessmentModal) hideAssessmentModal();
+        if (e.target === assessmentModal) hideAssessmentModal({ preferHistoryBack: true });
       });
     }
     if (assessmentSaveBtn) {
@@ -2335,14 +2493,18 @@
     }
 
     if (interventionCloseBtn) {
-      interventionCloseBtn.addEventListener('click', hideInterventionModal);
+      interventionCloseBtn.addEventListener('click', function () {
+        hideInterventionModal({ preferHistoryBack: true });
+      });
     }
     if (interventionCancelBtn) {
-      interventionCancelBtn.addEventListener('click', hideInterventionModal);
+      interventionCancelBtn.addEventListener('click', function () {
+        hideInterventionModal({ preferHistoryBack: true });
+      });
     }
     if (interventionModal) {
       interventionModal.addEventListener('click', function (e) {
-        if (e.target === interventionModal) hideInterventionModal();
+        if (e.target === interventionModal) hideInterventionModal({ preferHistoryBack: true });
       });
     }
     if (interventionForm) {
@@ -2396,16 +2558,67 @@
     initDom();
     ensurePanelHistoryBaseState();
     window.addEventListener('popstate', function (event) {
-      handlingPanelPopstate = true;
+      handlingPopstate = true;
       try {
         const recordId = getPanelRecordIdFromState(event && event.state);
+        const modal = getPanelModalFromState(event && event.state);
+
+        if (modal === PANEL_MODAL_ASSESSMENT) {
+          const targetId =
+            recordId !== null
+              ? recordId
+              : assessmentWorkRecordIdInput && assessmentWorkRecordIdInput.value
+                ? assessmentWorkRecordIdInput.value
+                : currentWorkRecordId;
+          if (targetId) openAssessmentForRecord(targetId, { skipHistorySync: true });
+          hideInterventionModal({ skipHistorySync: true });
+          closePhotoViewer({ skipHistorySync: true });
+          closeCaptureModal({ skipHistorySync: true });
+        } else if (modal === PANEL_MODAL_INTERVENTION) {
+          const targetId =
+            recordId !== null
+              ? recordId
+              : interventionTreeIdInput && interventionTreeIdInput.value
+                ? interventionTreeIdInput.value
+                : currentWorkRecordId;
+          if (targetId) openInterventionModal(targetId, { skipHistorySync: true });
+          hideAssessmentModal({ skipHistorySync: true });
+          closePhotoViewer({ skipHistorySync: true });
+          closeCaptureModal({ skipHistorySync: true });
+        } else if (modal === PANEL_MODAL_PHOTO) {
+          const targetId = recordId !== null ? recordId : currentWorkRecordId;
+          if (targetId) {
+            openPhotoViewer(targetId, 0, { skipHistorySync: true });
+          } else {
+            closePhotoViewer({ skipHistorySync: true });
+          }
+          hideAssessmentModal({ skipHistorySync: true });
+          hideInterventionModal({ skipHistorySync: true });
+          closeCaptureModal({ skipHistorySync: true });
+        } else if (modal === PANEL_MODAL_CAPTURE) {
+          const targetId = recordId !== null ? recordId : captureRecordId || currentWorkRecordId;
+          if (targetId) {
+            openCaptureModal(targetId, { skipHistorySync: true });
+          } else {
+            closeCaptureModal({ skipHistorySync: true });
+          }
+          hideAssessmentModal({ skipHistorySync: true });
+          hideInterventionModal({ skipHistorySync: true });
+          closePhotoViewer({ skipHistorySync: true });
+        } else {
+          hideAssessmentModal({ skipHistorySync: true });
+          hideInterventionModal({ skipHistorySync: true });
+          closePhotoViewer({ skipHistorySync: true });
+          closeCaptureModal({ skipHistorySync: true });
+        }
+
         if (recordId !== null) {
           openWorkRecordPanel(recordId, { skipHistorySync: true });
         } else {
           closeTreePanelWithOptions({ skipHistorySync: true });
         }
       } finally {
-        handlingPanelPopstate = false;
+        handlingPopstate = false;
       }
     });
     window.openWorkRecordPanel = openWorkRecordPanel;
