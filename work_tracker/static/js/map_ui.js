@@ -110,6 +110,8 @@
   let interventionDescriptionWrap;
   let interventionDescriptionToggle;
   let interventionDescriptionInput;
+  const PANEL_HISTORY_KEY = 'workTrackerMapPanel';
+  let handlingPanelPopstate = false;
   function mergeConfig() {
     const userCfg = window.workTrackerMapUiConfig || {};
     if (!userCfg || typeof userCfg !== 'object') return;
@@ -194,7 +196,71 @@
   }
 
   function closeTreePanel() {
+    return closeTreePanelWithOptions({});
+  }
+
+  function getPanelRecordIdFromState(state) {
+    if (!state || typeof state !== 'object') return null;
+    const panelState = state[PANEL_HISTORY_KEY];
+    if (!panelState || typeof panelState !== 'object') return null;
+    const recordId = Number(panelState.recordId);
+    return Number.isFinite(recordId) ? recordId : null;
+  }
+
+  function withPanelHistoryState(recordId) {
+    const current =
+      window.history && window.history.state && typeof window.history.state === 'object'
+        ? window.history.state
+        : {};
+    const next = { ...current };
+    if (recordId) {
+      next[PANEL_HISTORY_KEY] = { recordId: Number(recordId) };
+    } else {
+      next[PANEL_HISTORY_KEY] = { recordId: null };
+    }
+    return next;
+  }
+
+  function ensurePanelHistoryBaseState() {
+    if (!window.history || typeof window.history.replaceState !== 'function') return;
+    const currentPanelId = getPanelRecordIdFromState(window.history.state);
+    if (currentPanelId === null) return;
+    window.history.replaceState(withPanelHistoryState(null), '');
+  }
+
+  function syncPanelOpenHistory(recordId, opts) {
+    if (!window.history || typeof window.history.pushState !== 'function') return;
+    const options = opts || {};
+    const nextId = Number(recordId);
+    if (!Number.isFinite(nextId)) return;
+    const currentId = getPanelRecordIdFromState(window.history.state);
+    if (currentId === nextId) return;
+    const nextState = withPanelHistoryState(nextId);
+    if (options.replace && typeof window.history.replaceState === 'function') {
+      window.history.replaceState(nextState, '');
+    } else {
+      window.history.pushState(nextState, '');
+    }
+  }
+
+  function syncPanelClosedHistory() {
+    if (!window.history || typeof window.history.replaceState !== 'function') return;
+    const currentId = getPanelRecordIdFromState(window.history.state);
+    if (currentId === null) return;
+    window.history.replaceState(withPanelHistoryState(null), '');
+  }
+
+  function closeTreePanelWithOptions(opts) {
+    const options = opts || {};
     if (!treePanel) return;
+    if (!options.skipHistorySync && !handlingPanelPopstate) {
+      const currentId = getPanelRecordIdFromState(window.history && window.history.state);
+      if (options.preferHistoryBack && currentId !== null && window.history && window.history.length > 1) {
+        window.history.back();
+        return;
+      }
+      syncPanelClosedHistory();
+    }
     treePanel.innerHTML = '';
     closeBottomPanel();
     currentWorkRecordId = null;
@@ -639,6 +705,7 @@
     const html =
       '<div class="tree-panel-inner">' +
       '<div class="tree-panel-header">' +
+      '<button type="button" class="tree-panel-close" aria-label="Zavřít detail stromu">&times;</button>' +
       '</div>' +
       buildPopupHtml(record, state || {}, { addToProjectEnabled: addToProjectEnabled }) +
       '</div>';
@@ -868,6 +935,9 @@
       cancelMoveLocationMode();
     }
     setCurrentWorkRecord(idNum);
+    if (!prefill.skipHistorySync && !handlingPanelPopstate) {
+      syncPanelOpenHistory(idNum, { replace: prefill.replaceHistoryState === true });
+    }
     updateBackLink(idNum);
 
     let baseRecord = recordCache[idNum];
@@ -1997,7 +2067,7 @@
       treePanel.addEventListener('click', function (event) {
         if (event.target.closest('.tree-panel-close')) {
           event.preventDefault();
-          closeTreePanel();
+          closeTreePanelWithOptions({ preferHistoryBack: true });
         }
       });
     }
@@ -2324,6 +2394,20 @@
   function init() {
     mergeConfig();
     initDom();
+    ensurePanelHistoryBaseState();
+    window.addEventListener('popstate', function (event) {
+      handlingPanelPopstate = true;
+      try {
+        const recordId = getPanelRecordIdFromState(event && event.state);
+        if (recordId !== null) {
+          openWorkRecordPanel(recordId, { skipHistorySync: true });
+        } else {
+          closeTreePanelWithOptions({ skipHistorySync: true });
+        }
+      } finally {
+        handlingPanelPopstate = false;
+      }
+    });
     window.openWorkRecordPanel = openWorkRecordPanel;
     window.closeWorkRecordPanel = closeTreePanel;
     window.workTrackerMapUi = {

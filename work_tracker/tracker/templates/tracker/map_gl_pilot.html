@@ -1634,9 +1634,9 @@
     };
     const applyInitialFocus = () => {
       if (!pendingFocusId) return;
+      clearFocusParam();
       focusWorkRecordById(pendingFocusId);
       pendingFocusId = null;
-      clearFocusParam();
     };
     const buildContextUrl = () => {
       const bounds = map.getBounds && map.getBounds();
