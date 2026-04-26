@@ -724,9 +724,9 @@ class PhotoDocumentation(models.Model):
 
 class ProjectMembership(models.Model):
     class Role(models.TextChoices):
-        OWNER = "OWNER", "Zadavatel"
-        FOREMAN = "FOREMAN", "Stavbyvedoucí"
-        WORKER = "WORKER", "Dělník"
+        OWNER = "OWNER", "Správce projektu"
+        FOREMAN = "FOREMAN", "Koordinátor"
+        WORKER = "WORKER", "Pracovník"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

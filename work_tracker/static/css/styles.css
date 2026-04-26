@@ -147,8 +147,9 @@ ul li:hover {
     color: #222;
     padding: 0.25rem 0.75rem !important; /* menší výška */
     margin-bottom: 12px;
-    border-radius: 0;
-    border-bottom: 1px solid #dee2e6; /* jemná linka, jako v Bootstrapu */
+    border: 1px solid #dee2e6; /* jemná linka, jako v Bootstrapu */
+    border-radius: 0.75rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
 /* text značky vlevo */
@@ -190,6 +191,52 @@ ul li:hover {
 
 .workrecord-row:active {
   background-color: #e9ecef;
+}
+
+/* --- Project detail header --- */
+.project-detail-header {
+  top: 0;
+  padding: 0.75rem;
+  border: 1px solid #dee2e6 !important;
+  border-radius: 0.75rem;
+}
+
+.project-detail-header > .py-2 {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+.project-detail-title {
+  border-bottom: 0;
+  padding-bottom: 0;
+  line-height: 1.2;
+}
+
+.project-detail-description {
+  margin-top: 0.15rem;
+  line-height: 1.35;
+}
+
+.project-detail-actions,
+.project-filter-actions {
+  row-gap: 0.35rem !important;
+}
+
+.project-filter-toggle-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.project-filter-form {
+  margin-bottom: 0;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  box-shadow: none;
+  border: 1px solid #dee2e6;
+}
+
+#project-actions-form {
+  display: none;
 }
 
 /* Mobilní optimalizace */
@@ -234,6 +281,49 @@ ul li:hover {
     img {
         max-width: 100%;
         height: auto;
+    }
+
+    .project-detail-header {
+        margin-left: -10px;
+        margin-right: -10px;
+        padding-left: 10px;
+        padding-right: 10px;
+        border-radius: 0.75rem;
+    }
+
+    .project-detail-titlebar {
+        gap: 0.5rem !important;
+    }
+
+    .project-detail-title {
+        font-size: 1.2rem;
+    }
+
+    .project-detail-actions {
+        width: 100%;
+        gap: 0.35rem !important;
+    }
+
+    .project-detail-actions .btn,
+    .project-detail-actions .dropdown .btn,
+    .project-filter-toggle,
+    .project-filter-actions .btn {
+        width: auto;
+        margin-bottom: 0;
+        padding: 0.35rem 0.55rem;
+        line-height: 1.2;
+    }
+
+    .project-filter-toggle-row {
+        justify-content: flex-start;
+    }
+
+    .project-filter-form {
+        padding: 0.6rem;
+    }
+
+    .project-filter-actions {
+        gap: 0.35rem !important;
     }
 }
 

@@ -1,17 +1,17 @@
 {% extends 'tracker/base.html' %}
-{% block title %}{{ project.name }} - Úkony{% endblock %}
+{% block title %}{{ project.name }}{% endblock %}
 
 {% block content %}
-<div class="sticky-top bg-white shadow-sm border-bottom mb-3">
+<div class="sticky-top bg-white shadow-sm border-bottom mb-3 project-detail-header">
   <div class="py-2">
-    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 project-detail-titlebar">
       <div>
-        <h1 class="h4 m-0">{{ project.name }} - Úkony</h1>
+        <h1 class="h4 m-0 project-detail-title">{{ project.name }}</h1>
         {% if project.description %}
-          <div class="text-muted small">{{ project.description }}</div>
+          <div class="text-muted small project-detail-description">{{ project.description }}</div>
         {% endif %}
       </div>
-      <div class="d-flex flex-wrap gap-2 align-items-center">
+      <div class="d-flex flex-wrap gap-2 align-items-center project-detail-actions">
         <a class="btn btn-outline-secondary btn-sm" href="{% url 'work_record_list' %}#project-{{ project.pk }}">
           <i class="bi bi-arrow-left"></i> Zpět na projekty
         </a>
@@ -134,75 +134,86 @@
       </div>
     </div>
 
-    <form method="get" class="mt-2">
-      <div class="row g-2 align-items-end">
-        <div class="col-12 col-md-6">
-          <input type="text"
-                 name="q"
-                 value="{{ q }}"
-                 class="form-control"
-                 placeholder="Hledat v názvu/popisu">
-        </div>
-        <div class="col-12 col-md-6 d-flex flex-wrap gap-2">
-          <button class="btn btn-primary" type="submit">
-            <i class="bi bi-funnel"></i> Filtrovat
-          </button>
-          <a class="btn btn-outline-secondary" href="{% url 'project_detail' project.pk %}">
-            Zrušit filtr
-          </a>
-          <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse"
-                  data-bs-target="#advancedFilters" aria-expanded="false" aria-controls="advancedFilters">
-            Pokročilé filtry
-          </button>
-        </div>
-      </div>
+    <div class="mt-2 project-filter-toggle-row">
+      <button class="btn btn-outline-secondary btn-sm project-filter-toggle" type="button"
+              data-bs-toggle="collapse" data-bs-target="#projectFilters"
+              aria-expanded="{% if q or date_from or date_to or has_assessment or has_open_interventions %}true{% else %}false{% endif %}"
+              aria-controls="projectFilters">
+        <i class="bi bi-funnel"></i> Filtry
+      </button>
+    </div>
 
-      <div class="collapse mt-2" id="advancedFilters">
-        <div class="row g-2">
-          <div class="col-6 col-md-2">
-            <input type="date"
-                   name="date_from"
-                   value="{{ date_from }}"
+    <div class="collapse project-filter-panel{% if q or date_from or date_to or has_assessment or has_open_interventions %} show{% endif %}" id="projectFilters">
+      <form method="get" class="mt-2 project-filter-form">
+        <div class="row g-2 align-items-end">
+          <div class="col-12 col-md-6">
+            <input type="text"
+                   name="q"
+                   value="{{ q }}"
                    class="form-control"
-                   placeholder="Od data">
+                   placeholder="Hledat v názvu/popisu">
           </div>
-          <div class="col-6 col-md-2">
-            <input type="date"
-                   name="date_to"
-                   value="{{ date_to }}"
-                   class="form-control"
-                   placeholder="Do data">
-          </div>
-          <div class="col-12 col-md-3">
-            <select name="has_assessment" class="form-select">
-              <option value="">Hodnocení - všechna</option>
-              <option value="yes" {% if has_assessment == 'yes' %}selected{% endif %}>Jen s hodnocením</option>
-              <option value="no" {% if has_assessment == 'no' %}selected{% endif %}>Jen bez hodnocení</option>
-            </select>
-          </div>
-          <div class="col-12 col-md-5">
-            <select name="has_open_interventions" class="form-select">
-              <option value="">Zásahy - všechny</option>
-              <option value="none" {% if has_open_interventions == 'none' %}selected{% endif %}>
-                Bez zásahů
-              </option>
-              <option value="proposed" {% if has_open_interventions == 'proposed' %}selected{% endif %}>
-                S navrženými zásahy
-              </option>
-              <option value="approved" {% if has_open_interventions == 'approved' %}selected{% endif %}>
-                Se schválenými zásahy
-              </option>
-              <option value="handover" {% if has_open_interventions == 'handover' %}selected{% endif %}>
-                S předanými ke kontrole
-              </option>
-              <option value="completed" {% if has_open_interventions == 'completed' %}selected{% endif %}>
-                Jen s dokončenými zásahy
-              </option>
-            </select>
+          <div class="col-12 col-md-6 d-flex flex-wrap gap-2 project-filter-actions">
+            <button class="btn btn-primary" type="submit">
+              <i class="bi bi-funnel"></i> Filtrovat
+            </button>
+            <a class="btn btn-outline-secondary" href="{% url 'project_detail' project.pk %}">
+              Zrušit filtr
+            </a>
+            <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#advancedFilters" aria-expanded="false" aria-controls="advancedFilters">
+              Pokročilé filtry
+            </button>
           </div>
         </div>
-      </div>
-    </form>
+
+        <div class="collapse mt-2" id="advancedFilters">
+          <div class="row g-2">
+            <div class="col-6 col-md-2">
+              <input type="date"
+                     name="date_from"
+                     value="{{ date_from }}"
+                     class="form-control"
+                     placeholder="Od data">
+            </div>
+            <div class="col-6 col-md-2">
+              <input type="date"
+                     name="date_to"
+                     value="{{ date_to }}"
+                     class="form-control"
+                     placeholder="Do data">
+            </div>
+            <div class="col-12 col-md-3">
+              <select name="has_assessment" class="form-select">
+                <option value="">Hodnocení - všechna</option>
+                <option value="yes" {% if has_assessment == 'yes' %}selected{% endif %}>Jen s hodnocením</option>
+                <option value="no" {% if has_assessment == 'no' %}selected{% endif %}>Jen bez hodnocení</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-5">
+              <select name="has_open_interventions" class="form-select">
+                <option value="">Zásahy - všechny</option>
+                <option value="none" {% if has_open_interventions == 'none' %}selected{% endif %}>
+                  Bez zásahů
+                </option>
+                <option value="proposed" {% if has_open_interventions == 'proposed' %}selected{% endif %}>
+                  S navrženými zásahy
+                </option>
+                <option value="approved" {% if has_open_interventions == 'approved' %}selected{% endif %}>
+                  Se schválenými zásahy
+                </option>
+                <option value="handover" {% if has_open_interventions == 'handover' %}selected{% endif %}>
+                  S předanými ke kontrole
+                </option>
+                <option value="completed" {% if has_open_interventions == 'completed' %}selected{% endif %}>
+                  Jen s dokončenými zásahy
+                </option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
 
