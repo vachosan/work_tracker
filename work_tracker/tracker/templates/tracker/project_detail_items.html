@@ -39,6 +39,16 @@
             </div>
           {% endif %}
 
+          {% if photo_filter_active %}
+            <div class="small text-primary mt-1">
+              Fotky v období (datum fotky):
+              {{ wr.first_photo_date|date:"d.m.Y"|default:"-" }}
+              –
+              {{ wr.last_photo_date|date:"d.m.Y"|default:"-" }}
+              ({{ wr.photo_count_in_range }}×)
+            </div>
+          {% endif %}
+
           {% if wr.vegetation_type == 'SHRUB' or wr.vegetation_type == 'HEDGE' %}
             {% if wr.latest_shrub_assessment %}
               <div class="small text-muted">

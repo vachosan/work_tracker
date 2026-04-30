@@ -67,6 +67,7 @@ from .models import (
     Project,
     WorkRecord,
     PhotoDocumentation,
+    parse_photo_date_from_description,
     ProjectMembership,
     TreeAssessment,
     ShrubAssessment,
@@ -118,11 +119,13 @@ def _project_detail_filters(request):
     q = request.GET.get('q', '').strip()
     df = parse_date(request.GET.get('date_from') or '')
     dt = parse_date(request.GET.get('date_to') or '')
+    photo_df = parse_date(request.GET.get('photo_date_from') or '')
+    photo_dt = parse_date(request.GET.get('photo_date_to') or '')
     has_assessment = request.GET.get('has_assessment', '').strip()
     has_open_interventions = request.GET.get('has_open_interventions', '').strip()
-    return q, df, dt, has_assessment, has_open_interventions
+    return q, df, dt, photo_df, photo_dt, has_assessment, has_open_interventions
 
-def _project_detail_queryset(project, q, df, dt, has_assessment, has_open_interventions):
+def _project_detail_queryset(project, q, df, dt, photo_df, photo_dt, has_assessment, has_open_interventions):
     qs = project.trees.all()
 
     if q:
@@ -163,13 +166,26 @@ def _project_detail_queryset(project, q, df, dt, has_assessment, has_open_interv
     elif has_open_interventions == "completed":
         qs = qs.filter(interventions__status="completed").distinct()
 
+    photo_filter_active = bool(photo_df or photo_dt)
+    if photo_filter_active:
+        photo_range_filter = Q(photos__photo_date__isnull=False)
+        if photo_df:
+            photo_range_filter &= Q(photos__photo_date__gte=photo_df)
+        if photo_dt:
+            photo_range_filter &= Q(photos__photo_date__lte=photo_dt)
+        qs = qs.annotate(
+            first_photo_date=Min("photos__photo_date", filter=photo_range_filter),
+            last_photo_date=Max("photos__photo_date", filter=photo_range_filter),
+            photo_count_in_range=Count("photos", filter=photo_range_filter, distinct=True),
+        ).filter(photo_count_in_range__gt=0)
+
     latest_assessments_qs = TreeAssessment.objects.order_by("-assessed_at", "-id")
     latest_shrub_assessments_qs = ShrubAssessment.objects.order_by("-assessed_at", "-id")
     interventions_qs = TreeIntervention.objects.select_related("intervention_type").order_by(
         "urgency", "due_date", "id"
     )
 
-    return (
+    qs = (
         qs.select_related("project")
         .prefetch_related(
             Prefetch("assessments", queryset=latest_assessments_qs, to_attr="prefetched_assessments"),
@@ -180,8 +196,10 @@ def _project_detail_queryset(project, q, df, dt, has_assessment, has_open_interv
             ),
             Prefetch("interventions", queryset=interventions_qs, to_attr="prefetched_interventions"),
         )
-        .order_by("-created_at")
     )
+    if photo_filter_active:
+        return qs.order_by("first_photo_date", "id")
+    return qs.order_by("-created_at")
 
 
 def _decorate_interventions_for_user(user, interventions):
@@ -232,8 +250,9 @@ def project_detail(request, pk):
     if not user_can_view_project(request.user, project.pk):
         return redirect('work_record_list')
 
-    q, df, dt, has_assessment, has_open_interventions = _project_detail_filters(request)
-    qs = _project_detail_queryset(project, q, df, dt, has_assessment, has_open_interventions)
+    q, df, dt, photo_df, photo_dt, has_assessment, has_open_interventions = _project_detail_filters(request)
+    qs = _project_detail_queryset(project, q, df, dt, photo_df, photo_dt, has_assessment, has_open_interventions)
+    photo_filter_active = bool(photo_df or photo_dt)
 
     paginator = Paginator(qs, PROJECT_DETAIL_PAGE_SIZE)
     page_obj = paginator.get_page(request.GET.get("page"))
@@ -262,6 +281,9 @@ def project_detail(request, pk):
             "q": q,
             "date_from": request.GET.get("date_from", ""),
             "date_to": request.GET.get("date_to", ""),
+            "photo_date_from": request.GET.get("photo_date_from", ""),
+            "photo_date_to": request.GET.get("photo_date_to", ""),
+            "photo_filter_active": photo_filter_active,
             "has_assessment": has_assessment,
             "has_open_interventions": has_open_interventions,
             "can_edit_project": can_edit,
@@ -282,8 +304,9 @@ def project_detail_items(request, pk):
     if not user_can_view_project(request.user, project.pk):
         return HttpResponse(status=403)
 
-    q, df, dt, has_assessment, has_open_interventions = _project_detail_filters(request)
-    qs = _project_detail_queryset(project, q, df, dt, has_assessment, has_open_interventions)
+    q, df, dt, photo_df, photo_dt, has_assessment, has_open_interventions = _project_detail_filters(request)
+    qs = _project_detail_queryset(project, q, df, dt, photo_df, photo_dt, has_assessment, has_open_interventions)
+    photo_filter_active = bool(photo_df or photo_dt)
 
     paginator = Paginator(qs, PROJECT_DETAIL_PAGE_SIZE)
     page_obj = paginator.get_page(request.GET.get("page"))
@@ -296,6 +319,7 @@ def project_detail_items(request, pk):
         {
             "work_records": page_obj.object_list,
             "project": project,
+            "photo_filter_active": photo_filter_active,
             "project_return_url": f"{reverse('project_detail', args=[project.pk])}?{request.GET.urlencode()}" if request.GET else reverse('project_detail', args=[project.pk]),
         },
     )
@@ -575,6 +599,7 @@ def create_work_record(request, project_id=None):
             if 'photo' in request.FILES and photo_form.is_valid():
                 photo = photo_form.save(commit=False)
                 photo.work_record = work_record
+                photo.set_photo_date_from_description()
                 photo.save()
 
             if project_context_id:
@@ -653,6 +678,7 @@ def work_record_detail(request, pk):
         if photo_form.is_valid():
             photo = photo_form.save(commit=False)
             photo.work_record = work_record
+            photo.set_photo_date_from_description()
             photo.save()
             return redirect('work_record_detail', pk=work_record.pk)
     else:
@@ -911,6 +937,7 @@ def edit_work_record(request, pk):
             if 'photo' in request.FILES and photo_form.is_valid():
                 photo = photo_form.save(commit=False)
                 photo.work_record = work_record
+                photo.set_photo_date_from_description()
                 photo.save()
             return redirect('edit_work_record', pk=work_record.pk)
 
@@ -945,6 +972,7 @@ def add_photo(request, work_record_id):
             new_photo = form.save(commit=False)
             new_photo.work_record = work_record
             new_photo.photo = photo
+            new_photo.set_photo_date_from_description()
             new_photo.save()
 
     return redirect("work_record_detail", pk=work_record_id)
@@ -2418,7 +2446,8 @@ def map_upload_photo(request):
     photo_doc = PhotoDocumentation.objects.create(
         work_record=record,
         photo=photo_file,
-        description=comment
+        description=comment,
+        photo_date=parse_photo_date_from_description(comment),
     )
 
     thumb_url = get_photo_thumbnail(photo_doc)

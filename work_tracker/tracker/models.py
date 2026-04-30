@@ -1,7 +1,9 @@
 import logging
 import os
 import math
+import re
 import string
+from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from functools import lru_cache
 from urllib.error import URLError
@@ -17,6 +19,23 @@ from django.conf import settings
 
 # models module for ArboMap tracker app
 logger = logging.getLogger(__name__)
+
+
+PHOTO_DATE_RE = re.compile(r"^\s*(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})\s*$")
+
+
+def parse_photo_date_from_description(description):
+    if not description:
+        return None
+    date_part = re.split(r"\s*[-–]\s*", str(description), maxsplit=1)[0].strip()
+    match = PHOTO_DATE_RE.match(date_part)
+    if not match:
+        return None
+    day, month, year = (int(part) for part in match.groups())
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
 
 PHYSIOLOGICAL_AGE_CHOICES = [
     (1, "1 – mladý jedinec ve fázi ujímání"),
@@ -707,9 +726,14 @@ class PhotoDocumentation(models.Model):
         upload_to="photos/", null=True, blank=True, default="photos/default.jpg"
     )
     description = models.CharField(max_length=200, blank=True)
+    photo_date = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return self.description or f"Photo #{self.id}"
+
+    def set_photo_date_from_description(self):
+        self.photo_date = parse_photo_date_from_description(self.description)
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
