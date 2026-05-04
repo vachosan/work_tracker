@@ -2146,7 +2146,6 @@
           loadInterventionsForRecord(rid);
         }
         setInterventionMessage('Zásah byl uložen.', false);
-        hideInterventionModal({ preferHistoryBack: false });
         console.debug('intervention saved', { recordId: rid });
       })
       .catch(function (err) {
