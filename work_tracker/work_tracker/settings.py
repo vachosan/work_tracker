@@ -175,6 +175,7 @@ ACCOUNT_FORMS = {
     "reset_password": "tracker.forms.CustomResetPasswordForm",
 }
 ACCOUNT_ADAPTER = "tracker.adapters.CustomAccountAdapter"
+ACCOUNT_SESSION_REMEMBER = True
 
 # Email
 # Mailtrap SMTP tip: EMAIL_HOST=live.smtp.mailtrap.io, EMAIL_HOST_USER=api, EMAIL_HOST_PASSWORD=<api_token>
