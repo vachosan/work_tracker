@@ -1943,6 +1943,9 @@ def workrecords_geojson(request):
     any_interventions = TreeIntervention.objects.filter(
         tree=OuterRef("pk"),
     )
+    active_interventions = TreeIntervention.objects.filter(
+        tree=OuterRef("pk"),
+    ).exclude(status="completed")
     done_interventions = TreeIntervention.objects.filter(
         tree=OuterRef("pk"),
         status="done_pending_owner",
@@ -1958,6 +1961,7 @@ def workrecords_geojson(request):
         shrub_width_m=Subquery(latest_shrub.values("width_m")[:1]),
         has_approved_intervention=Exists(approved_interventions),
         has_interventions=Exists(any_interventions),
+        has_active_intervention=Exists(active_interventions),
         has_done_intervention=Exists(done_interventions),
         has_removal_intervention=Exists(active_removal_interventions),
     )
@@ -2054,10 +2058,10 @@ def workrecords_geojson(request):
         label = wr.display_label
 
         intervention_stage = "none"
-        if getattr(wr, "has_done_intervention", False):
-            intervention_stage = "done"
-        elif getattr(wr, "has_approved_intervention", False):
+        if getattr(wr, "has_approved_intervention", False):
             intervention_stage = "approved"
+        elif getattr(wr, "has_done_intervention", False):
+            intervention_stage = "done"
 
         shrub_width_value = None
         if wr.vegetation_type == WorkRecord.VegetationType.HEDGE:
@@ -2109,6 +2113,9 @@ def workrecords_geojson(request):
                     "intervention_types": intervention_types,
                     "intervention_statuses": intervention_statuses,
                     "has_interventions": bool(getattr(wr, "has_interventions", False)),
+                    "has_active_intervention": bool(
+                        getattr(wr, "has_active_intervention", False)
+                    ),
                     "has_removal_intervention": bool(
                         getattr(wr, "has_removal_intervention", False)
                     ),

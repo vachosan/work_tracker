@@ -137,8 +137,10 @@
     const WORKRECORD_POINT_RADIUS = 5;
     const WORKRECORD_POINT_STROKE_WIDTH = 1;
     const WORKRECORD_POINT_STROKE_COLOR = '#fff';
+    const WORKRECORD_EMPTY_STROKE_COLOR = '#111827';
     const WORKRECORD_POINT_OPACITY = 1;
-    const PROJECT_POINT_COLOR = '#f97316';
+    const PROJECT_POINT_COLOR = '#fff';
+    const WORKRECORD_ACTIVE_COLOR = '#f97316';
     const WORKRECORD_DONE_COLOR = '#0ea5e9';
     const WORKRECORD_APPROVED_COLOR = '#10b981';
     const WORKRECORD_REMOVAL_COLOR = '#dc2626';
@@ -190,29 +192,48 @@
       'case',
       ['boolean', ['feature-state', 'selected'], false],
       WORKRECORD_SELECTED_COLOR,
-      ['==', ['get', 'intervention_stage'], 'done'],
-      WORKRECORD_DONE_COLOR,
       ['==', ['get', 'intervention_stage'], 'approved'],
       WORKRECORD_APPROVED_COLOR,
+      ['==', ['get', 'intervention_stage'], 'done'],
+      WORKRECORD_DONE_COLOR,
       ['boolean', ['get', 'has_removal_intervention'], false],
       WORKRECORD_REMOVAL_COLOR,
+      ['boolean', ['get', 'has_active_intervention'], false],
+      WORKRECORD_ACTIVE_COLOR,
       PROJECT_POINT_COLOR,
+    ];
+    const WORKRECORD_STROKE_COLOR_EXPRESSION = [
+      'case',
+      ['==', ['get', 'vegetation_type'], 'HEDGE'],
+      '#111827',
+      [
+        'all',
+        ['!', ['boolean', ['feature-state', 'selected'], false]],
+        ['!=', ['get', 'intervention_stage'], 'approved'],
+        ['!=', ['get', 'intervention_stage'], 'done'],
+        ['!', ['boolean', ['get', 'has_removal_intervention'], false]],
+        ['!', ['boolean', ['get', 'has_active_intervention'], false]],
+      ],
+      WORKRECORD_EMPTY_STROKE_COLOR,
+      WORKRECORD_POINT_STROKE_COLOR,
     ];
     const WORKRECORD_STROKE_WIDTH_EXPRESSION = [
       'match',
       ['get', 'vegetation_type'],
-      'SHRUB',
-      2,
       'HEDGE',
       2,
-      WORKRECORD_POINT_STROKE_WIDTH,
-    ];
-    const WORKRECORD_STROKE_COLOR_EXPRESSION = [
-      'match',
-      ['get', 'vegetation_type'],
-      'HEDGE',
-      '#111827',
-      WORKRECORD_POINT_STROKE_COLOR,
+      ['case',
+        [
+          'all',
+          ['!', ['boolean', ['feature-state', 'selected'], false]],
+          ['!=', ['get', 'intervention_stage'], 'approved'],
+          ['!=', ['get', 'intervention_stage'], 'done'],
+          ['!', ['boolean', ['get', 'has_removal_intervention'], false]],
+          ['!', ['boolean', ['get', 'has_active_intervention'], false]],
+        ],
+        1.5,
+        WORKRECORD_POINT_STROKE_WIDTH,
+      ],
     ];
     const WORKRECORD_REMOVAL_MARKER_FILTER = [
       'all',

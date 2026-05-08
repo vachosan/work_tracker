@@ -137,6 +137,47 @@ class WorkrecordsGeojsonTests(TestCase):
         self.assertEqual(feature["properties"]["intervention_statuses"], ["proposed"])
         self.assertTrue(feature["properties"]["has_interventions"])
 
+    def test_workrecords_geojson_marks_only_non_completed_interventions_active(self):
+        type_prune = InterventionType.objects.create(code="PR", name="Řez")
+        type_removal = InterventionType.objects.create(
+            code="KAC", name="Kácení", category="Kácení"
+        )
+        TreeIntervention.objects.create(
+            tree=self.in_project,
+            intervention_type=type_prune,
+            status="completed",
+        )
+        TreeIntervention.objects.create(
+            tree=self.in_project_far,
+            intervention_type=type_prune,
+            status="done_pending_owner",
+        )
+        TreeIntervention.objects.create(
+            tree=self.in_project_blank,
+            intervention_type=type_removal,
+            status="proposed",
+        )
+
+        self.client.force_login(self.user)
+        resp = self.client.get(reverse("workrecords_geojson"), {"project": self.project1.pk})
+        self.assertEqual(resp.status_code, 200)
+        features_by_id = {
+            feature["properties"]["id"]: feature["properties"]
+            for feature in resp.json().get("features", [])
+        }
+
+        self.assertFalse(features_by_id[self.in_project.pk]["has_active_intervention"])
+        self.assertFalse(features_by_id[self.in_project.pk]["has_removal_intervention"])
+        self.assertEqual(features_by_id[self.in_project.pk]["intervention_stage"], "approved")
+
+        self.assertTrue(features_by_id[self.in_project_far.pk]["has_active_intervention"])
+        self.assertFalse(features_by_id[self.in_project_far.pk]["has_removal_intervention"])
+        self.assertEqual(features_by_id[self.in_project_far.pk]["intervention_stage"], "done")
+
+        self.assertTrue(features_by_id[self.in_project_blank.pk]["has_active_intervention"])
+        self.assertTrue(features_by_id[self.in_project_blank.pk]["has_removal_intervention"])
+        self.assertEqual(features_by_id[self.in_project_blank.pk]["intervention_stage"], "none")
+
 
 class CadastreAreaCodeDerivationTests(TestCase):
     def _create_with_parcel(self, parcel_number):
