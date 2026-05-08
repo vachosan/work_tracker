@@ -141,6 +141,7 @@
     const PROJECT_POINT_COLOR = '#f97316';
     const WORKRECORD_DONE_COLOR = '#0ea5e9';
     const WORKRECORD_APPROVED_COLOR = '#10b981';
+    const WORKRECORD_REMOVAL_COLOR = '#dc2626';
     const WORKRECORD_SELECTED_COLOR = '#111827';
     const VEGETATION_TYPES = ['TREE', 'SHRUB', 'HEDGE'];
     const VEGETATION_LABELS = { TREE: 'Stromy', SHRUB: 'Keře', HEDGE: 'Živé ploty' };
@@ -156,6 +157,7 @@
       'workrecord-cluster-count',
       'wr-squares',
       'wr-squares-outline',
+      'workrecord-removal-marker',
       CONTEXT_LAYER_ID,
     ];
     let projectInterventionTypes = [];
@@ -188,10 +190,12 @@
       'case',
       ['boolean', ['feature-state', 'selected'], false],
       WORKRECORD_SELECTED_COLOR,
-      ['==', ['get', 'intervention_stage'], 'approved'],
-      WORKRECORD_APPROVED_COLOR,
       ['==', ['get', 'intervention_stage'], 'done'],
       WORKRECORD_DONE_COLOR,
+      ['==', ['get', 'intervention_stage'], 'approved'],
+      WORKRECORD_APPROVED_COLOR,
+      ['boolean', ['get', 'has_removal_intervention'], false],
+      WORKRECORD_REMOVAL_COLOR,
       PROJECT_POINT_COLOR,
     ];
     const WORKRECORD_STROKE_WIDTH_EXPRESSION = [
@@ -209,6 +213,13 @@
       'HEDGE',
       '#111827',
       WORKRECORD_POINT_STROKE_COLOR,
+    ];
+    const WORKRECORD_REMOVAL_MARKER_FILTER = [
+      'all',
+      ['!', ['has', 'point_count']],
+      ['boolean', ['get', 'has_removal_intervention'], false],
+      ['!=', ['get', 'intervention_stage'], 'done'],
+      ['!=', ['get', 'intervention_stage'], 'approved'],
     ];
 
     const toNumber = (value) => {
@@ -2717,6 +2728,36 @@
         },
         paint: {
           'icon-color': WORKRECORD_COLOR_EXPRESSION,
+        },
+      });
+
+      map.addLayer({
+        id: 'workrecord-removal-marker',
+        type: 'symbol',
+        source: 'workrecords',
+        filter: WORKRECORD_REMOVAL_MARKER_FILTER,
+        layout: {
+          'text-field': 'X',
+          'text-font': ['Open Sans Regular'],
+          'text-size': [
+            'interpolate',
+            ['linear'],
+            ['zoom'],
+            15,
+            10,
+            18,
+            11,
+            20,
+            12,
+          ],
+          'text-allow-overlap': true,
+          'text-ignore-placement': true,
+        },
+        paint: {
+          'text-color': '#111111',
+          'text-opacity': 0.9,
+          'text-halo-color': 'rgba(255,255,255,0.35)',
+          'text-halo-width': 0.4,
         },
       });
 

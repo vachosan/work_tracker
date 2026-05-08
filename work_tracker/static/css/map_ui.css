@@ -173,6 +173,52 @@
   #mapControlsPanel.map-controls-panel.open {
     display: block;
   }
+  .map-legend {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 4px;
+    font-size: 0.82rem;
+    color: #111827;
+  }
+  .map-legend__title {
+    font-weight: 600;
+    font-size: 0.84rem;
+  }
+  .map-legend__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    line-height: 1.25;
+  }
+  .map-legend__dot {
+    flex: 0 0 auto;
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.9);
+    box-shadow: 0 0 0 1px rgba(0,0,0,.2);
+  }
+  .map-legend__dot--pending { background: #f97316; }
+  .map-legend__dot--done { background: #0ea5e9; }
+  .map-legend__dot--approved { background: #10b981; }
+  .map-legend__dot--removal {
+    position: relative;
+    background: #dc2626;
+  }
+  .map-legend__dot--removal::after {
+    content: "X";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #111111;
+    font-size: 7px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  .map-legend__dot--selected { background: #111827; }
   /* floating action buttons */
   #map-fabs { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 1100; }
   #map-fabs .fab-btn { width: 56px; height: 56px; display: inline-flex; align-items: center; justify-content: center; font-size: 1.25rem; }

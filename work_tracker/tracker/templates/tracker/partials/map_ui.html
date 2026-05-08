@@ -300,25 +300,34 @@
   <div class="map-controls-body">
     <div class="d-flex flex-column gap-2">
       <div class="form-check">
-        <input class="form-check-input" type="checkbox" id="streetNamesCheckbox" checked>
-        <label class="form-check-label small" for="streetNamesCheckbox">
-          Zobrazit názvy bodů
-        </label>
-      </div>
-      <div class="form-check">
         <input class="form-check-input" type="checkbox" id="katastrCheckbox">
         <label class="form-check-label small" for="katastrCheckbox">
           Katastr
         </label>
       </div>
-      <div class="d-flex align-items-center gap-2">
-        <label class="form-label small mb-0" for="labelSizeSelect">Velikost popisku:</label>
-        <select id="labelSizeSelect" class="form-select form-select-sm" style="max-width: 140px;">
-          <option value="small" selected>Menší</option>
-          <option value="large">Větší</option>
-        </select>
+      <div class="map-legend" aria-label="Legenda barev bodů">
+        <div class="map-legend__title">Legenda</div>
+        <div class="map-legend__item">
+          <span class="map-legend__dot map-legend__dot--pending" aria-hidden="true"></span>
+          <span>Evidovaný bod</span>
+        </div>
+        <div class="map-legend__item">
+          <span class="map-legend__dot map-legend__dot--done" aria-hidden="true"></span>
+          <span>Hotovo, čeká na potvrzení</span>
+        </div>
+        <div class="map-legend__item">
+          <span class="map-legend__dot map-legend__dot--approved" aria-hidden="true"></span>
+          <span>Uzavřeno</span>
+        </div>
+        <div class="map-legend__item">
+          <span class="map-legend__dot map-legend__dot--removal" aria-hidden="true"></span>
+          <span>Navržené kácení</span>
+        </div>
+        <div class="map-legend__item">
+          <span class="map-legend__dot map-legend__dot--selected" aria-hidden="true"></span>
+          <span>Vybraný bod</span>
+        </div>
       </div>
-      <div class="small text-muted">Popisky se zobrazí jen při maximálním přiblížení.</div>
     </div>
   </div>
 </div>

@@ -1947,6 +1947,10 @@ def workrecords_geojson(request):
         tree=OuterRef("pk"),
         status="done_pending_owner",
     )
+    active_removal_interventions = TreeIntervention.objects.filter(
+        tree=OuterRef("pk"),
+        intervention_type__category__iexact="Kácení",
+    ).exclude(status="completed")
     qs = qs.annotate(
         crown_width_m=Subquery(latest_assessment.values("crown_width_m")[:1]),
         mistletoe_level=Subquery(latest_assessment.values("mistletoe_level")[:1]),
@@ -1955,6 +1959,7 @@ def workrecords_geojson(request):
         has_approved_intervention=Exists(approved_interventions),
         has_interventions=Exists(any_interventions),
         has_done_intervention=Exists(done_interventions),
+        has_removal_intervention=Exists(active_removal_interventions),
     )
 
     project_scope_qs = qs
@@ -2049,10 +2054,10 @@ def workrecords_geojson(request):
         label = wr.display_label
 
         intervention_stage = "none"
-        if getattr(wr, "has_approved_intervention", False):
-            intervention_stage = "approved"
-        elif getattr(wr, "has_done_intervention", False):
+        if getattr(wr, "has_done_intervention", False):
             intervention_stage = "done"
+        elif getattr(wr, "has_approved_intervention", False):
+            intervention_stage = "approved"
 
         shrub_width_value = None
         if wr.vegetation_type == WorkRecord.VegetationType.HEDGE:
@@ -2104,6 +2109,9 @@ def workrecords_geojson(request):
                     "intervention_types": intervention_types,
                     "intervention_statuses": intervention_statuses,
                     "has_interventions": bool(getattr(wr, "has_interventions", False)),
+                    "has_removal_intervention": bool(
+                        getattr(wr, "has_removal_intervention", False)
+                    ),
                 },
             }
         )
