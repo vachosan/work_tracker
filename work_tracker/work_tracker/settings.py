@@ -18,6 +18,11 @@ SECRET_KEY = env("SECRET_KEY", default="dev-insecure-change-me")
 DEBUG = env.bool("DEBUG", default=False)  # nastav v .env (True/False)
 MAPY_API_KEY = env("MAPY_API_KEY", default="")
 
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 ALLOWED_HOSTS = [
     "129.159.223.132",
     "localhost",
