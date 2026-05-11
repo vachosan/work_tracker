@@ -1546,6 +1546,10 @@
     // Layer name verified in GetCapabilities: https://services.cuzk.gov.cz/wms/wms.asp?service=WMS&request=GetCapabilities
     const CUZK_KATASTR_LAYER_NAME = 'KN';
     const CUZK_KATASTR_OPACITY = 0.6;
+    const CUZK_DMP_SOURCE_ID = 'cuzk-dmp';
+    const CUZK_DMP_LAYER_ID = 'cuzk-dmp-overlay';
+    const CUZK_DMP_OPACITY = 0.6;
+    const CUZK_DMP_EXPORT_IMAGE_URL = 'https://ags.cuzk.gov.cz/arcgis2/rest/services/dmp_obrazova_korelace/ImageServer/exportImage?f=image&bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png&pixelType=U8&noData=0';
     // TODO: Future parcel data hook (INSPIRE CP WFS).
     // Endpoint: https://services.cuzk.gov.cz/wfs/inspire-cp-wfs.asp
     // Output is GML; plan server-side conversion to GeoJSON + DB caching.
@@ -1579,6 +1583,14 @@
           maxzoom: 20,
           attribution: '&copy; CUZK',
         },
+        [CUZK_DMP_SOURCE_ID]: {
+          type: 'raster',
+          tiles: [CUZK_DMP_EXPORT_IMAGE_URL],
+          tileSize: 256,
+          minzoom: 13,
+          maxzoom: 20,
+          attribution: '&copy; CUZK',
+        },
       },
       layers: [
         {
@@ -1592,6 +1604,13 @@
           source: 'cuzk-ortho',
         },
         {
+          id: CUZK_DMP_LAYER_ID,
+          type: 'raster',
+          source: CUZK_DMP_SOURCE_ID,
+          paint: { 'raster-opacity': CUZK_DMP_OPACITY },
+          layout: { visibility: 'none' },
+        },
+        {
           id: 'cuzk-katastr',
           type: 'raster',
           source: 'cuzk-katastr',
@@ -1603,6 +1622,10 @@
 
     const streetNamesCheckbox = document.getElementById('streetNamesCheckbox');
     const katastrCheckbox = document.getElementById('katastrCheckbox');
+    const dmpOverlayCheckbox = document.getElementById('dmpOverlayCheckbox');
+    const dmpOpacityControl = document.getElementById('dmpOpacityControl');
+    const dmpOpacitySlider = document.getElementById('dmpOpacitySlider');
+    const dmpOpacityValue = document.getElementById('dmpOpacityValue');
     const protocol = new pmtiles.Protocol();
     maplibregl.addProtocol('pmtiles', protocol.tile);
     const map = new maplibregl.Map({
@@ -2316,6 +2339,33 @@
       applyKatastrVisibility();
       if (katastrCheckbox) {
         katastrCheckbox.addEventListener('change', applyKatastrVisibility);
+      }
+      const getDmpOpacity = () => {
+        const raw = dmpOpacitySlider ? Number(dmpOpacitySlider.value) : CUZK_DMP_OPACITY * 100;
+        if (!Number.isFinite(raw)) return CUZK_DMP_OPACITY;
+        return Math.max(0, Math.min(100, raw)) / 100;
+      };
+      const syncDmpOpacityLabel = () => {
+        if (!dmpOpacityValue) return;
+        dmpOpacityValue.textContent = `${Math.round(getDmpOpacity() * 100)} %`;
+      };
+      const applyDmpOverlayControls = () => {
+        const visible = dmpOverlayCheckbox && dmpOverlayCheckbox.checked;
+        setLayerVisibility(CUZK_DMP_LAYER_ID, visible);
+        if (dmpOpacityControl) {
+          dmpOpacityControl.classList.toggle('d-none', !visible);
+        }
+        if (map.getLayer(CUZK_DMP_LAYER_ID)) {
+          map.setPaintProperty(CUZK_DMP_LAYER_ID, 'raster-opacity', getDmpOpacity());
+        }
+        syncDmpOpacityLabel();
+      };
+      applyDmpOverlayControls();
+      if (dmpOverlayCheckbox) {
+        dmpOverlayCheckbox.addEventListener('change', applyDmpOverlayControls);
+      }
+      if (dmpOpacitySlider) {
+        dmpOpacitySlider.addEventListener('input', applyDmpOverlayControls);
       }
 
       const refreshProjectWorkrecords = () => {

@@ -319,6 +319,18 @@
           Katastr
         </label>
       </div>
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="dmpOverlayCheckbox">
+        <label class="form-check-label small" for="dmpOverlayCheckbox">
+          DMP výšková vrstva
+        </label>
+      </div>
+      <div id="dmpOpacityControl" class="map-opacity-control d-none">
+        <label class="form-label small mb-1" for="dmpOpacitySlider">
+          Průhlednost DMP: <span id="dmpOpacityValue">60 %</span>
+        </label>
+        <input class="form-range" type="range" id="dmpOpacitySlider" min="0" max="100" step="5" value="60">
+      </div>
       <div class="map-legend" aria-label="Legenda barev bodů">
         <div class="map-legend__title">Legenda</div>
         <div class="map-legend__item">
