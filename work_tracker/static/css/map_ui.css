@@ -199,9 +199,10 @@
     border: 1px solid rgba(255,255,255,.9);
     box-shadow: 0 0 0 1px rgba(0,0,0,.2);
   }
-  .map-legend__dot--recorded {
+  .map-legend .map-legend__dot--recorded {
     background: #fff;
-    border-color: #111827;
+    border-color: #f59e0b !important;
+    box-shadow: none !important;
   }
   .map-legend__dot--pending { background: #f97316; }
   .map-legend__dot--done { background: #0ea5e9; }

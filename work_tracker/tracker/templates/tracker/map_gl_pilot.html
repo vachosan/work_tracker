@@ -2,7 +2,7 @@
 {% load static %}
 {% block title %}MapLibre Pilot{% endblock %}
 {% block content %}
-<link rel="stylesheet" href="{% static 'css/map_ui.css' %}">
+<link rel="stylesheet" href="{% static 'css/map_ui.css' %}?v=dev2">
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css">
 <style>
   html, body { height: 100%; overflow: hidden; }
@@ -137,7 +137,7 @@
     const WORKRECORD_POINT_RADIUS = 5;
     const WORKRECORD_POINT_STROKE_WIDTH = 1;
     const WORKRECORD_POINT_STROKE_COLOR = '#fff';
-    const WORKRECORD_EMPTY_STROKE_COLOR = '#111827';
+    const WORKRECORD_EMPTY_STROKE_COLOR = '#f59e0b';
     const WORKRECORD_POINT_OPACITY = 1;
     const PROJECT_POINT_COLOR = '#fff';
     const WORKRECORD_ACTIVE_COLOR = '#f97316';
@@ -231,7 +231,7 @@
           ['!', ['boolean', ['get', 'has_removal_intervention'], false]],
           ['!', ['boolean', ['get', 'has_active_intervention'], false]],
         ],
-        1.5,
+        1,
         WORKRECORD_POINT_STROKE_WIDTH,
       ],
     ];
