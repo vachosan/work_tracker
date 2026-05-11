@@ -1548,8 +1548,9 @@
     const CUZK_KATASTR_OPACITY = 0.6;
     const CUZK_DMP_SOURCE_ID = 'cuzk-dmp';
     const CUZK_DMP_LAYER_ID = 'cuzk-dmp-overlay';
-    const CUZK_DMP_OPACITY = 0.6;
-    const CUZK_DMP_EXPORT_IMAGE_URL = 'https://ags.cuzk.gov.cz/arcgis2/rest/services/dmp_obrazova_korelace/ImageServer/exportImage?f=image&bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png&pixelType=U8&noData=0';
+    const CUZK_DMP_OPACITY = 0.3;
+    const CUZK_DMP_WMS_BASE = 'https://ags.cuzk.gov.cz/arcgis2/services/dmp_obrazova_korelace/ImageServer/WMSServer?';
+    const CUZK_DMP_LAYER_NAME = 'dmp_obrazova_korelace:GrayscaleHillshade';
     // TODO: Future parcel data hook (INSPIRE CP WFS).
     // Endpoint: https://services.cuzk.gov.cz/wfs/inspire-cp-wfs.asp
     // Output is GML; plan server-side conversion to GeoJSON + DB caching.
@@ -1585,7 +1586,9 @@
         },
         [CUZK_DMP_SOURCE_ID]: {
           type: 'raster',
-          tiles: [CUZK_DMP_EXPORT_IMAGE_URL],
+          tiles: [
+            `${CUZK_DMP_WMS_BASE}service=WMS&request=GetMap&version=1.3.0&layers=${CUZK_DMP_LAYER_NAME}&styles=&format=image/png&transparent=true&width=256&height=256&crs=EPSG:3857&bbox={bbox-epsg-3857}`,
+          ],
           tileSize: 256,
           minzoom: 13,
           maxzoom: 20,
