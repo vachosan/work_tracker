@@ -67,6 +67,11 @@ urlpatterns = [
         views.workrecord_detail_api,
         name="workrecord_detail_api",
     ),
+    path(
+        "api/work-records/<int:pk>/height-estimate/",
+        views.workrecord_height_estimate_api,
+        name="workrecord_height_estimate_api",
+    ),
     path("workrecord/<int:pk>/delete/", views.delete_work_record, name="delete_work_record"),
     path("tiles/<path:path>", views_tiles.pmtiles_range_serve, name="pmtiles_range_serve"),
 

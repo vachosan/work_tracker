@@ -63,6 +63,8 @@
   let stemAddBtn;
   let stemRowLocks;
   let assessmentHeightInput;
+  let assessmentHeightEstimateBtn;
+  let assessmentHeightEstimateHint;
   let assessmentCrownWidthInput;
   let assessmentCrownAreaInput;
   let assessmentCrownAreaHint;
@@ -1506,6 +1508,77 @@
     return base + recordId + '/assessment/';
   }
 
+  function buildHeightEstimateUrl(recordId) {
+    if (!recordId) return '';
+    return '/tracker/api/work-records/' + encodeURIComponent(recordId) + '/height-estimate/';
+  }
+
+  function setHeightEstimateLoading(isLoading) {
+    if (!assessmentHeightEstimateBtn) return;
+    assessmentHeightEstimateBtn.disabled = Boolean(isLoading);
+    assessmentHeightEstimateBtn.innerHTML = isLoading
+      ? '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span>'
+      : '<i class="bi bi-layers"></i>';
+  }
+
+  function clearHeightEstimateHint() {
+    if (!assessmentHeightEstimateHint) return;
+    assessmentHeightEstimateHint.classList.add('d-none');
+    assessmentHeightEstimateHint.textContent = 'Automatický odhad z DMP OK / DMR 5G';
+  }
+
+  function showHeightEstimateError(message) {
+    if (!assessmentMessage) return;
+    assessmentMessage.textContent = message || 'Odhad výšky z ČÚZK se nepodařilo načíst.';
+    assessmentMessage.className = 'mt-2 small text-warning';
+  }
+
+  function estimateHeightFromCuzk() {
+    const recordId = assessmentWorkRecordIdInput ? assessmentWorkRecordIdInput.value : null;
+    const url = buildHeightEstimateUrl(recordId);
+    if (!url) {
+      showHeightEstimateError('Chybí ID stromu pro odhad výšky.');
+      return;
+    }
+    setHeightEstimateLoading(true);
+    fetch(url, {
+      method: 'GET',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    })
+      .then(function (resp) {
+        return resp.json().then(function (data) {
+          if (!resp.ok || !data.ok) {
+            throw new Error((data && data.error) || 'Height estimate failed');
+          }
+          return data;
+        });
+      })
+      .then(function (data) {
+        const estimatedHeight = Number(data.estimated_height_m);
+        if (!Number.isFinite(estimatedHeight)) {
+          throw new Error('ČÚZK vrátil neplatný odhad výšky.');
+        }
+        if (assessmentHeightInput) {
+          assessmentHeightInput.value = String(Math.ceil(estimatedHeight));
+          updateCrownAreaHintFromInputs();
+        }
+        if (assessmentHeightEstimateHint) {
+          assessmentHeightEstimateHint.textContent = 'Automatický odhad z DMP OK / DMR 5G';
+          assessmentHeightEstimateHint.classList.remove('d-none');
+        }
+        if (assessmentMessage) {
+          assessmentMessage.textContent = '';
+          assessmentMessage.className = 'mt-2 small';
+        }
+      })
+      .catch(function (err) {
+        showHeightEstimateError(err && err.message ? err.message : null);
+      })
+      .finally(function () {
+        setHeightEstimateLoading(false);
+      });
+  }
+
   function perspectiveLetterFromSlider(val) {
     const n = Number(val);
     if (n === 1) return 'a';
@@ -1547,6 +1620,7 @@
     if (kind === 'tree') {
       initStemRowsFromData(null);
       if (assessmentHeightInput) assessmentHeightInput.value = '';
+      clearHeightEstimateHint();
       if (assessmentCrownWidthInput) assessmentCrownWidthInput.value = '';
       if (assessmentCrownAreaInput) assessmentCrownAreaInput.value = '';
       if (assessmentCrownAreaHint) assessmentCrownAreaHint.textContent = '';
@@ -1596,6 +1670,7 @@
           if (assessmentHeightInput && data.height_m != null) {
             assessmentHeightInput.value = data.height_m;
           }
+          clearHeightEstimateHint();
           if (assessmentCrownWidthInput && data.crown_width_m != null) {
             assessmentCrownWidthInput.value = data.crown_width_m;
           }
@@ -2362,6 +2437,8 @@
     stemsList = document.getElementById('stems-list');
     stemAddBtn = document.getElementById('stemAddBtn');
     assessmentHeightInput = document.getElementById('assessmentHeight');
+    assessmentHeightEstimateBtn = document.getElementById('assessmentHeightEstimateBtn');
+    assessmentHeightEstimateHint = document.getElementById('assessmentHeightEstimateHint');
     assessmentCrownWidthInput = document.getElementById('assessmentCrownWidth');
     assessmentCrownAreaInput = document.getElementById('assessmentCrownArea');
     assessmentCrownAreaHint = document.getElementById('assessmentCrownAreaHint');
@@ -2445,7 +2522,13 @@
       assessmentCrownWidthInput.addEventListener('input', updateCrownAreaHintFromInputs);
     }
     if (assessmentHeightInput) {
-      assessmentHeightInput.addEventListener('input', updateCrownAreaHintFromInputs);
+      assessmentHeightInput.addEventListener('input', function () {
+        clearHeightEstimateHint();
+        updateCrownAreaHintFromInputs();
+      });
+    }
+    if (assessmentHeightEstimateBtn) {
+      assessmentHeightEstimateBtn.addEventListener('click', estimateHeightFromCuzk);
     }
     if (assessmentCancelBtn) {
       assessmentCancelBtn.addEventListener('click', function () {

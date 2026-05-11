@@ -90,6 +90,7 @@ from .permissions import (
     can_purge_project,
     can_transition_intervention,
 )
+from .services.cuzk import CuzkHeightError, estimate_tree_height_from_cuzk
 
 # ------------------ Auth / základní stránky ------------------
 logger = logging.getLogger(__name__)
@@ -2340,6 +2341,73 @@ def workrecord_detail_api(request, pk):
             "photos": photos,
         },
     })
+
+
+@login_required
+@require_GET
+def workrecord_height_estimate_api(request, pk):
+    work_record = WorkRecord.objects.filter(pk=pk).select_related("project").first()
+    if not work_record:
+        return JsonResponse({"ok": False, "error": "WorkRecord nenalezen."}, status=404)
+
+    if work_record.project_id and not user_can_view_project(request.user, work_record.project_id):
+        return JsonResponse({"ok": False, "error": "Nemáte oprávnění."}, status=403)
+
+    if work_record.latitude is None or work_record.longitude is None:
+        return JsonResponse({"ok": False, "error": "WorkRecord nemá uložené souřadnice."}, status=400)
+
+    try:
+        lat = float(work_record.latitude)
+        lon = float(work_record.longitude)
+    except (TypeError, ValueError):
+        return JsonResponse({"ok": False, "error": "WorkRecord má neplatné souřadnice."}, status=400)
+
+    try:
+        result = estimate_tree_height_from_cuzk(lat=lat, lon=lon)
+    except CuzkHeightError as exc:
+        logger.warning(
+            "cuzk height estimate failed record_id=%s lat=%s lon=%s error=%s",
+            work_record.pk,
+            work_record.latitude,
+            work_record.longitude,
+            exc,
+        )
+        return JsonResponse({"ok": False, "error": str(exc)}, status=502)
+    except Exception as exc:
+        logger.warning(
+            "cuzk height estimate unexpected error record_id=%s lat=%s lon=%s error=%s",
+            work_record.pk,
+            work_record.latitude,
+            work_record.longitude,
+            exc,
+        )
+        return JsonResponse({"ok": False, "error": "Odhad výšky se nepodařilo spočítat."}, status=502)
+
+    logger.info(
+        "cuzk height estimate record_id=%s lat=%s lon=%s sjtsk_x=%s sjtsk_y=%s "
+        "dmr_m=%s dmp_m=%s estimated_height_m=%s duration_ms=%s",
+        work_record.pk,
+        lat,
+        lon,
+        result["sjtsk_x"],
+        result["sjtsk_y"],
+        result["dmr_m"],
+        result["dmp_m"],
+        result["estimated_height_m"],
+        result["duration_ms"],
+    )
+
+    response = {
+        "ok": True,
+        "dmr_m": result["dmr_m"],
+        "dmp_m": result["dmp_m"],
+        "estimated_height_m": result["estimated_height_m"],
+        "duration_ms": result["duration_ms"],
+        "source": result["source"],
+    }
+    if result.get("warnings"):
+        response["warnings"] = result["warnings"]
+    return JsonResponse(response)
 
 @login_required
 @require_GET
