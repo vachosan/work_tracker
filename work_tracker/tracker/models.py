@@ -1,6 +1,5 @@
 import logging
 import os
-import math
 import re
 import string
 from datetime import date
@@ -1307,90 +1306,10 @@ def _parse_wfs_payload(payload: bytes) -> tuple[dict, bool]:
     return {key: value for key, value in fields.items() if value}, True
 
 
-def _wgs84_to_sjtsk(lon: float, lat: float) -> tuple[float, float]:
-    a_wgs = 6378137.0
-    f_wgs = 1 / 298.257223563
-    e2_wgs = 2 * f_wgs - f_wgs * f_wgs
-
-    lat_rad = math.radians(lat)
-    lon_rad = math.radians(lon)
-    sin_lat = math.sin(lat_rad)
-    cos_lat = math.cos(lat_rad)
-    sin_lon = math.sin(lon_rad)
-    cos_lon = math.cos(lon_rad)
-
-    n_wgs = a_wgs / math.sqrt(1 - e2_wgs * sin_lat * sin_lat)
-    x = n_wgs * cos_lat * cos_lon
-    y = n_wgs * cos_lat * sin_lon
-    z = n_wgs * (1 - e2_wgs) * sin_lat
-
-    dx, dy, dz = 589.0, 76.0, 480.0
-    x -= dx
-    y -= dy
-    z -= dz
-
-    a = 6377397.155
-    f = 1 / 299.1528128
-    e2 = 2 * f - f * f
-
-    p = math.sqrt(x * x + y * y)
-    lat_b = math.atan2(z, p * (1 - e2))
-    for _ in range(10):
-        sin_lat_b = math.sin(lat_b)
-        n_b = a / math.sqrt(1 - e2 * sin_lat_b * sin_lat_b)
-        lat_b = math.atan2(z + e2 * n_b * sin_lat_b, p)
-    lon_b = math.atan2(y, x)
-
-    phi0 = 0.863937979737193
-    lam0 = 0.4334234309119251
-    k0 = 0.9999
-    es = 0.006674372230614
-    e = math.sqrt(es)
-    s0 = 1.37008346281555
-    uq = 1.04216856380474
-
-    alpha = math.sqrt(1.0 + (es * math.cos(phi0) ** 4) / (1.0 - es))
-    u0 = math.asin(math.sin(phi0) / alpha)
-    g = ((1 + e * math.sin(phi0)) / (1 - e * math.sin(phi0))) ** (alpha * e / 2.0)
-    k = (
-        math.tan(u0 / 2.0 + math.pi / 4.0)
-        / (math.tan(phi0 / 2.0 + math.pi / 4.0) ** alpha)
-        * g
-    )
-    n0 = math.sqrt(1 - es) / (1 - es * math.sin(phi0) ** 2)
-    n = math.sin(s0)
-    rho0 = k0 * n0 / math.tan(s0)
-    ad = math.pi / 2.0 - uq
-
-    gfi = ((1 + e * math.sin(lat_b)) / (1 - e * math.sin(lat_b))) ** (alpha * e / 2.0)
-    u = 2.0 * (
-        math.atan(k * (math.tan(lat_b / 2.0 + math.pi / 4.0) ** alpha) / gfi)
-        - math.pi / 4.0
-    )
-    deltav = -(lon_b - lam0) * alpha
-    s = math.asin(math.cos(ad) * math.sin(u) + math.sin(ad) * math.cos(u) * math.cos(deltav))
-    cos_s = math.cos(s)
-    if abs(cos_s) < 1e-12:
-        return 0.0, 0.0
-    d = math.asin(math.cos(u) * math.sin(deltav) / cos_s)
-    eps = n * d
-    rho = rho0 * (math.tan(s0 / 2.0 + math.pi / 4.0) ** n) / (
-        math.tan(s / 2.0 + math.pi / 4.0) ** n
-    )
-    xk = rho * math.cos(eps)
-    yk = rho * math.sin(eps)
-
-    xk, yk = yk, xk
-    xk = -xk
-    yk = -yk
-
-    xk *= a
-    yk *= a
-    return xk, yk
-
-
 def _cad_lookup_by_point(lon: float, lat: float) -> dict:
-    x, y = _wgs84_to_sjtsk(lon, lat)
+    from .services.cuzk import wgs84_to_sjtsk_with_fallback
+
+    x, y, transform_method = wgs84_to_sjtsk_with_fallback(lon, lat)
     point = (
         "<gml:Point xmlns:gml='http://www.opengis.net/gml/3.2' "
         "srsName='urn:ogc:def:crs:EPSG::5514'>"
@@ -1407,12 +1326,22 @@ def _cad_lookup_by_point(lon: float, lat: float) -> dict:
         "POINT": point,
     }
     url = f"{CUZK_CP_WFS_ENDPOINT}?{urlencode(params)}"
-    _debug_log("cad_lookup request", url=url, mode="point", lon=lon, lat=lat)
+    _debug_log(
+        "cad_lookup request",
+        url=url,
+        mode="point",
+        lon=lon,
+        lat=lat,
+        sjtsk_x=x,
+        sjtsk_y=y,
+        transform_method=transform_method,
+    )
     status, content_type, payload = _http_get(url, timeout_s=3, retries=1)
     _debug_log(
         "cad_lookup response",
         url=url,
         mode="point",
+        transform_method=transform_method,
         status=status,
         content_type=content_type,
         size=len(payload),

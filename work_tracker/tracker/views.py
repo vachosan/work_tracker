@@ -2384,11 +2384,12 @@ def workrecord_height_estimate_api(request, pk):
         return JsonResponse({"ok": False, "error": "Odhad výšky se nepodařilo spočítat."}, status=502)
 
     logger.info(
-        "cuzk height estimate record_id=%s lat=%s lon=%s sjtsk_x=%s sjtsk_y=%s "
+        "cuzk height estimate record_id=%s lat=%s lon=%s transform_method=%s sjtsk_x=%s sjtsk_y=%s "
         "dmr_m=%s dmp_m=%s estimated_height_m=%s duration_ms=%s",
         work_record.pk,
         lat,
         lon,
+        result["transform_method"],
         result["sjtsk_x"],
         result["sjtsk_y"],
         result["dmr_m"],
@@ -2404,6 +2405,7 @@ def workrecord_height_estimate_api(request, pk):
         "estimated_height_m": result["estimated_height_m"],
         "duration_ms": result["duration_ms"],
         "source": result["source"],
+        "transform_method": result["transform_method"],
     }
     if result.get("warnings"):
         response["warnings"] = result["warnings"]

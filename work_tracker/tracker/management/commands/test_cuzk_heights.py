@@ -47,6 +47,11 @@ class Command(BaseCommand):
             action="store_true",
             help="Estimate height from DMR center and max DMP OK identify samples around the point.",
         )
+        parser.add_argument(
+            "--transform-diagnostic",
+            action="store_true",
+            help="Compare manual WGS84->S-JTSK transform with pyproj EPSG:4326->EPSG:5514.",
+        )
         parser.add_argument("--radius-m", type=float, default=4.0)
         parser.add_argument("--step-m", type=float, default=2.0)
 
@@ -62,10 +67,11 @@ class Command(BaseCommand):
         diagnostic = options["diagnostic"]
         samples_diagnostic = options["samples_diagnostic"]
         nearby_diagnostic = options["nearby_diagnostic"]
+        transform_diagnostic = options["transform_diagnostic"]
 
         requested_records = []
 
-        if not diagnostic and not samples_diagnostic and not nearby_diagnostic:
+        if not diagnostic and not samples_diagnostic and not nearby_diagnostic and not transform_diagnostic:
             header = (
                 "id\trequested_code\tdisplay_label/preferred_id_label/title\tlat\tlon\tdmr_m\tdmp_m\t"
                 "estimated_height_m\tduration_ms\terror"
@@ -95,7 +101,9 @@ class Command(BaseCommand):
             requested_records.append((code, matches[0]))
 
         for requested_code, record in requested_records:
-            if nearby_diagnostic:
+            if transform_diagnostic:
+                self._transform_diagnose_and_write(record, requested_code=requested_code)
+            elif nearby_diagnostic:
                 self._nearby_diagnose_and_write(
                     record,
                     requested_code=requested_code,
@@ -405,6 +413,105 @@ class Command(BaseCommand):
         self.stdout.write(
             "  raw_relevant="
             + json.dumps(result["relevant_payload"], ensure_ascii=False, sort_keys=True)
+        )
+
+    def _transform_diagnose_and_write(self, record: WorkRecord, requested_code: str):
+        label = self._record_label(record)
+        self.stdout.write("")
+        self.stdout.write(
+            f"Transform diagnostic record id={record.id} requested_code={requested_code or ''} "
+            f"label={label} lat={record.latitude} lon={record.longitude}"
+        )
+
+        if record.latitude is None or record.longitude is None:
+            self.stdout.write("ERROR: Missing coordinates")
+            return
+
+        try:
+            from pyproj import Transformer
+        except ImportError:
+            self.stdout.write(
+                "ERROR: pyproj is not installed. For local audit only, install it temporarily with: "
+                "python -m pip install pyproj"
+            )
+            return
+
+        try:
+            lat = float(record.latitude)
+            lon = float(record.longitude)
+        except (TypeError, ValueError):
+            self.stdout.write("ERROR: Invalid coordinates")
+            return
+
+        try:
+            manual_x, manual_y = wgs84_to_sjtsk(lon, lat)
+        except Exception as exc:
+            self.stdout.write(f"ERROR: Manual coordinate transform failed: {exc}")
+            return
+
+        try:
+            transformer = Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
+            pyproj_x, pyproj_y = transformer.transform(lon, lat)
+        except Exception as exc:
+            self.stdout.write(f"ERROR: pyproj coordinate transform failed: {exc}")
+            return
+
+        dx = manual_x - pyproj_x
+        dy = manual_y - pyproj_y
+        distance = (dx * dx + dy * dy) ** 0.5
+        warning = " WARNING: transform delta > 0.5 m" if distance > 0.5 else ""
+        self.stdout.write(
+            "lon={lon} lat={lat} manual_x={manual_x} manual_y={manual_y} "
+            "pyproj_x={pyproj_x} pyproj_y={pyproj_y} dx_m={dx} dy_m={dy} distance_m={distance}{warning}".format(
+                lon=lon,
+                lat=lat,
+                manual_x=round(manual_x, 6),
+                manual_y=round(manual_y, 6),
+                pyproj_x=round(pyproj_x, 6),
+                pyproj_y=round(pyproj_y, 6),
+                dx=round(dx, 6),
+                dy=round(dy, 6),
+                distance=round(distance, 6),
+                warning=warning,
+            )
+        )
+
+        manual_result = self._identify_diagnostic(
+            service_name="DMP OK manual-transform",
+            image_server_url=DMP_OK_IMAGE_SERVER,
+            sjtsk_x=manual_x,
+            sjtsk_y=manual_y,
+            pixel_size=None,
+        )
+        pyproj_result = self._identify_diagnostic(
+            service_name="DMP OK pyproj-transform",
+            image_server_url=DMP_OK_IMAGE_SERVER,
+            sjtsk_x=pyproj_x,
+            sjtsk_y=pyproj_y,
+            pixel_size=None,
+        )
+        manual_value = manual_result["parsed_value"]
+        pyproj_value = pyproj_result["parsed_value"]
+        value_delta = ""
+        if manual_value is not None and pyproj_value is not None:
+            value_delta = round(manual_value - pyproj_value, 6)
+        self.stdout.write(
+            "identify_compare manual_value={manual_value} pyproj_value={pyproj_value} "
+            "manual_minus_pyproj={value_delta} manual_error={manual_error} pyproj_error={pyproj_error}".format(
+                manual_value=self._format_num(manual_value),
+                pyproj_value=self._format_num(pyproj_value),
+                value_delta=value_delta,
+                manual_error=manual_result["error"],
+                pyproj_error=pyproj_result["error"],
+            )
+        )
+        self.stdout.write(
+            "  manual_raw_relevant="
+            + json.dumps(manual_result["relevant_payload"], ensure_ascii=False, sort_keys=True)
+        )
+        self.stdout.write(
+            "  pyproj_raw_relevant="
+            + json.dumps(pyproj_result["relevant_payload"], ensure_ascii=False, sort_keys=True)
         )
 
     def _extract_value_candidates(self, payload) -> list[dict]:

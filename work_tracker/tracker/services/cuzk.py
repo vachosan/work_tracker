@@ -12,6 +12,7 @@ DMP1G_IMAGE_SERVER = "https://ags.cuzk.gov.cz/arcgis2/rest/services/dmp1g/ImageS
 DMP_OK_IMAGE_SERVER = "https://ags.cuzk.gov.cz/arcgis2/rest/services/dmp_obrazova_korelace/ImageServer"
 CUZK_HEIGHT_SOURCE = "CUZK DMP OK - DMR 5G"
 DEFAULT_TIMEOUT_S = 5
+_SJTKS_TRANSFORMER = None
 
 
 class CuzkHeightError(Exception):
@@ -116,6 +117,36 @@ def wgs84_to_sjtsk(lon: float, lat: float) -> tuple[float, float]:
     return xk, yk
 
 
+def wgs84_to_sjtsk_pyproj(lon: float, lat: float) -> tuple[float, float]:
+    global _SJTKS_TRANSFORMER
+    try:
+        from pyproj import Transformer
+    except ImportError as exc:
+        raise CuzkHeightError("pyproj není dostupný pro převod souřadnic.") from exc
+
+    if _SJTKS_TRANSFORMER is None:
+        _SJTKS_TRANSFORMER = Transformer.from_crs("EPSG:4326", "EPSG:5514", always_xy=True)
+
+    x, y = _SJTKS_TRANSFORMER.transform(lon, lat)
+    if not math.isfinite(x) or not math.isfinite(y):
+        raise CuzkHeightError("Souřadnice se nepodařilo převést do S-JTSK pomocí pyproj.")
+    return x, y
+
+
+def wgs84_to_sjtsk_with_fallback(lon: float, lat: float) -> tuple[float, float, str]:
+    try:
+        x, y = wgs84_to_sjtsk_pyproj(lon, lat)
+        return x, y, "pyproj"
+    except CuzkHeightError as exc:
+        logger.warning("pyproj coordinate transform failed; falling back to manual transform: %s", exc)
+        x, y = wgs84_to_sjtsk(lon, lat)
+        return x, y, "manual-fallback"
+
+
+def wgs84_to_sjtsk_for_height_estimate(lon: float, lat: float) -> tuple[float, float, str]:
+    return wgs84_to_sjtsk_with_fallback(lon, lat)
+
+
 def _parse_pixel_value(payload: dict, service_label: str) -> float:
     if "error" in payload:
         message = payload["error"].get("message") if isinstance(payload["error"], dict) else None
@@ -161,7 +192,7 @@ def get_image_server_pixel_value(
 
 def estimate_tree_height_from_cuzk(lat: float, lon: float) -> dict:
     start = time.perf_counter()
-    sjtsk_x, sjtsk_y = wgs84_to_sjtsk(lon, lat)
+    sjtsk_x, sjtsk_y, transform_method = wgs84_to_sjtsk_for_height_estimate(lon, lat)
     dmr_m = get_image_server_pixel_value(DMR5G_IMAGE_SERVER, sjtsk_x, sjtsk_y, "DMR 5G")
     dmp_m = get_image_server_pixel_value(DMP_OK_IMAGE_SERVER, sjtsk_x, sjtsk_y, "DMP OK")
     estimated_height_m = dmp_m - dmr_m
@@ -182,5 +213,6 @@ def estimate_tree_height_from_cuzk(lat: float, lon: float) -> dict:
         "source": CUZK_HEIGHT_SOURCE,
         "sjtsk_x": sjtsk_x,
         "sjtsk_y": sjtsk_y,
+        "transform_method": transform_method,
         "warnings": warnings,
     }

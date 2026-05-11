@@ -1550,7 +1550,7 @@
     const CUZK_DMP_LAYER_ID = 'cuzk-dmp-overlay';
     const CUZK_DMP_OPACITY = 0.3;
     const CUZK_DMP_WMS_BASE = 'https://ags.cuzk.gov.cz/arcgis2/services/dmp_obrazova_korelace/ImageServer/WMSServer?';
-    const CUZK_DMP_LAYER_NAME = 'dmp_obrazova_korelace:GrayscaleHillshade';
+    const CUZK_DMP_LAYER_NAME = 'dmp_obrazova_korelace:TintedHillshadeContinuous';
     // TODO: Future parcel data hook (INSPIRE CP WFS).
     // Endpoint: https://services.cuzk.gov.cz/wfs/inspire-cp-wfs.asp
     // Output is GML; plan server-side conversion to GeoJSON + DB caching.
@@ -1610,7 +1610,11 @@
           id: CUZK_DMP_LAYER_ID,
           type: 'raster',
           source: CUZK_DMP_SOURCE_ID,
-          paint: { 'raster-opacity': CUZK_DMP_OPACITY },
+          paint: {
+            'raster-opacity': CUZK_DMP_OPACITY,
+            'raster-contrast': 0.2,
+            'raster-saturation': 0.35,
+          },
           layout: { visibility: 'none' },
         },
         {
