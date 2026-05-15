@@ -625,7 +625,7 @@ def work_record_list(request):
     if request.user.is_superuser:
         unassigned_count = (
             WorkRecord.objects
-            .filter(project__isnull=True, tree_projects__isnull=True)
+            .filter(tree_projects__isnull=True)
             .distinct()
             .count()
         )
@@ -642,7 +642,7 @@ def unassigned_work_records_list(request):
 
     qs = (
         WorkRecord.objects
-        .filter(project__isnull=True, tree_projects__isnull=True)
+        .filter(tree_projects__isnull=True)
         .order_by('-created_at')
     )
     paginator = Paginator(qs, 20)
