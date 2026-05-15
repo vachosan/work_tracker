@@ -34,370 +34,71 @@
             {% endif %}
           {% endif %}
         {% endif %}
-
-        <div class="dropdown">
-          <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="exportDropdown"
-                  data-bs-toggle="dropdown" aria-expanded="false">
-            Export
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="exportDropdown">
-            <li><h6 class="dropdown-header">Fotodokumentace</h6></li>
-            <li>
-              <button type="submit" form="project-actions-form" name="export_selected" value="1"
-                      class="dropdown-item" formaction="{% url 'export_selected_zip' project.pk %}">
-                Export fotodokumentace (vybrané)
-              </button>
-            </li>
-            <li>
-              <button type="submit" form="project-actions-form" name="export_all" value="1"
-                      class="dropdown-item" formaction="{% url 'export_selected_zip' project.pk %}">
-                Export fotodokumentace (celý projekt)
-              </button>
-            </li>
-            <li><hr class="dropdown-divider"></li>
-            <li><h6 class="dropdown-header">Data</h6></li>
-            <li>
-              <button type="submit" form="project-actions-form" name="export_selected" value="1"
-                      class="dropdown-item" formaction="{% url 'export_selected_csv' project.pk %}">
-                Export dat (CSV)
-              </button>
-            </li>
-            <li>
-              <button type="submit" form="project-actions-form" name="export_selected" value="1"
-                      class="dropdown-item" formaction="{% url 'export_selected_xml' project.pk %}">
-                Export dat (XML)
-              </button>
-            </li>
-            <li>
-              <button type="submit" form="project-actions-form" name="export_selected" value="1"
-                      class="dropdown-item" formaction="{% url 'export_selected_xlsx' project.pk %}">
-                Export dat (Excel)
-              </button>
-              <button type="submit" form="project-actions-form"
-                      class="dropdown-item" formaction="{% url 'export_qgis_geojson' project.pk %}">
-                Export do QGIS (GeoJSON)
-              </button>
-            </li>
-            <li>
-              <button type="submit" form="project-actions-form" name="export_all" value="1"
-                      class="dropdown-item" formaction="{% url 'export_selected_csv' project.pk %}">
-                Export dat (CSV) - celý projekt
-              </button>
-            </li>
-            <li>
-              <button type="submit" form="project-actions-form" name="export_all" value="1"
-                      class="dropdown-item" formaction="{% url 'export_selected_xml' project.pk %}">
-                Export dat (XML) - celý projekt
-              </button>
-            </li>
-            <li>
-              <button type="submit" form="project-actions-form" name="export_all" value="1"
-                      class="dropdown-item" formaction="{% url 'export_selected_xlsx' project.pk %}">
-                Export dat (Excel) – celý projekt
-              </button>
-              <button type="submit" form="project-actions-form" name="export_all" value="1"
-                      class="dropdown-item" formaction="{% url 'export_qgis_geojson' project.pk %}">
-                Export do QGIS (GeoJSON) – celý projekt
-              </button>
-            </li>
-          </ul>
-        </div>
-
-        <div class="dropdown">
-          <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" id="bulkDropdown"
-                  data-bs-toggle="dropdown" aria-expanded="false" data-bulk-toggle disabled>
-            Hromadné
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="bulkDropdown">
-            <li>
-              <button type="submit" form="project-actions-form" name="bulk_approve_interventions" value="1"
-                      class="dropdown-item" formaction="{% url 'bulk_approve_interventions' project.pk %}" formmethod="post" data-bulk-action disabled>
-                Schválit navržené zásahy
-              </button>
-            </li>
-            <li>
-              <button type="submit" form="project-actions-form" name="bulk_handover_interventions" value="1"
-                      class="dropdown-item" formaction="{% url 'bulk_handover_interventions' project.pk %}" formmethod="post" data-bulk-action disabled>
-                Předat zásahy ke kontrole
-              </button>
-            </li>
-            <li>
-              <button type="submit" form="project-actions-form" name="bulk_complete_interventions" value="1"
-                      class="dropdown-item" formaction="{% url 'bulk_complete_interventions' project.pk %}" formmethod="post" data-bulk-action disabled>
-                Označit zásahy jako dokončené
-              </button>
-            </li>
-          </ul>
-        </div>
-
-        <span class="badge bg-secondary d-none" id="selected-count-badge" aria-live="polite">Vybráno: 0</span>
       </div>
     </div>
+  </div>
+</div>
 
-    <div class="mt-2 project-filter-toggle-row">
-      <button class="btn btn-outline-secondary btn-sm project-filter-toggle" type="button"
-              data-bs-toggle="collapse" data-bs-target="#projectFilters"
-              aria-expanded="{% if q or date_from or date_to or photo_date_from or photo_date_to or has_assessment or has_open_interventions %}true{% else %}false{% endif %}"
-              aria-controls="projectFilters">
-        <i class="bi bi-funnel"></i> Filtry
-      </button>
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small">Stromy</div>
+        <div class="h3 mb-0">{{ tree_count }}</div>
+      </div>
     </div>
-
-    <div class="collapse project-filter-panel{% if q or date_from or date_to or photo_date_from or photo_date_to or has_assessment or has_open_interventions %} show{% endif %}" id="projectFilters">
-      <form method="get" class="mt-2 project-filter-form">
-        <div class="row g-2 align-items-end">
-          <div class="col-12 col-md-6">
-            <input type="text"
-                   name="q"
-                   value="{{ q }}"
-                   class="form-control"
-                   placeholder="Hledat v názvu/popisu">
-          </div>
-          <div class="col-12 col-md-6 d-flex flex-wrap gap-2 project-filter-actions">
-            <button class="btn btn-primary" type="submit">
-              <i class="bi bi-funnel"></i> Filtrovat
-            </button>
-            <a class="btn btn-outline-secondary" href="{% url 'project_detail' project.pk %}">
-              Zrušit filtr
-            </a>
-            <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse"
-                    data-bs-target="#advancedFilters" aria-expanded="false" aria-controls="advancedFilters">
-              Pokročilé filtry
-            </button>
-          </div>
-        </div>
-
-        <div class="collapse mt-2{% if date_from or date_to or photo_date_from or photo_date_to or has_assessment or has_open_interventions %} show{% endif %}" id="advancedFilters">
-          <div class="row g-2">
-            <div class="col-6 col-md-2">
-              <label class="form-label small text-muted mb-1">Záznam od</label>
-              <input type="date"
-                     name="date_from"
-                     value="{{ date_from }}"
-                     class="form-control"
-                     placeholder="Od data">
-            </div>
-            <div class="col-6 col-md-2">
-              <label class="form-label small text-muted mb-1">Záznam do</label>
-              <input type="date"
-                     name="date_to"
-                     value="{{ date_to }}"
-                     class="form-control"
-                     placeholder="Do data">
-            </div>
-            <div class="col-12 col-md-3">
-              <select name="has_assessment" class="form-select">
-                <option value="">Hodnocení - všechna</option>
-                <option value="yes" {% if has_assessment == 'yes' %}selected{% endif %}>Jen s hodnocením</option>
-                <option value="no" {% if has_assessment == 'no' %}selected{% endif %}>Jen bez hodnocení</option>
-              </select>
-            </div>
-            <div class="col-12 col-md-5">
-              <select name="has_open_interventions" class="form-select">
-                <option value="">Zásahy - všechny</option>
-                <option value="none" {% if has_open_interventions == 'none' %}selected{% endif %}>
-                  Bez zásahů
-                </option>
-                <option value="proposed" {% if has_open_interventions == 'proposed' %}selected{% endif %}>
-                  S navrženými zásahy
-                </option>
-                <option value="approved" {% if has_open_interventions == 'approved' %}selected{% endif %}>
-                  Se schválenými zásahy
-                </option>
-                <option value="handover" {% if has_open_interventions == 'handover' %}selected{% endif %}>
-                  S předanými ke kontrole
-                </option>
-                <option value="completed" {% if has_open_interventions == 'completed' %}selected{% endif %}>
-                  Jen s dokončenými zásahy
-                </option>
-              </select>
-            </div>
-            <div class="col-12">
-              <div class="small text-muted mt-1">
-                Vyfiltruje stromy, ke kterým byla v daném období přidána fotka.
-              </div>
-            </div>
-            <div class="col-6 col-md-2">
-              <label class="form-label small text-muted mb-1">Fotka od</label>
-              <input type="date"
-                     name="photo_date_from"
-                     value="{{ photo_date_from }}"
-                     class="form-control">
-            </div>
-            <div class="col-6 col-md-2">
-              <label class="form-label small text-muted mb-1">Fotka do</label>
-              <input type="date"
-                     name="photo_date_to"
-                     value="{{ photo_date_to }}"
-                     class="form-control">
-            </div>
-          </div>
-        </div>
-      </form>
+  </div>
+  <div class="col-6 col-lg">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small">Dokončené</div>
+        <div class="h3 mb-0">{{ completed_tree_count }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small">Ke kontrole</div>
+        <div class="h3 mb-0">{{ pending_check_tree_count }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small">Ke kácení</div>
+        <div class="h3 mb-0">{{ proposed_felling_tree_count }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="text-muted small">Bez navrženého zásahu</div>
+        <div class="h3 mb-0">{{ trees_without_proposed_intervention_count }}</div>
+      </div>
     </div>
   </div>
 </div>
 
-<form method="post" id="project-actions-form" action="{% url 'export_selected_zip' project.pk %}">
-  {% csrf_token %}
-</form>
-
-<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-  <div class="form-check">
-    <input type="checkbox" id="selectAll" class="form-check-input" onclick="toggleAll(this)">
-    <label for="selectAll" class="form-check-label small">Vybrat vše</label>
+<div class="card border-0 shadow-sm">
+  <div class="card-body">
+    <h2 class="h5 mb-3">Rychlé akce</h2>
+    <div class="row g-2">
+      <div class="col-12 col-md-6">
+        <a class="btn btn-outline-primary w-100 h-100 py-3" href="{% url 'map_project_redirect' project.pk %}">
+          <i class="bi bi-map"></i>
+          <span class="ms-1">Mapa projektu</span>
+        </a>
+      </div>
+      <div class="col-12 col-md-6">
+        <a class="btn btn-primary w-100 h-100 py-3" href="{% url 'project_tree_list' project.pk %}">
+          <i class="bi bi-list-ul"></i>
+          <span class="ms-1">Seznam stromů / exporty</span>
+        </a>
+      </div>
+    </div>
   </div>
 </div>
-
-<div id="records-list" class="vstack gap-2">
-  {% if page_obj.object_list %}
-    {% include 'tracker/project_detail_items.html' with work_records=page_obj.object_list %}
-  {% else %}
-    <div class="alert alert-info">
-      Žádné úkony neodpovídají filtru.
-    </div>
-  {% endif %}
-</div>
-
-<div id="load-more-sentinel" data-next-url="{{ next_url }}" data-has-next="{% if has_next %}1{% else %}0{% endif %}"></div>
-<div id="load-more-status" class="text-center text-muted py-3 d-none">
-  <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-  Načítám další záznamy...
-</div>
-<div id="load-more-error" class="alert alert-warning d-none">Nastala chyba při načítání dalších záznamů.</div>
-
-<script>
-function toggleAll(source) {
-  const checkboxes = document.querySelectorAll('input[name="selected_records"]');
-  checkboxes.forEach(cb => cb.checked = source.checked);
-  updateBulkButtons();
-}
-
-function updateBulkButtons() {
-  const checkedCount = document.querySelectorAll('input[name="selected_records"]:checked').length;
-  const anyChecked = checkedCount > 0;
-  document.querySelectorAll('[data-bulk-action]').forEach(btn => {
-    btn.disabled = !anyChecked;
-  });
-  const bulkToggle = document.querySelector('[data-bulk-toggle]');
-  if (bulkToggle) {
-    bulkToggle.disabled = !anyChecked;
-    bulkToggle.setAttribute('aria-disabled', !anyChecked ? 'true' : 'false');
-  }
-  const badge = document.getElementById('selected-count-badge');
-  if (badge) {
-    badge.textContent = `Vybráno: ${checkedCount}`;
-    badge.classList.toggle('d-none', !anyChecked);
-  }
-}
-
-function bindWorkrecordRows(rows) {
-  rows.forEach(row => {
-    if (row.dataset.bound) {
-      return;
-    }
-    row.dataset.bound = '1';
-    let moved = false;
-
-    row.addEventListener('touchstart', () => moved = false, {passive: true});
-    row.addEventListener('touchmove', () => moved = true, {passive: true});
-    row.addEventListener('touchend', (e) => {
-      if (!moved && !e.target.closest('input, button, a')) {
-        window.location = row.dataset.href;
-      }
-    });
-
-    row.addEventListener('click', (e) => {
-      if (!e.target.closest('input, button, a')) {
-        window.location = row.dataset.href;
-      }
-    });
-  });
-}
-
-function setupInfiniteScroll() {
-  const list = document.getElementById('records-list');
-  const sentinel = document.getElementById('load-more-sentinel');
-  const status = document.getElementById('load-more-status');
-  const error = document.getElementById('load-more-error');
-
-  if (!list || !sentinel) {
-    return;
-  }
-
-  let nextUrl = sentinel.dataset.nextUrl || '';
-  let hasNext = sentinel.dataset.hasNext === '1';
-  let loading = false;
-
-  const showStatus = (show) => {
-    status.classList.toggle('d-none', !show);
-  };
-
-  const showError = (show) => {
-    error.classList.toggle('d-none', !show);
-  };
-
-  const loadMore = async () => {
-    if (loading || !hasNext || !nextUrl) {
-      return;
-    }
-    loading = true;
-    showStatus(true);
-    showError(false);
-
-    try {
-      const resp = await fetch(nextUrl, {headers: {'X-Requested-With': 'fetch'}});
-      if (!resp.ok) {
-        throw new Error('load failed');
-      }
-      const html = await resp.text();
-      const container = document.createElement('div');
-      container.innerHTML = html;
-      const newRows = Array.from(container.querySelectorAll('.workrecord-row'));
-      while (container.firstChild) {
-        list.appendChild(container.firstChild);
-      }
-      bindWorkrecordRows(newRows);
-      updateBulkButtons();
-
-      const hasNextHeader = resp.headers.get('X-Has-Next');
-      hasNext = hasNextHeader === '1';
-      nextUrl = resp.headers.get('X-Next-Url') || '';
-      sentinel.dataset.nextUrl = nextUrl;
-      sentinel.dataset.hasNext = hasNext ? '1' : '0';
-
-      if (!hasNext) {
-        observer.disconnect();
-      }
-    } catch (err) {
-      showError(true);
-    } finally {
-      loading = false;
-      showStatus(false);
-    }
-  };
-
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach(entry => {
-      if (entry.isIntersecting) {
-        loadMore();
-      }
-    });
-  }, {rootMargin: '200px'});
-
-  if (hasNext) {
-    observer.observe(sentinel);
-  }
-}
-
-document.addEventListener('change', (e) => {
-  if (e.target && e.target.name === 'selected_records') {
-    updateBulkButtons();
-  }
-});
-
-bindWorkrecordRows(document.querySelectorAll('.workrecord-row'));
-updateBulkButtons();
-setupInfiniteScroll();
-</script>
 {% endblock %}

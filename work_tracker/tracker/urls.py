@@ -28,6 +28,8 @@ urlpatterns = [
     # duplicitn route odstranena
     path('projects/closed/', views.closed_projects_list, name='closed_projects_list'),
     path('project/<int:pk>/', views.project_detail, name='project_detail'),
+    path('projects/<int:pk>/trees/', views.project_tree_list, name='project_tree_list'),
+    path('projects/<int:pk>/trees/items/', views.project_tree_list_items, name='project_tree_list_items'),
     path('project/<int:pk>/export_zip/', views.export_selected_zip, name='export_selected_zip'),
     path('project/<int:pk>/export_csv/', views.export_selected_csv, name='export_selected_csv'),
     path('project/<int:pk>/export_xml/', views.export_selected_xml, name='export_selected_xml'),
@@ -38,6 +40,7 @@ urlpatterns = [
     path('project/<int:pk>/bulk-handover-interventions/', views.bulk_handover_interventions, name='bulk_handover_interventions'),
     path('project/<int:pk>/bulk-complete-interventions/', views.bulk_complete_interventions, name='bulk_complete_interventions'),
     path('projects/<int:project_pk>/trees/<int:workrecord_pk>/add/', views.project_tree_add, name='project_tree_add'),
+    path('projects/<int:project_pk>/trees/<int:workrecord_pk>/remove/', views.project_tree_remove, name='project_tree_remove'),
     # testovac mapy endpoints odstranny
     path("map-leaflet/", views.map_leaflet_test, name="map_leaflet_test"),
     path("map-gl-pilot/", views.map_gl_pilot, name="map_gl_pilot"),

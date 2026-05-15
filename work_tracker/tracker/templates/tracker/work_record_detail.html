@@ -24,7 +24,12 @@
         <i class="bi bi-geo-alt"></i>
       </a>
     {% endif %}
-    {% if active_project_id %}
+    {% if return_url %}
+      <a href="{{ return_url }}"
+         class="btn btn-outline-secondary btn-icon-square" title="Zpět">
+        <i class="bi bi-arrow-left"></i>
+      </a>
+    {% elif active_project_id %}
       <a href="{% url 'project_detail' active_project_id %}"
          class="btn btn-outline-secondary btn-icon-square" title="ZpØt na projekt">
         <i class="bi bi-arrow-left"></i>
@@ -40,6 +45,21 @@
        class="btn btn-outline-primary btn-icon-square" title="Upravit úkon">
       <i class="bi bi-pencil"></i>
     </a>
+
+    {% if can_remove_from_active_project and active_project %}
+      <form method="post"
+            class="d-inline-flex m-0 p-0 bg-transparent border-0 shadow-none"
+            action="{% url 'project_tree_remove' active_project.pk work_record.pk %}"
+            onsubmit="return confirm('Odebrat strom z projektu {{ active_project.name|escapejs }}?');">
+        {% csrf_token %}
+        <button type="submit"
+                class="btn btn-outline-secondary btn-icon-square"
+                title="Odebrat z projektu"
+                aria-label="Odebrat z projektu">
+          <i class="bi bi-link-45deg"></i>
+        </button>
+      </form>
+    {% endif %}
 
     <button type="button" class="btn btn-outline-danger btn-icon-square"
             data-bs-toggle="modal" data-bs-target="#deleteConfirmModal"

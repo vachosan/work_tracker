@@ -69,6 +69,7 @@ from .models import (
     PhotoDocumentation,
     parse_photo_date_from_description,
     ProjectMembership,
+    ProjectTree,
     TreeAssessment,
     ShrubAssessment,
     TreeIntervention,
@@ -244,10 +245,71 @@ def _decorate_workrecords(work_records, user=None):
 
 @login_required
 def project_detail(request, pk):
-    """Str nka vçech £kon… projektu + vyhled v n¡, filtry, str nkov n¡."""
     project = get_object_or_404(Project, pk=pk)
 
-    # pr va
+    if not user_can_view_project(request.user, project.pk):
+        return redirect('work_record_list')
+
+    is_member = is_project_member(request.user, project)
+    can_edit = can_edit_project(request.user, project)
+    can_lock = can_lock_project(request.user, project)
+    can_delete = can_delete_project(request.user, project)
+    project_tree_stats = project.trees.aggregate(
+        tree_count=Count("id", distinct=True),
+        completed_tree_count=Count(
+            "id",
+            filter=Q(interventions__status="completed"),
+            distinct=True,
+        ),
+        pending_check_tree_count=Count(
+            "id",
+            filter=Q(interventions__status="done_pending_owner"),
+            distinct=True,
+        ),
+        proposed_felling_tree_count=Count(
+            "id",
+            filter=Q(
+                interventions__status="proposed",
+                interventions__intervention_type__category="Kácení",
+            ),
+            distinct=True,
+        ),
+    )
+    trees_without_proposed_intervention_count = (
+        project.trees.annotate(
+            has_proposed_intervention=Exists(
+                TreeIntervention.objects.filter(
+                    tree=OuterRef("pk"),
+                    status="proposed",
+                )
+            ),
+        )
+        .filter(has_proposed_intervention=False)
+        .count()
+    )
+
+    return render(
+        request,
+        "tracker/project_detail.html",
+        {
+            "project": project,
+            "can_edit_project": can_edit,
+            "can_lock_project": can_lock,
+            "can_delete_project": can_delete,
+            "is_member": is_member,
+            "tree_count": project_tree_stats["tree_count"],
+            "completed_tree_count": project_tree_stats["completed_tree_count"],
+            "pending_check_tree_count": project_tree_stats["pending_check_tree_count"],
+            "proposed_felling_tree_count": project_tree_stats["proposed_felling_tree_count"],
+            "trees_without_proposed_intervention_count": trees_without_proposed_intervention_count,
+        },
+    )
+
+
+@login_required
+def project_tree_list(request, pk):
+    project = get_object_or_404(Project, pk=pk)
+
     if not user_can_view_project(request.user, project.pk):
         return redirect('work_record_list')
 
@@ -265,9 +327,8 @@ def project_detail(request, pk):
     if has_next:
         query = request.GET.copy()
         query["page"] = page_obj.next_page_number()
-        next_url = f"{reverse('project_detail_items', args=[project.pk])}?{query.urlencode()}"
+        next_url = f"{reverse('project_tree_list_items', args=[project.pk])}?{query.urlencode()}"
 
-    # flagy pro çablonu (tlaŸ¡tka)
     is_member = is_project_member(request.user, project)
     can_edit = can_edit_project(request.user, project)
     can_lock = can_lock_project(request.user, project)
@@ -275,7 +336,7 @@ def project_detail(request, pk):
 
     return render(
         request,
-        "tracker/project_detail.html",
+        "tracker/project_tree_list.html",
         {
             "project": project,
             "page_obj": page_obj,
@@ -296,6 +357,47 @@ def project_detail(request, pk):
             "project_return_url": request.get_full_path(),
         },
     )
+
+
+@login_required
+def project_tree_list_items(request, pk):
+    project = get_object_or_404(Project, pk=pk)
+
+    if not user_can_view_project(request.user, project.pk):
+        return HttpResponse(status=403)
+
+    q, df, dt, photo_df, photo_dt, has_assessment, has_open_interventions = _project_detail_filters(request)
+    qs = _project_detail_queryset(project, q, df, dt, photo_df, photo_dt, has_assessment, has_open_interventions)
+    photo_filter_active = bool(photo_df or photo_dt)
+
+    paginator = Paginator(qs, PROJECT_DETAIL_PAGE_SIZE)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    _decorate_workrecords(page_obj.object_list, request.user)
+
+    project_return_url = (
+        f"{reverse('project_tree_list', args=[project.pk])}?{request.GET.urlencode()}"
+        if request.GET
+        else reverse('project_tree_list', args=[project.pk])
+    )
+    response = render(
+        request,
+        "tracker/project_detail_items.html",
+        {
+            "work_records": page_obj.object_list,
+            "project": project,
+            "photo_filter_active": photo_filter_active,
+            "project_return_url": project_return_url,
+        },
+    )
+
+    response["X-Has-Next"] = "1" if page_obj.has_next() else "0"
+    if page_obj.has_next():
+        query = request.GET.copy()
+        query["page"] = page_obj.next_page_number()
+        response["X-Next-Url"] = f"{reverse('project_tree_list_items', args=[project.pk])}?{query.urlencode()}"
+
+    return response
 
 
 @login_required
@@ -649,6 +751,33 @@ def delete_work_record(request, pk):
 
     return render(request, "tracker/confirm_delete_work_record.html", {"work_record": work_record})
 
+
+@login_required
+@require_http_methods(["POST"])
+def project_tree_remove(request, project_pk, workrecord_pk):
+    project = get_object_or_404(Project, pk=project_pk)
+    work_record = get_object_or_404(WorkRecord, pk=workrecord_pk)
+
+    if not user_can_view_project(request.user, project.pk):
+        return redirect('work_record_list')
+
+    if not can_edit_project(request.user, project):
+        messages.warning(request, "Nemáte oprávnění odebrat strom z projektu.")
+        return redirect("project_detail", pk=project.pk)
+
+    deleted_count, _ = ProjectTree.objects.filter(
+        project=project,
+        tree=work_record,
+    ).delete()
+
+    if deleted_count:
+        messages.success(request, f"Strom byl odebrán z projektu {project.name}.")
+    else:
+        messages.info(request, "Strom v tomto projektu nebyl nalezen.")
+
+    return redirect("project_detail", pk=project.pk)
+
+
 @login_required
 def work_record_detail(request, pk):
     work_record = get_object_or_404(
@@ -658,21 +787,42 @@ def work_record_detail(request, pk):
         pk=pk,
     )
 
-    if work_record.project_id and not user_can_view_project(request.user, work_record.project_id):
-        return redirect('work_record_list')
-
     project_param = request.GET.get("project")
     return_url = request.GET.get("return")
     active_project_id = None
+    explicit_project_context = False
     if project_param:
         try:
             active_project_id = int(project_param)
+            explicit_project_context = True
         except (TypeError, ValueError):
             active_project_id = None
     if active_project_id is None:
         active_project_id = request.session.get("active_project_id")
     if not return_url:
         return_url = request.session.get("active_project_return")
+
+    active_project = None
+    active_project_has_tree = False
+    can_remove_from_active_project = False
+    if active_project_id:
+        active_project = Project.objects.filter(pk=active_project_id).first()
+        if active_project and user_can_view_project(request.user, active_project.pk):
+            active_project_has_tree = ProjectTree.objects.filter(
+                project=active_project,
+                tree=work_record,
+            ).exists()
+            can_remove_from_active_project = (
+                explicit_project_context
+                and can_edit_project(request.user, active_project)
+                and active_project_has_tree
+            )
+        else:
+            active_project = None
+
+    if work_record.project_id and not user_can_view_project(request.user, work_record.project_id):
+        if not (active_project and active_project_has_tree):
+            return redirect('work_record_list')
 
     if request.method == 'POST':
         photo_form = PhotoDocumentationForm(request.POST, request.FILES)
@@ -706,6 +856,8 @@ def work_record_detail(request, pk):
         'current_interventions': current_interventions,
         'history_interventions': history_interventions,
         'active_project_id': active_project_id,
+        'active_project': active_project,
+        'can_remove_from_active_project': can_remove_from_active_project,
         'return_url': return_url,
     })
 
@@ -1007,7 +1159,7 @@ def _get_export_work_records(request, project):
     selected_ids = request.POST.getlist("selected_records")
     if not selected_ids:
         messages.warning(request, "Vyberte prosim alespon jeden zaznam pro export.")
-        return None, redirect("project_detail", pk=project.pk)
+        return None, redirect("project_tree_list", pk=project.pk)
 
     return project.trees.filter(id__in=selected_ids), None
 
@@ -1397,7 +1549,7 @@ def export_selected_xlsx(request, pk):
             request,
             "Export Excelu vyzaduje balicek openpyxl. Nainstalujte jej prosim.",
         )
-        return redirect("project_detail", pk=pk)
+        return redirect("project_tree_list", pk=pk)
 
     def excel_safe(value):
         if isinstance(value, dt.datetime):
@@ -1725,12 +1877,12 @@ def bulk_approve_interventions(request, pk):
         return redirect('work_record_list')
 
     if request.method != "POST":
-        return redirect("project_detail", pk=pk)
+        return redirect("project_tree_list", pk=pk)
 
     selected_ids = request.POST.getlist("selected_records")
     if not selected_ids:
         messages.warning(request, "Vyberte prosím alespoň jeden strom / úkon.")
-        return redirect("project_detail", pk=pk)
+        return redirect("project_tree_list", pk=pk)
 
     work_records = project.trees.filter(id__in=selected_ids)
     interventions_qs = TreeIntervention.objects.filter(
@@ -1741,7 +1893,7 @@ def bulk_approve_interventions(request, pk):
 
     if not interventions:
         messages.info(request, "Nebyl nalezen žádný navržený zásah ke schválení.")
-        return redirect("project_detail", pk=pk)
+        return redirect("project_tree_list", pk=pk)
 
     for intervention in interventions:
         if not can_transition_intervention(request.user, intervention, "done_pending_owner"):
@@ -1754,7 +1906,7 @@ def bulk_approve_interventions(request, pk):
         request,
         f"Schváleno {len(interventions)} navržených zásahů.",
     )
-    return redirect("project_detail", pk=pk)
+    return redirect("project_tree_list", pk=pk)
 
 
 def get_photo_thumbnail(photo_obj, size=THUMB_MAX_SIZE):
@@ -3026,12 +3178,12 @@ def bulk_handover_interventions(request, pk):
         return redirect('work_record_list')
 
     if request.method != "POST":
-        return redirect("project_detail", pk=pk)
+        return redirect("project_tree_list", pk=pk)
 
     selected_ids = request.POST.getlist("selected_records")
     if not selected_ids:
         messages.warning(request, "Vyberte prosím alespoň jeden strom / úkon.")
-        return redirect("project_detail", pk=pk)
+        return redirect("project_tree_list", pk=pk)
 
     work_records = project.trees.filter(id__in=selected_ids)
     interventions_qs = TreeIntervention.objects.filter(
@@ -3042,7 +3194,7 @@ def bulk_handover_interventions(request, pk):
 
     if not interventions:
         messages.info(request, "Nebyl nalezen žádný zásah vhodný k předání ke kontrole.")
-        return redirect("project_detail", pk=pk)
+        return redirect("project_tree_list", pk=pk)
 
     for intervention in interventions:
         if not can_transition_intervention(request.user, intervention, "done_pending_owner"):
@@ -3055,7 +3207,7 @@ def bulk_handover_interventions(request, pk):
         request,
         f"Předáno ke kontrole {len(interventions)} zásahů.",
     )
-    return redirect("project_detail", pk=pk)
+    return redirect("project_tree_list", pk=pk)
 
 
 @login_required
@@ -3066,12 +3218,12 @@ def bulk_complete_interventions(request, pk):
         return redirect('work_record_list')
 
     if request.method != "POST":
-        return redirect("project_detail", pk=pk)
+        return redirect("project_tree_list", pk=pk)
 
     selected_ids = request.POST.getlist("selected_records")
     if not selected_ids:
         messages.warning(request, "Vyberte prosím alespoň jeden strom / úkon.")
-        return redirect("project_detail", pk=pk)
+        return redirect("project_tree_list", pk=pk)
 
     work_records = project.trees.filter(id__in=selected_ids)
     interventions_qs = TreeIntervention.objects.filter(
@@ -3082,7 +3234,7 @@ def bulk_complete_interventions(request, pk):
 
     if not interventions:
         messages.info(request, "Nebyl nalezen žádný zásah k označení jako dokončený.")
-        return redirect("project_detail", pk=pk)
+        return redirect("project_tree_list", pk=pk)
 
     for intervention in interventions:
         if not can_transition_intervention(request.user, intervention, "completed"):
@@ -3093,4 +3245,4 @@ def bulk_complete_interventions(request, pk):
         request,
         f"Označeno {len(interventions)} zásahů jako dokončené.",
     )
-    return redirect("project_detail", pk=pk)
+    return redirect("project_tree_list", pk=pk)

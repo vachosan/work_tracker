@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from .models import (
@@ -53,6 +53,60 @@ class ProjectTreeAddTests(TestCase):
         self.work_record.refresh_from_db()
         self.assertTrue(self.project.trees.filter(pk=self.work_record.pk).exists())
         self.assertEqual(self.work_record.project_id, self.project.pk)
+
+
+@override_settings(STATICFILES_STORAGE="django.contrib.staticfiles.storage.StaticFilesStorage")
+class ProjectTreeListSmokeTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="project-user", password="pass1234"
+        )
+        self.project = Project.objects.create(name="P1", description="Demo project")
+        ProjectMembership.objects.create(
+            user=self.user,
+            project=self.project,
+            role=ProjectMembership.Role.WORKER,
+        )
+        self.oak = WorkRecord.objects.create(title="Oak 001")
+        self.pine = WorkRecord.objects.create(title="Pine 002")
+        self.project.trees.add(self.oak, self.pine)
+
+    def test_project_tree_list_returns_200(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("project_tree_list", args=[self.project.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Oak 001")
+        self.assertContains(response, "Pine 002")
+
+    def test_project_tree_list_filters_by_q(self):
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse("project_tree_list", args=[self.project.pk]),
+            {"q": "Oak"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Oak 001")
+        self.assertNotContains(response, "Pine 002")
+
+    def test_project_tree_list_items_returns_partial(self):
+        self.client.force_login(self.user)
+        response = self.client.get(
+            reverse("project_tree_list_items", args=[self.project.pk])
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "workrecord-row")
+        self.assertContains(response, "Oak 001")
+
+    def test_project_detail_links_to_project_tree_list(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("project_detail", args=[self.project.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Seznam stromů")
+        self.assertContains(response, reverse("project_tree_list", args=[self.project.pk]))
 
 
 class WorkrecordsGeojsonTests(TestCase):
