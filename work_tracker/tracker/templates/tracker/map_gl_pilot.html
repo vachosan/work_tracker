@@ -68,6 +68,7 @@
     mapUploadPhotoUrl: "{% url 'map_upload_photo' %}",
     projectId: "{{ request.GET.project|default:'' }}",
     addToProjectUrlTemplate: "{% url 'project_tree_add' 0 0 %}",
+    removeFromProjectUrlTemplate: "{% url 'project_tree_remove' 0 0 %}",
     disableLocationConfirmFab: true,
     csrfToken: "{{ csrf_token }}",
     interventionNoteData: {{ intervention_note_data_json|default:"{}" | safe }},

@@ -8,6 +8,7 @@
     mapUploadPhotoUrl: null,
     projectId: null,
     addToProjectUrlTemplate: null,
+    removeFromProjectUrlTemplate: null,
     disableLocationConfirmFab: false,
     csrfToken: null,
     interventionNoteData: {},
@@ -138,6 +139,9 @@
     }
     if (userCfg.addToProjectUrlTemplate) {
       cfg.addToProjectUrlTemplate = userCfg.addToProjectUrlTemplate;
+    }
+    if (userCfg.removeFromProjectUrlTemplate) {
+      cfg.removeFromProjectUrlTemplate = userCfg.removeFromProjectUrlTemplate;
     }
     if (userCfg.disableLocationConfirmFab !== undefined && userCfg.disableLocationConfirmFab !== null) {
       cfg.disableLocationConfirmFab = Boolean(userCfg.disableLocationConfirmFab);
@@ -646,16 +650,18 @@
     const addToProjectEnabled = Boolean(options.addToProjectEnabled);
     const addedToProject = Boolean(record && (record.in_project || record.added_to_project));
     const addToProjectMessage = record && record.add_to_project_message ? record.add_to_project_message : '';
-    const addToProjectIcon = addedToProject ? 'bi bi-check-circle' : 'bi bi-folder-plus';
+    const projectAction = addedToProject ? 'remove_from_project' : 'add_to_project';
+    const projectActionTitle = addedToProject ? 'Odebrat z projektu' : 'Přidat do projektu';
+    const projectActionIcon = addedToProject ? 'bi bi-link-45deg' : 'bi bi-folder-plus';
     const addToProjectButtonHtml = addToProjectEnabled
-      ? '<button type="button" class="wr-popup-btn intervention add-to-project" data-action="add_to_project" data-record-id="' +
+      ? '<button type="button" class="wr-popup-btn intervention add-to-project" data-action="' +
+        projectAction +
+        '" data-record-id="' +
         record.id +
-        '"' +
-        (addedToProject ? ' disabled' : '') +
-        ' title="' +
-        (addedToProject ? 'V projektu' : 'Přidat do projektu') +
+        '" title="' +
+        projectActionTitle +
         '"><i class="' +
-        addToProjectIcon +
+        projectActionIcon +
         '"></i></button>'
       : '';
     const addToProjectMessageHtml = addToProjectEnabled
@@ -723,6 +729,10 @@
 
   function getAddToProjectTemplate() {
     return cfg.addToProjectUrlTemplate || '/tracker/projects/0/trees/0/add/';
+  }
+
+  function getRemoveFromProjectTemplate() {
+    return cfg.removeFromProjectUrlTemplate || '/tracker/projects/0/trees/0/remove/';
   }
 
   function buildAddToProjectHtml(record, state) {
@@ -863,6 +873,16 @@
         handleAddToProject(record.id, btn, messageEl);
       });
     });
+    const removeButtons = treePanel.querySelectorAll('.wr-popup-btn[data-action="remove_from_project"]');
+    removeButtons.forEach(function (btn) {
+      btn.addEventListener('click', function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (!confirm('Odebrat strom z projektu?')) return;
+        const messageEl = treePanel.querySelector('[data-role="add-to-project-message"]');
+        handleRemoveFromProject(record.id, btn, messageEl);
+      });
+    });
   }
 
   function buildAddToProjectUrl(recordId) {
@@ -870,6 +890,13 @@
     const template = getAddToProjectTemplate();
     if (!projectId || !template) return null;
     return template.replace('/0/trees/0/add/', '/' + projectId + '/trees/' + recordId + '/add/');
+  }
+
+  function buildRemoveFromProjectUrl(recordId) {
+    const projectId = getProjectContextId();
+    const template = getRemoveFromProjectTemplate();
+    if (!projectId || !template) return null;
+    return template.replace('/0/trees/0/remove/', '/' + projectId + '/trees/' + recordId + '/remove/');
   }
 
   function handleAddToProject(recordId, buttonEl, messageEl) {
@@ -909,9 +936,7 @@
           messageEl.className = 'wr-popup-message small mt-1 text-success';
         }
         if (buttonEl) {
-          buttonEl.innerHTML = '<i class="bi bi-check-circle"></i>';
-          buttonEl.disabled = true;
-          buttonEl.title = 'V projektu';
+          buttonEl.disabled = false;
         }
         const cached = recordCache[Number(recordId)];
         if (cached) {
@@ -919,6 +944,7 @@
           cached.added_to_project = true;
           cached.add_to_project_message = 'Přidáno do projektu.';
           cacheRecord(cached);
+          renderTreePanel(cached, {});
         }
         if (typeof window.refreshProjectWorkrecords === 'function') {
           window.refreshProjectWorkrecords();
@@ -936,6 +962,61 @@
         if (cached && messageEl) {
           cached.add_to_project_message = messageEl.textContent;
           cacheRecord(cached);
+        }
+      });
+  }
+
+  function handleRemoveFromProject(recordId, buttonEl, messageEl) {
+    const url = buildRemoveFromProjectUrl(recordId);
+    if (!url) {
+      if (buttonEl) {
+        buttonEl.disabled = true;
+      }
+      return;
+    }
+    if (messageEl) {
+      messageEl.textContent = 'Odebírám z projektu...';
+      messageEl.className = 'wr-popup-message small mt-1 text-muted';
+    }
+    if (buttonEl) {
+      buttonEl.disabled = true;
+    }
+    fetch(url, {
+      method: 'POST',
+      headers: {
+        'X-CSRFToken': cfg.csrfToken || '',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    })
+      .then(function (resp) {
+        return resp.json().then(function (body) {
+          if (!resp.ok || !body || !body.ok) {
+            const err = (body && body.error) || 'Chyba při odebrání z projektu.';
+            throw new Error(err);
+          }
+          return body;
+        });
+      })
+      .then(function () {
+        const cached = recordCache[Number(recordId)];
+        if (cached) {
+          cached.in_project = false;
+          cached.added_to_project = false;
+          cached.add_to_project_message = 'Strom už není v projektu.';
+          cacheRecord(cached);
+          renderTreePanel(cached, {});
+        }
+        if (typeof window.refreshProjectWorkrecords === 'function') {
+          window.refreshProjectWorkrecords();
+        }
+      })
+      .catch(function (err) {
+        if (messageEl) {
+          messageEl.textContent = err && err.message ? err.message : 'Nepodařilo se odebrat strom z projektu.';
+          messageEl.className = 'wr-popup-message small mt-1 text-danger';
+        }
+        if (buttonEl) {
+          buttonEl.disabled = false;
         }
       });
   }

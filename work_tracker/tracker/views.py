@@ -275,19 +275,6 @@ def project_detail(request, pk):
             distinct=True,
         ),
     )
-    trees_without_proposed_intervention_count = (
-        project.trees.annotate(
-            has_proposed_intervention=Exists(
-                TreeIntervention.objects.filter(
-                    tree=OuterRef("pk"),
-                    status="proposed",
-                )
-            ),
-        )
-        .filter(has_proposed_intervention=False)
-        .count()
-    )
-
     return render(
         request,
         "tracker/project_detail.html",
@@ -301,7 +288,6 @@ def project_detail(request, pk):
             "completed_tree_count": project_tree_stats["completed_tree_count"],
             "pending_check_tree_count": project_tree_stats["pending_check_tree_count"],
             "proposed_felling_tree_count": project_tree_stats["proposed_felling_tree_count"],
-            "trees_without_proposed_intervention_count": trees_without_proposed_intervention_count,
         },
     )
 
@@ -757,11 +743,16 @@ def delete_work_record(request, pk):
 def project_tree_remove(request, project_pk, workrecord_pk):
     project = get_object_or_404(Project, pk=project_pk)
     work_record = get_object_or_404(WorkRecord, pk=workrecord_pk)
+    wants_json = request.headers.get("X-Requested-With") == "XMLHttpRequest"
 
     if not user_can_view_project(request.user, project.pk):
+        if wants_json:
+            return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
         return redirect('work_record_list')
 
     if not can_edit_project(request.user, project):
+        if wants_json:
+            return JsonResponse({"ok": False, "error": "forbidden"}, status=403)
         messages.warning(request, "Nemáte oprávnění odebrat strom z projektu.")
         return redirect("project_detail", pk=project.pk)
 
@@ -774,6 +765,9 @@ def project_tree_remove(request, project_pk, workrecord_pk):
         messages.success(request, f"Strom byl odebrán z projektu {project.name}.")
     else:
         messages.info(request, "Strom v tomto projektu nebyl nalezen.")
+
+    if wants_json:
+        return JsonResponse({"ok": True, "removed": bool(deleted_count)})
 
     return redirect("project_detail", pk=project.pk)
 
