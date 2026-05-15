@@ -14,16 +14,31 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
-from django.urls import path, include
-from django.views.generic import RedirectView
 from django.conf import settings
 from django.conf.urls.static import static
+from django.contrib.staticfiles import finders
 from django.contrib import admin
+from django.http import FileResponse, Http404
+from django.urls import path, include
+from django.views.generic import RedirectView
 from tracker import views
 from tracker import views_tiles
 
+
+def service_worker(request):
+    sw_path = finders.find("sw.js")
+    if not sw_path:
+        raise Http404("Service worker not found")
+
+    response = FileResponse(open(sw_path, "rb"), content_type="application/javascript")
+    response["Service-Worker-Allowed"] = "/"
+    response["Cache-Control"] = "no-cache"
+    return response
+
+
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('sw.js', service_worker, name='service-worker'),
     path('tiles-debug/whereis/<path:filename>', views_tiles.tiles_debug_whereis, name='tiles-debug-whereis'),
     path('tiles/<path:filename>', views_tiles.pmtiles_range_serve, name='pmtiles-range-serve'),
     path('tracker/', include('tracker.urls')),
