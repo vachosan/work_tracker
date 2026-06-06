@@ -1,3 +1,4 @@
+import io
 from pathlib import Path
 from unittest.mock import patch
 
@@ -10,9 +11,11 @@ from .models import (
     InterventionType,
     Project,
     ProjectMembership,
+    PhotoDocumentation,
     RuianCadastralArea,
     RuianCadastralAreaMunicipality,
     RuianMunicipality,
+    TreeAssessment,
     TreeIntervention,
     WorkRecord,
 )
@@ -107,6 +110,310 @@ class ProjectTreeListSmokeTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Seznam stromů")
         self.assertContains(response, reverse("project_tree_list", args=[self.project.pk]))
+
+
+class ProjectXlsxExportTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            username="xlsx-user", password="pass1234"
+        )
+        self.outsider = get_user_model().objects.create_user(
+            username="xlsx-outsider", password="pass1234"
+        )
+        self.project = Project.objects.create(name="Městský park")
+        self.legacy_project = Project.objects.create(name="Legacy projekt")
+        ProjectMembership.objects.create(
+            user=self.user,
+            project=self.project,
+            role=ProjectMembership.Role.WORKER,
+        )
+        self.first_tree = WorkRecord.objects.create(
+            title="T-001",
+            description="Běžný popis",
+            project=self.legacy_project,
+            vegetation_type=WorkRecord.VegetationType.TREE,
+        )
+        self.second_tree = WorkRecord.objects.create(
+            title="T-002",
+            description="",
+            project=None,
+            vegetation_type=WorkRecord.VegetationType.TREE,
+        )
+        self.project.trees.add(self.first_tree, self.second_tree)
+        TreeAssessment.objects.create(
+            work_record=self.first_tree,
+            vitality=2,
+            stability=1,
+        )
+        intervention_type = InterventionType.objects.create(
+            code="RZ",
+            name="Redukční řez",
+            category="Řez",
+            description="Redukce koruny stromu",
+        )
+        self.first_intervention = TreeIntervention.objects.create(
+            tree=self.first_tree,
+            intervention_type=intervention_type,
+            description="Odstranit suché větve",
+            urgency=1,
+            status="proposed",
+            status_note="Nutná kontrola",
+            assigned_to=self.user,
+        )
+        TreeIntervention.objects.filter(pk=self.first_intervention.pk).update(
+            estimated_price_czk=1500
+        )
+        self.first_intervention.refresh_from_db()
+        urgent_type = InterventionType.objects.create(
+            code="KONT",
+            name="Bezpečnostní kontrola",
+            category="Kontrola",
+        )
+        self.urgent_intervention = TreeIntervention.objects.create(
+            tree=self.first_tree,
+            intervention_type=urgent_type,
+            description="Odstranit suché větve",
+            urgency=0,
+            status="proposed",
+            status_note="Nutná kontrola",
+        )
+        TreeIntervention.objects.filter(pk=self.urgent_intervention.pk).update(
+            estimated_price_czk=500
+        )
+        self.urgent_intervention.refresh_from_db()
+        self.second_intervention = TreeIntervention.objects.create(
+            tree=self.second_tree,
+            intervention_type=intervention_type,
+            description="Kontrolní řez",
+            urgency=3,
+            status="completed",
+        )
+        TreeIntervention.objects.filter(pk=self.second_intervention.pk).update(
+            estimated_price_czk=800
+        )
+        self.second_intervention.refresh_from_db()
+        PhotoDocumentation.objects.create(
+            work_record=self.first_tree,
+            photo="photos/first.jpg",
+            description="Celek",
+        )
+        PhotoDocumentation.objects.create(
+            work_record=self.second_tree,
+            photo="photos/second.jpg",
+            description="Detail",
+        )
+        self.url = reverse("export_selected_xlsx", args=[self.project.pk])
+
+    def _workbook(self, response):
+        from openpyxl import load_workbook
+
+        return load_workbook(io.BytesIO(response.content), data_only=False)
+
+    def _rows_by_header(self, worksheet, key_header):
+        headers = [cell.value for cell in worksheet[1]]
+        key_index = headers.index(key_header)
+        return {
+            row[key_index].value: {
+                headers[index]: cell.value for index, cell in enumerate(row)
+            }
+            for row in worksheet.iter_rows(min_row=2)
+        }
+
+    def test_export_all_project_has_expected_sheets_and_overview(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(self.url, {"export_all": "1"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            "arbomap_mestsky_park_",
+            response["Content-Disposition"],
+        )
+        self.assertIn("_cely-projekt.xlsx", response["Content-Disposition"])
+        workbook = self._workbook(response)
+        self.assertEqual(
+            workbook.sheetnames,
+            ["Přehled stromů", "Zásahy", "Fotky"],
+        )
+        self.assertNotIn("Technická data", workbook.sheetnames)
+        worksheet = workbook["Přehled stromů"]
+        headers = [cell.value for cell in worksheet[1]]
+        self.assertEqual(
+            headers,
+            [
+                "Číslo stromu",
+                "Taxon",
+                "Český název",
+                "Popis / poznámka",
+                "Datum hodnocení",
+                "Výška [m]",
+                "Obvod kmene [cm]",
+                "DBH [cm]",
+                "Šířka koruny [m]",
+                "Plocha koruny [m²]",
+                "Fyziologické stáří",
+                "Vitalita",
+                "Zdravotní stav",
+                "Stabilita",
+                "Perspektiva",
+                "Jmelí",
+                "Navržené zásahy",
+                "Naléhavost zásahu",
+                "Odhadovaná cena zásahů",
+                "Poznámka k zásahům",
+                "GPS šířka",
+                "GPS délka",
+                "Parcela",
+                "Katastrální území",
+                "Obec",
+            ],
+        )
+        self.assertNotIn("Název", headers)
+        self.assertNotIn("Typ vegetace", headers)
+        self.assertNotIn("Latinský název", headers)
+        self.assertIn("Taxon", headers)
+        self.assertIn("Naléhavost zásahu", headers)
+        self.assertIn("Odhadovaná cena zásahů", headers)
+        self.assertIn("Poznámka k zásahům", headers)
+        self.assertNotIn("Počet fotek", headers)
+        self.assertNotIn("Stav zásahů", headers)
+        self.assertEqual(
+            headers[-5:],
+            ["GPS šířka", "GPS délka", "Parcela", "Katastrální území", "Obec"],
+        )
+        rows = self._rows_by_header(worksheet, "Číslo stromu")
+        self.assertEqual(set(rows), {"T-001", "T-002"})
+        self.assertEqual(rows["T-001"]["Popis / poznámka"], "Běžný popis")
+        self.assertIn("RZ – Redukční řez", rows["T-001"]["Navržené zásahy"])
+        self.assertEqual(
+            rows["T-001"]["Naléhavost zásahu"],
+            self.urgent_intervention.get_urgency_display(),
+        )
+        self.assertEqual(rows["T-001"]["Odhadovaná cena zásahů"], 2000)
+        self.assertEqual(
+            rows["T-001"]["Poznámka k zásahům"],
+            "Odstranit suché větve; Nutná kontrola",
+        )
+        self.assertIn("zřetelně snížená", rows["T-001"]["Vitalita"])
+        self.assertEqual(worksheet.freeze_panes, "A2")
+        self.assertTrue(worksheet.auto_filter.ref)
+        self.assertTrue(all(cell.font.bold for cell in worksheet[1]))
+
+    def test_intervention_and_photo_are_exported_to_detail_sheets(self):
+        self.client.force_login(self.user)
+
+        workbook = self._workbook(
+            self.client.post(self.url, {"export_all": "1"})
+        )
+        intervention_rows = self._rows_by_header(
+            workbook["Zásahy"],
+            "Název stromu",
+        )
+        photo_rows = self._rows_by_header(
+            workbook["Fotky"],
+            "Název stromu",
+        )
+
+        self.assertEqual(
+            intervention_rows["T-001"]["Kód zásahu"],
+            "RZ",
+        )
+        self.assertEqual(
+            intervention_rows["T-001"]["Odhad ceny"],
+            1500,
+        )
+        self.assertEqual(
+            intervention_rows["T-001"]["Zodpovědná osoba"],
+            self.user.get_username(),
+        )
+        intervention_headers = [
+            cell.value for cell in workbook["Zásahy"][1]
+        ]
+        self.assertIn("Konkrétní popis", intervention_headers)
+        self.assertIn("Stavová poznámka", intervention_headers)
+        self.assertIn("Stav", intervention_headers)
+        self.assertEqual(photo_rows["T-001"]["Název souboru"], "first.jpg")
+        photo_sheet = workbook["Fotky"]
+        photo_headers = [cell.value for cell in photo_sheet[1]]
+        tree_name_column = photo_headers.index("Název stromu") + 1
+        first_tree_row = next(
+            row_index
+            for row_index in range(2, photo_sheet.max_row + 1)
+            if photo_sheet.cell(row=row_index, column=tree_name_column).value == "T-001"
+        )
+        link_cell = photo_sheet.cell(
+            row=first_tree_row,
+            column=photo_headers.index("URL fotky") + 1,
+        )
+        self.assertEqual(link_cell.value, "Otevřít fotku")
+        self.assertTrue(link_cell.hyperlink)
+        self.assertIn("photos/first.jpg", link_cell.hyperlink.target)
+
+    def test_export_selected_contains_only_selected_tree_on_all_sheets(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            self.url,
+            {"export_selected": "1", "selected_records": [self.first_tree.pk]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("_vyber.xlsx", response["Content-Disposition"])
+        workbook = self._workbook(response)
+        sheet_keys = {
+            "Přehled stromů": "Číslo stromu",
+            "Zásahy": "Název stromu",
+            "Fotky": "Název stromu",
+        }
+        for sheet_name, key_header in sheet_keys.items():
+            rows = self._rows_by_header(workbook[sheet_name], key_header)
+            self.assertEqual(set(rows), {"T-001"}, sheet_name)
+
+    def test_user_without_project_access_does_not_receive_workbook(self):
+        self.client.force_login(self.outsider)
+
+        response = self.client.post(self.url, {"export_all": "1"})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertNotEqual(
+            response.get("Content-Type"),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    def test_empty_values_export_without_error(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            self.url,
+            {"export_selected": "1", "selected_records": [self.second_tree.pk]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        workbook = self._workbook(response)
+        overview_row = self._rows_by_header(
+            workbook["Přehled stromů"],
+            "Číslo stromu",
+        )["T-002"]
+        self.assertIsNone(overview_row["Datum hodnocení"])
+
+    def test_formula_like_user_text_is_exported_as_text(self):
+        self.first_tree.description = "=2+2"
+        self.first_tree.save(update_fields=["description"])
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            self.url,
+            {"export_selected": "1", "selected_records": [self.first_tree.pk]},
+        )
+
+        worksheet = self._workbook(response)["Přehled stromů"]
+        headers = [cell.value for cell in worksheet[1]]
+        description_cell = worksheet.cell(
+            row=2,
+            column=headers.index("Popis / poznámka") + 1,
+        )
+        self.assertEqual(description_cell.value, "'=2+2")
+        self.assertEqual(description_cell.data_type, "s")
 
 
 class WorkrecordsGeojsonTests(TestCase):

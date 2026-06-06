@@ -92,6 +92,10 @@ from .permissions import (
     can_transition_intervention,
 )
 from .services.cuzk import CuzkHeightError, estimate_tree_height_from_cuzk
+from .services.export_snapshot import (
+    build_tree_export_snapshot,
+    prepare_tree_export_queryset,
+)
 
 # ------------------ Auth / základní stránky ------------------
 logger = logging.getLogger(__name__)
@@ -1537,6 +1541,7 @@ def export_selected_csv(request, pk):
 def export_selected_xlsx(request, pk):
     try:
         from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font
         from openpyxl.utils import get_column_letter
     except ModuleNotFoundError:
         messages.error(
@@ -1550,7 +1555,161 @@ def export_selected_xlsx(request, pk):
             if timezone.is_aware(value):
                 return timezone.localtime(value).replace(tzinfo=None)
             return value
+        if isinstance(value, str) and value.startswith(("=", "+", "-", "@")):
+            return f"'{value}"
         return value
+
+    def proposed_interventions_summary(interventions):
+        parts = []
+        for intervention in interventions:
+            label = " – ".join(
+                part
+                for part in (intervention["code"], intervention["name"])
+                if part
+            )
+            if label:
+                parts.append(label)
+        return " | ".join(parts)
+
+    def intervention_notes_summary(interventions):
+        notes = []
+        seen = set()
+        for intervention in interventions:
+            for value in (
+                intervention["description"],
+                intervention["status_note"],
+            ):
+                note = (value or "").strip()
+                if not note or note in seen:
+                    continue
+                seen.add(note)
+                notes.append(note)
+        return "; ".join(notes)
+
+    def highest_urgency(interventions):
+        with_urgency = [
+            intervention
+            for intervention in interventions
+            if intervention["urgency"] is not None
+        ]
+        if not with_urgency:
+            return ""
+        return min(with_urgency, key=lambda item: item["urgency"])["urgency_label"]
+
+    def total_estimated_price(interventions):
+        prices = [
+            intervention["estimated_price_czk"]
+            for intervention in interventions
+            if intervention["estimated_price_czk"] is not None
+        ]
+        return sum(prices) if prices else None
+
+    def append_safe_row(worksheet, values):
+        worksheet.append([excel_safe(value) for value in values])
+
+    def format_sheet(
+        worksheet,
+        headers,
+        widths,
+        *,
+        wrap_headers=(),
+        date_headers=(),
+        currency_headers=(),
+    ):
+        worksheet.freeze_panes = "A2"
+        last_row = worksheet.max_row
+        last_col_letter = get_column_letter(len(headers))
+        worksheet.auto_filter.ref = f"A1:{last_col_letter}{last_row}"
+
+        for cell in worksheet[1]:
+            cell.font = Font(bold=True)
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+
+        for index, width in enumerate(widths, start=1):
+            worksheet.column_dimensions[get_column_letter(index)].width = width
+
+        wrap_columns = {
+            index
+            for index, header in enumerate(headers, start=1)
+            if header in wrap_headers
+        }
+        date_columns = {
+            index
+            for index, header in enumerate(headers, start=1)
+            if header in date_headers
+        }
+        currency_columns = {
+            index
+            for index, header in enumerate(headers, start=1)
+            if header in currency_headers
+        }
+        for row in worksheet.iter_rows(min_row=2):
+            for cell in row:
+                if cell.column in wrap_columns:
+                    cell.alignment = Alignment(vertical="top", wrap_text=True)
+                if cell.column in date_columns:
+                    cell.number_format = "dd.mm.yyyy"
+                elif cell.column in currency_columns:
+                    cell.number_format = '#,##0 "Kč"'
+
+    overview_headers = [
+        "Číslo stromu",
+        "Taxon",
+        "Český název",
+        "Popis / poznámka",
+        "Datum hodnocení",
+        "Výška [m]",
+        "Obvod kmene [cm]",
+        "DBH [cm]",
+        "Šířka koruny [m]",
+        "Plocha koruny [m²]",
+        "Fyziologické stáří",
+        "Vitalita",
+        "Zdravotní stav",
+        "Stabilita",
+        "Perspektiva",
+        "Jmelí",
+        "Navržené zásahy",
+        "Naléhavost zásahu",
+        "Odhadovaná cena zásahů",
+        "Poznámka k zásahům",
+        "GPS šířka",
+        "GPS délka",
+        "Parcela",
+        "Katastrální území",
+        "Obec",
+    ]
+    overview_widths = [
+        18, 24, 24, 36, 18, 14, 20, 12, 18, 18, 28, 28, 28, 28, 30, 30,
+        42, 30, 24, 45, 14, 14, 18, 24, 22,
+    ]
+    intervention_headers = [
+        "Číslo stromu",
+        "Název stromu",
+        "Taxon",
+        "Kód zásahu",
+        "Název zásahu",
+        "Kategorie",
+        "Popis typu zásahu",
+        "Konkrétní popis",
+        "Naléhavost",
+        "Stav",
+        "Stavová poznámka",
+        "Termín",
+        "Odhad ceny",
+        "Zodpovědná osoba",
+    ]
+    intervention_widths = [18, 20, 24, 14, 28, 20, 40, 40, 30, 24, 35, 16, 18, 24]
+    photo_headers = [
+        "Číslo stromu",
+        "Název stromu",
+        "Taxon",
+        "Název souboru",
+        "Popis fotky",
+        "Datum fotky",
+        "URL fotky",
+    ]
+    photo_widths = [18, 20, 24, 32, 40, 16, 20]
 
     project = get_object_or_404(Project, pk=pk)
 
@@ -1561,29 +1720,155 @@ def export_selected_xlsx(request, pk):
     if redirect_response:
         return redirect_response
 
-    work_records = _build_export_queryset(work_records)
+    export_all_requested = bool(request.POST.get("export_all"))
+    work_records = prepare_tree_export_queryset(work_records)
+    snapshots = [
+        build_tree_export_snapshot(record, project)
+        for record in work_records
+    ]
 
     wb = Workbook()
-    ws = wb.active
-    ws.title = "data"
-    ws.append(EXPORT_HEADERS)
+    overview_ws = wb.active
+    overview_ws.title = "Přehled stromů"
+    interventions_ws = wb.create_sheet("Zásahy")
+    photos_ws = wb.create_sheet("Fotky")
 
-    for record in work_records:
-        assessment = _latest_assessment_for_export(record)
-        shrub_assessment = _latest_shrub_assessment_for_export(record)
-        row = _export_row_native(record, assessment, shrub_assessment)
-        ws.append([excel_safe(item) for item in row])
+    append_safe_row(overview_ws, overview_headers)
+    append_safe_row(interventions_ws, intervention_headers)
+    append_safe_row(photos_ws, photo_headers)
 
-    ws.freeze_panes = "A2"
-    last_row = ws.max_row
-    last_col_letter = get_column_letter(len(EXPORT_HEADERS))
-    ws.auto_filter.ref = f"A1:{last_col_letter}{last_row}"
+    for snapshot in snapshots:
+        assessment = snapshot["assessment"] or {}
+        shrub_assessment = snapshot["shrub_assessment"] or {}
+        shrub_kind = snapshot["vegetation_type"] in (
+            WorkRecord.VegetationType.SHRUB,
+            WorkRecord.VegetationType.HEDGE,
+        )
+        assessed_at = (
+            shrub_assessment.get("assessed_at")
+            if shrub_kind
+            else assessment.get("assessed_at")
+        )
+        height = (
+            shrub_assessment.get("height_m")
+            if shrub_kind
+            else assessment.get("height_m")
+        )
+        width = (
+            shrub_assessment.get("width_m")
+            if shrub_kind
+            else assessment.get("crown_width_m")
+        )
+        vitality = (
+            shrub_assessment.get("vitality_label")
+            if shrub_kind
+            else assessment.get("vitality_label")
+        )
+        append_safe_row(overview_ws, [
+            snapshot["preferred_id_label"],
+            snapshot["taxon"],
+            snapshot["taxon_czech"],
+            snapshot["description"],
+            assessed_at,
+            height,
+            None if shrub_kind else assessment.get("stem_circumference_cm"),
+            None if shrub_kind else assessment.get("dbh_cm"),
+            width,
+            None if shrub_kind else assessment.get("crown_area_m2"),
+            None if shrub_kind else assessment.get("physiological_age_label"),
+            vitality,
+            None if shrub_kind else assessment.get("health_state_label"),
+            None if shrub_kind else assessment.get("stability_label"),
+            None if shrub_kind else assessment.get("perspective_label"),
+            None if shrub_kind else assessment.get("mistletoe_label"),
+            proposed_interventions_summary(snapshot["interventions"]),
+            highest_urgency(snapshot["interventions"]),
+            total_estimated_price(snapshot["interventions"]),
+            intervention_notes_summary(snapshot["interventions"]),
+            snapshot["latitude"],
+            snapshot["longitude"],
+            snapshot["parcel_number"],
+            snapshot["cadastral_area_name"],
+            snapshot["municipality_name"],
+        ])
+
+        for intervention in snapshot["interventions"]:
+            append_safe_row(interventions_ws, [
+                snapshot["preferred_id_label"],
+                snapshot["title"],
+                snapshot["taxon"],
+                intervention["code"],
+                intervention["name"],
+                intervention["category"],
+                intervention["type_description"],
+                intervention["description"],
+                intervention["urgency_label"],
+                intervention["status_label"],
+                intervention["status_note"],
+                intervention["due_date"],
+                intervention["estimated_price_czk"],
+                intervention["assigned_to"],
+            ])
+
+        for photo in snapshot["photos"]:
+            append_safe_row(photos_ws, [
+                snapshot["preferred_id_label"],
+                snapshot["title"],
+                snapshot["taxon"],
+                photo["name"],
+                photo["description"],
+                photo["photo_date"],
+                "Otevřít fotku" if photo["url"] else "",
+            ])
+            if photo["url"]:
+                link_cell = photos_ws.cell(
+                    row=photos_ws.max_row,
+                    column=photo_headers.index("URL fotky") + 1,
+                )
+                link_cell.hyperlink = photo["url"]
+                link_cell.style = "Hyperlink"
+
+    format_sheet(
+        overview_ws,
+        overview_headers,
+        overview_widths,
+        wrap_headers={
+            "Popis / poznámka",
+            "Navržené zásahy",
+            "Poznámka k zásahům",
+        },
+        date_headers={"Datum hodnocení"},
+        currency_headers={"Odhadovaná cena zásahů"},
+    )
+    format_sheet(
+        interventions_ws,
+        intervention_headers,
+        intervention_widths,
+        wrap_headers={
+            "Popis typu zásahu",
+            "Konkrétní popis",
+            "Stavová poznámka",
+        },
+        date_headers={"Termín"},
+        currency_headers={"Odhad ceny"},
+    )
+    format_sheet(
+        photos_ws,
+        photo_headers,
+        photo_widths,
+        wrap_headers={"Popis fotky", "URL fotky"},
+        date_headers={"Datum fotky"},
+    )
 
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
 
-    filename = f"arbomap_project_{project.pk}_data.xlsx"
+    today_str = date.today().strftime("%Y-%m-%d")
+    scope = "cely-projekt" if export_all_requested else "vyber"
+    filename = (
+        f"arbomap_{_slugify_export_name(project.name).lower()}_{today_str}_{scope}.xlsx"
+    )
     response = HttpResponse(
         output.getvalue(),
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
