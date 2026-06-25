@@ -180,6 +180,158 @@ class ChangeConiferInterventionCommandTests(TestCase):
             self.assertIn("estimated_price_czk", row)
 
 
+class ExportProjectTreeCardsDocxCommandTests(TestCase):
+    def setUp(self):
+        self.project = Project.objects.create(name="DOCX projekt")
+        self.other_project = Project.objects.create(name="Jiný projekt")
+        self.intervention_type, _ = InterventionType.objects.update_or_create(
+            code="S-RB",
+            defaults={
+                "name": "Řez bezpečnostní",
+                "category": "Řez stromů",
+            },
+        )
+        self.tree = WorkRecord.objects.create(
+            project=self.project,
+            passport_code="T-0002",
+            taxon_latin="Picea abies",
+            taxon_czech="smrk ztepilý",
+        )
+        self.tree_without_comment = WorkRecord.objects.create(
+            project=self.project,
+            passport_code="T-0003",
+            taxon="Tilia cordata",
+        )
+        self.other_tree = WorkRecord.objects.create(
+            project=self.other_project,
+            passport_code="T-9999",
+            taxon="Pinus sylvestris",
+        )
+        self.project.trees.add(self.tree, self.tree_without_comment)
+        self.other_project.trees.add(self.other_tree)
+
+        TreeIntervention.objects.create(
+            tree=self.tree,
+            intervention_type=self.intervention_type,
+            description="Odstranit suché větve.",
+            status="proposed",
+        )
+        TreeIntervention.objects.create(
+            tree=self.tree,
+            intervention_type=self.intervention_type,
+            description="Odstranit suché větve.",
+            status="completed",
+        )
+        TreeIntervention.objects.create(
+            tree=self.other_tree,
+            intervention_type=self.intervention_type,
+            description="Nemá být exportováno.",
+            status="proposed",
+        )
+
+    def test_command_creates_docx_for_project_trees(self):
+        from docx import Document
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "cards.docx"
+            call_command(
+                "export_project_tree_cards_docx",
+                "--project-id",
+                str(self.project.pk),
+                "--output",
+                str(output_path),
+            )
+
+            self.assertTrue(output_path.exists())
+            document = Document(output_path)
+
+        paragraphs = [paragraph.text for paragraph in document.paragraphs]
+        full_text = "\n".join(paragraphs)
+        self.assertIn("T-0002", full_text)
+        self.assertIn("Taxon: smrk ztepilý (Picea abies)", full_text)
+        self.assertIn("Komentář", full_text)
+        self.assertIn("Řez bezpečnostní: Odstranit suché větve.", full_text)
+        self.assertEqual(full_text.count("Odstranit suché větve."), 1)
+        self.assertIn("T-0003", full_text)
+        self.assertIn("Fotografie není k dispozici", full_text)
+        self.assertNotIn("Komentář není vyplněn", full_text)
+        self.assertNotIn("T-9999", full_text)
+        self.assertNotIn("Nemá být exportováno.", full_text)
+
+    def test_batch_export_creates_numbered_docx_files(self):
+        from docx import Document
+
+        extra_tree = WorkRecord.objects.create(
+            project=self.project,
+            passport_code="T-0004",
+            taxon="Acer platanoides",
+        )
+        self.project.trees.add(extra_tree)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            stdout = io.StringIO()
+            call_command(
+                "export_project_tree_cards_docx",
+                "--project-id",
+                str(self.project.pk),
+                "--output-dir",
+                tmpdir,
+                "--batch-size",
+                "2",
+                stdout=stdout,
+            )
+
+            files = sorted(path.name for path in Path(tmpdir).glob("*.docx"))
+            self.assertEqual(
+                files,
+                [
+                    f"project_{self.project.pk}_stromy_001_002.docx",
+                    f"project_{self.project.pk}_stromy_003_003.docx",
+                ],
+            )
+            first_document = Document(Path(tmpdir) / files[0])
+            second_document = Document(Path(tmpdir) / files[1])
+
+        self.assertIn("Exported 2/3 trees...", stdout.getvalue())
+        self.assertIn("Exported 3/3 trees...", stdout.getvalue())
+        self.assertIn(
+            "T-0002",
+            "\n".join(paragraph.text for paragraph in first_document.paragraphs),
+        )
+        self.assertIn(
+            "T-0004",
+            "\n".join(paragraph.text for paragraph in second_document.paragraphs),
+        )
+
+    def test_image_size_is_limited_by_width_and_height(self):
+        from docx.shared import Cm
+        from PIL import Image
+
+        from tracker.management.commands.export_project_tree_cards_docx import (
+            _batch_filename,
+            _fit_image_size,
+        )
+
+        self.assertEqual(
+            _batch_filename(37, 1, 100),
+            "project_37_stromy_001_100.docx",
+        )
+
+        portrait = io.BytesIO()
+        Image.new("RGB", (800, 2400), "white").save(portrait, format="JPEG")
+        width, height = _fit_image_size(portrait.getvalue(), Cm(9), Cm(9))
+        self.assertLessEqual(int(width), int(Cm(9)))
+        self.assertLessEqual(int(height), int(Cm(9)))
+        self.assertEqual(int(height), int(Cm(9)))
+
+        landscape = io.BytesIO()
+        Image.new("RGB", (2400, 800), "white").save(landscape, format="JPEG")
+        width, height = _fit_image_size(landscape.getvalue(), Cm(9), Cm(9))
+        self.assertLessEqual(int(width), int(Cm(9)))
+        self.assertLessEqual(int(height), int(Cm(9)))
+        self.assertEqual(int(width), int(Cm(9)))
+
+
 class ProjectTreeAddTests(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(

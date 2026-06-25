@@ -25,6 +25,7 @@ local_settings.py
 work_tracker/media/
 /imports/
 work_tracker/imports/
+work_tracker/exports/
 # --- IDE / vývojové nástroje ---
 .vscode/
 .idea/
