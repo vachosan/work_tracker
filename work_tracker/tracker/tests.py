@@ -1,4 +1,6 @@
 import io
+import csv
+import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
@@ -19,6 +21,163 @@ from .models import (
     TreeIntervention,
     WorkRecord,
 )
+
+
+class ChangeConiferInterventionCommandTests(TestCase):
+    def setUp(self):
+        self.project = Project.objects.create(name="Conifer project")
+        self.other_project = Project.objects.create(name="Other project")
+        self.from_type, _ = InterventionType.objects.update_or_create(
+            code="S-RZ",
+            defaults={
+                "name": "Řez zdravotní",
+                "category": "Řez stromů",
+            },
+        )
+        self.to_type, _ = InterventionType.objects.update_or_create(
+            code="S-RB",
+            defaults={
+                "name": "Řez bezpečnostní",
+                "category": "Řez stromů",
+            },
+        )
+
+        self.conifer = WorkRecord.objects.create(
+            project=self.project,
+            passport_code="T-0001",
+            taxon_latin="Picea abies",
+            taxon="Picea abies",
+            taxon_czech="smrk ztepilý",
+        )
+        self.czech_conifer = WorkRecord.objects.create(
+            project=self.project,
+            external_tree_id="EXT-2",
+            taxon_czech="borovice lesní",
+        )
+        self.leaf = WorkRecord.objects.create(
+            project=self.project,
+            passport_code="T-0003",
+            taxon_latin="Tilia cordata",
+            taxon="Tilia cordata",
+            taxon_czech="lípa srdčitá",
+        )
+        self.other_project_conifer = WorkRecord.objects.create(
+            project=self.other_project,
+            passport_code="T-0004",
+            taxon_latin="Pinus sylvestris",
+        )
+        self.completed_conifer = WorkRecord.objects.create(
+            project=self.project,
+            passport_code="T-0005",
+            taxon_latin="Abies alba",
+        )
+
+        self.conifer_intervention = TreeIntervention.objects.create(
+            tree=self.conifer,
+            intervention_type=self.from_type,
+            status="proposed",
+            urgency=1,
+        )
+        self.czech_conifer_intervention = TreeIntervention.objects.create(
+            tree=self.czech_conifer,
+            intervention_type=self.from_type,
+            status="proposed",
+            urgency=1,
+        )
+        self.leaf_intervention = TreeIntervention.objects.create(
+            tree=self.leaf,
+            intervention_type=self.from_type,
+            status="proposed",
+            urgency=1,
+        )
+        self.other_project_intervention = TreeIntervention.objects.create(
+            tree=self.other_project_conifer,
+            intervention_type=self.from_type,
+            status="proposed",
+            urgency=1,
+        )
+        self.completed_intervention = TreeIntervention.objects.create(
+            tree=self.completed_conifer,
+            intervention_type=self.from_type,
+            status="completed",
+            urgency=1,
+        )
+
+    def call_command(self, *extra_args):
+        stdout = io.StringIO()
+        call_command(
+            "change_conifer_intervention",
+            "--project-id",
+            str(self.project.pk),
+            "--from-code",
+            "S-RZ",
+            "--to-code",
+            "S-RB",
+            *extra_args,
+            stdout=stdout,
+        )
+        return stdout.getvalue()
+
+    def assert_type(self, intervention, intervention_type):
+        intervention.refresh_from_db()
+        self.assertEqual(intervention.intervention_type_id, intervention_type.pk)
+
+    def test_dry_run_changes_nothing(self):
+        output = self.call_command("--dry-run")
+
+        self.assertIn("Dry run only", output)
+        for intervention in (
+            self.conifer_intervention,
+            self.czech_conifer_intervention,
+            self.leaf_intervention,
+            self.other_project_intervention,
+            self.completed_intervention,
+        ):
+            self.assert_type(intervention, self.from_type)
+
+    def test_without_confirm_changes_nothing(self):
+        self.call_command()
+
+        self.assert_type(self.conifer_intervention, self.from_type)
+        self.assert_type(self.czech_conifer_intervention, self.from_type)
+
+    def test_confirm_changes_only_project_proposed_conifers(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.call_command("--backup-dir", tmpdir, "--confirm")
+
+        self.assert_type(self.conifer_intervention, self.to_type)
+        self.assert_type(self.czech_conifer_intervention, self.to_type)
+        self.assert_type(self.leaf_intervention, self.from_type)
+        self.assert_type(self.other_project_intervention, self.from_type)
+        self.assert_type(self.completed_intervention, self.from_type)
+
+    def test_include_completed_changes_completed_conifers(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.call_command("--backup-dir", tmpdir, "--confirm", "--include-completed")
+
+        self.assert_type(self.conifer_intervention, self.to_type)
+        self.assert_type(self.completed_intervention, self.to_type)
+
+    def test_confirm_creates_csv_backup(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            self.call_command("--backup-dir", tmpdir, "--confirm")
+            backup_files = list(Path(tmpdir).glob("change_conifer_intervention_project_*.csv"))
+            self.assertEqual(len(backup_files), 1)
+
+            with backup_files[0].open(encoding="utf-8-sig", newline="") as handle:
+                rows = list(csv.DictReader(handle))
+
+        self.assertEqual(len(rows), 2)
+        intervention_ids = {int(row["intervention_id"]) for row in rows}
+        self.assertEqual(
+            intervention_ids,
+            {self.conifer_intervention.pk, self.czech_conifer_intervention.pk},
+        )
+        for row in rows:
+            self.assertEqual(row["project_id"], str(self.project.pk))
+            self.assertEqual(row["old_code"], "S-RZ")
+            self.assertEqual(row["new_code"], "S-RB")
+            self.assertIn("estimated_price_czk", row)
 
 
 class ProjectTreeAddTests(TestCase):
