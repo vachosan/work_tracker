@@ -1398,6 +1398,22 @@ def _access_obstacle_multiplier(level):
     return ACCESS_OBSTACLE_MULTIPLIERS.get(key, 1.00)
 
 
+def _display_without_code(raw_value, display_value):
+    display = str(display_value or "").strip()
+    if raw_value in (None, "") or not display:
+        return display
+
+    raw = str(raw_value).strip()
+    if not raw:
+        return display
+
+    pattern = rf"^{re.escape(raw)}(?:\s*(?:–|-|:)\s*|\s+)(?P<text>.+)$"
+    match = re.match(pattern, display, flags=re.IGNORECASE)
+    if not match:
+        return display
+    return match.group("text").strip()
+
+
 def _interventions_codes(record):
     codes = set()
     for intervention in record.interventions.all():
@@ -1593,8 +1609,8 @@ def export_selected_xlsx(request, pk):
             if intervention["urgency"] is not None
         ]
         if not with_urgency:
-            return ""
-        return min(with_urgency, key=lambda item: item["urgency"])["urgency_label"]
+            return None
+        return min(with_urgency, key=lambda item: item["urgency"])
 
     def total_estimated_price(interventions):
         prices = [
@@ -1645,8 +1661,10 @@ def export_selected_xlsx(request, pk):
         }
         for row in worksheet.iter_rows(min_row=2):
             for cell in row:
-                if cell.column in wrap_columns:
-                    cell.alignment = Alignment(vertical="top", wrap_text=True)
+                cell.alignment = Alignment(
+                    vertical="top",
+                    wrap_text=cell.column in wrap_columns,
+                )
                 if cell.column in date_columns:
                     cell.number_format = "dd.mm.yyyy"
                 elif cell.column in currency_columns:
@@ -1656,7 +1674,6 @@ def export_selected_xlsx(request, pk):
         "Číslo stromu",
         "Taxon",
         "Český název",
-        "Popis / poznámka",
         "Datum hodnocení",
         "Výška [m]",
         "Obvod kmene [cm]",
@@ -1664,13 +1681,22 @@ def export_selected_xlsx(request, pk):
         "Šířka koruny [m]",
         "Plocha koruny [m²]",
         "Fyziologické stáří",
+        "Fyziologické stáří slovně",
         "Vitalita",
+        "Vitalita slovně",
         "Zdravotní stav",
+        "Zdravotní stav slovně",
         "Stabilita",
+        "Stabilita slovně",
+        "Překážka",
+        "Překážka slovně",
         "Perspektiva",
+        "Perspektiva slovně",
         "Jmelí",
+        "Jmelí slovně",
         "Navržené zásahy",
         "Naléhavost zásahu",
+        "Naléhavost zásahu slovně",
         "Odhadovaná cena zásahů",
         "Poznámka k zásahům",
         "GPS šířka",
@@ -1680,8 +1706,9 @@ def export_selected_xlsx(request, pk):
         "Obec",
     ]
     overview_widths = [
-        18, 24, 24, 36, 18, 14, 20, 12, 18, 18, 28, 28, 28, 28, 30, 30,
-        42, 30, 24, 45, 14, 14, 18, 24, 22,
+        18, 24, 24, 18, 14, 20, 12, 18, 18,
+        10, 28, 10, 28, 10, 28, 10, 28, 10, 32, 10, 30, 10, 30,
+        42, 10, 30, 24, 45, 14, 14, 18, 24, 22,
     ]
     intervention_headers = [
         "Číslo stromu",
@@ -1760,29 +1787,68 @@ def export_selected_xlsx(request, pk):
             else assessment.get("crown_width_m")
         )
         vitality = (
+            shrub_assessment.get("vitality")
+            if shrub_kind
+            else assessment.get("vitality")
+        )
+        vitality_label = (
             shrub_assessment.get("vitality_label")
             if shrub_kind
             else assessment.get("vitality_label")
         )
+        highest_urgency_intervention = highest_urgency(snapshot["interventions"])
         append_safe_row(overview_ws, [
             snapshot["preferred_id_label"],
             snapshot["taxon"],
             snapshot["taxon_czech"],
-            snapshot["description"],
             assessed_at,
             height,
             None if shrub_kind else assessment.get("stem_circumference_cm"),
             None if shrub_kind else assessment.get("dbh_cm"),
             width,
             None if shrub_kind else assessment.get("crown_area_m2"),
-            None if shrub_kind else assessment.get("physiological_age_label"),
+            None if shrub_kind else assessment.get("physiological_age"),
+            None if shrub_kind else _display_without_code(
+                assessment.get("physiological_age"),
+                assessment.get("physiological_age_label"),
+            ),
             vitality,
-            None if shrub_kind else assessment.get("health_state_label"),
-            None if shrub_kind else assessment.get("stability_label"),
-            None if shrub_kind else assessment.get("perspective_label"),
-            None if shrub_kind else assessment.get("mistletoe_label"),
+            _display_without_code(vitality, vitality_label),
+            None if shrub_kind else assessment.get("health_state"),
+            None if shrub_kind else _display_without_code(
+                assessment.get("health_state"),
+                assessment.get("health_state_label"),
+            ),
+            None if shrub_kind else assessment.get("stability"),
+            None if shrub_kind else _display_without_code(
+                assessment.get("stability"),
+                assessment.get("stability_label"),
+            ),
+            None if shrub_kind else assessment.get("access_obstacle_level"),
+            None if shrub_kind else _display_without_code(
+                assessment.get("access_obstacle_level"),
+                assessment.get("access_obstacle_label"),
+            ),
+            None if shrub_kind else assessment.get("perspective"),
+            None if shrub_kind else _display_without_code(
+                assessment.get("perspective"),
+                assessment.get("perspective_label"),
+            ),
+            None if shrub_kind else assessment.get("mistletoe_level"),
+            None if shrub_kind else _display_without_code(
+                assessment.get("mistletoe_level"),
+                assessment.get("mistletoe_label"),
+            ),
             proposed_interventions_summary(snapshot["interventions"]),
-            highest_urgency(snapshot["interventions"]),
+            highest_urgency_intervention["urgency"]
+            if highest_urgency_intervention
+            else None,
+            _display_without_code(
+                highest_urgency_intervention["urgency"],
+                highest_urgency_intervention["urgency_label"],
+            )
+            if highest_urgency_intervention
+            else "",
             total_estimated_price(snapshot["interventions"]),
             intervention_notes_summary(snapshot["interventions"]),
             snapshot["latitude"],
@@ -1833,8 +1899,15 @@ def export_selected_xlsx(request, pk):
         overview_headers,
         overview_widths,
         wrap_headers={
-            "Popis / poznámka",
+            "Fyziologické stáří slovně",
+            "Vitalita slovně",
+            "Zdravotní stav slovně",
+            "Stabilita slovně",
+            "Překážka slovně",
+            "Perspektiva slovně",
+            "Jmelí slovně",
             "Navržené zásahy",
+            "Naléhavost zásahu slovně",
             "Poznámka k zásahům",
         },
         date_headers={"Datum hodnocení"},

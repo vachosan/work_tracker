@@ -42,16 +42,21 @@ def _comment_paragraphs(tree):
     seen = set()
     for intervention in getattr(tree, "export_interventions", []):
         comment = (intervention.description or "").strip()
-        if not comment:
+        label = _intervention_label(intervention).strip()
+        if not label and not comment:
             continue
-        normalized = re.sub(r"\s+", " ", comment).casefold()
+
+        normalized_label = re.sub(r"\s+", " ", label).casefold()
+        normalized_comment = re.sub(r"\s+", " ", comment).casefold()
+        normalized = (normalized_label, normalized_comment)
         if normalized in seen:
             continue
         seen.add(normalized)
 
-        label = _intervention_label(intervention)
-        if label:
+        if label and comment:
             comments.append(f"{label}: {comment}")
+        elif label:
+            comments.append(label)
         else:
             comments.append(comment)
     return comments

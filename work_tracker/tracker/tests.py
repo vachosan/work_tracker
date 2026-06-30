@@ -223,6 +223,12 @@ class ExportProjectTreeCardsDocxCommandTests(TestCase):
             status="completed",
         )
         TreeIntervention.objects.create(
+            tree=self.tree_without_comment,
+            intervention_type=self.intervention_type,
+            description="",
+            status="proposed",
+        )
+        TreeIntervention.objects.create(
             tree=self.other_tree,
             intervention_type=self.intervention_type,
             description="Nemá být exportováno.",
@@ -253,6 +259,13 @@ class ExportProjectTreeCardsDocxCommandTests(TestCase):
         self.assertIn("Řez bezpečnostní: Odstranit suché větve.", full_text)
         self.assertEqual(full_text.count("Odstranit suché větve."), 1)
         self.assertIn("T-0003", full_text)
+        self.assertIn("Řez bezpečnostní", full_text)
+        self.assertNotIn("Řez bezpečnostní:", "\n".join(
+            paragraph.text
+            for paragraph in document.paragraphs[
+                paragraphs.index("T-0003"):
+            ]
+        ))
         self.assertIn("Fotografie není k dispozici", full_text)
         self.assertNotIn("Komentář není vyplněn", full_text)
         self.assertNotIn("T-9999", full_text)
@@ -424,6 +437,26 @@ class ProjectTreeListSmokeTests(TestCase):
 
 
 class ProjectXlsxExportTests(TestCase):
+    def test_display_without_code_strips_only_matching_prefix(self):
+        from tracker.views import _display_without_code
+
+        self.assertEqual(
+            _display_without_code(3, "3 – výrazně snížená"),
+            "výrazně snížená",
+        )
+        self.assertEqual(
+            _display_without_code("a", "a – dlouhodobě perspektivní"),
+            "dlouhodobě perspektivní",
+        )
+        self.assertEqual(
+            _display_without_code(1, "1 Pomístní překážky"),
+            "Pomístní překážky",
+        )
+        self.assertEqual(
+            _display_without_code(1, "Pomístní překážky"),
+            "Pomístní překážky",
+        )
+
     def setUp(self):
         self.user = get_user_model().objects.create_user(
             username="xlsx-user", password="pass1234"
@@ -455,6 +488,7 @@ class ProjectXlsxExportTests(TestCase):
             work_record=self.first_tree,
             vitality=2,
             stability=1,
+            access_obstacle_level=1,
         )
         intervention_type = InterventionType.objects.create(
             code="RZ",
@@ -555,7 +589,6 @@ class ProjectXlsxExportTests(TestCase):
                 "Číslo stromu",
                 "Taxon",
                 "Český název",
-                "Popis / poznámka",
                 "Datum hodnocení",
                 "Výška [m]",
                 "Obvod kmene [cm]",
@@ -563,13 +596,22 @@ class ProjectXlsxExportTests(TestCase):
                 "Šířka koruny [m]",
                 "Plocha koruny [m²]",
                 "Fyziologické stáří",
+                "Fyziologické stáří slovně",
                 "Vitalita",
+                "Vitalita slovně",
                 "Zdravotní stav",
+                "Zdravotní stav slovně",
                 "Stabilita",
+                "Stabilita slovně",
+                "Překážka",
+                "Překážka slovně",
                 "Perspektiva",
+                "Perspektiva slovně",
                 "Jmelí",
+                "Jmelí slovně",
                 "Navržené zásahy",
                 "Naléhavost zásahu",
+                "Naléhavost zásahu slovně",
                 "Odhadovaná cena zásahů",
                 "Poznámka k zásahům",
                 "GPS šířka",
@@ -584,8 +626,11 @@ class ProjectXlsxExportTests(TestCase):
         self.assertNotIn("Latinský název", headers)
         self.assertIn("Taxon", headers)
         self.assertIn("Naléhavost zásahu", headers)
+        self.assertIn("Naléhavost zásahu slovně", headers)
         self.assertIn("Odhadovaná cena zásahů", headers)
         self.assertIn("Poznámka k zásahům", headers)
+        self.assertIn("Překážka", headers)
+        self.assertIn("Překážka slovně", headers)
         self.assertNotIn("Počet fotek", headers)
         self.assertNotIn("Stav zásahů", headers)
         self.assertEqual(
@@ -594,21 +639,36 @@ class ProjectXlsxExportTests(TestCase):
         )
         rows = self._rows_by_header(worksheet, "Číslo stromu")
         self.assertEqual(set(rows), {"T-001", "T-002"})
-        self.assertEqual(rows["T-001"]["Popis / poznámka"], "Běžný popis")
-        self.assertIn("RZ – Redukční řez", rows["T-001"]["Navržené zásahy"])
+        self.assertEqual(rows["T-001"]["Vitalita"], 2)
+        self.assertEqual(rows["T-001"]["Vitalita slovně"], "zřetelně snížená")
+        self.assertEqual(rows["T-001"]["Stabilita"], 1)
         self.assertEqual(
-            rows["T-001"]["Naléhavost zásahu"],
-            self.urgent_intervention.get_urgency_display(),
+            rows["T-001"]["Stabilita slovně"],
+            "výborná až dobrá (nenarušená)",
+        )
+        self.assertEqual(rows["T-001"]["Překážka"], 1)
+        self.assertEqual(rows["T-001"]["Překážka slovně"], "Pomístní překážky")
+        self.assertIn("RZ – Redukční řez", rows["T-001"]["Navržené zásahy"])
+        self.assertEqual(rows["T-001"]["Naléhavost zásahu"], 0)
+        self.assertEqual(
+            rows["T-001"]["Naléhavost zásahu slovně"],
+            "okamžitě, riziko z prodlení",
         )
         self.assertEqual(rows["T-001"]["Odhadovaná cena zásahů"], 2000)
         self.assertEqual(
             rows["T-001"]["Poznámka k zásahům"],
             "Odstranit suché větve; Nutná kontrola",
         )
-        self.assertIn("zřetelně snížená", rows["T-001"]["Vitalita"])
         self.assertEqual(worksheet.freeze_panes, "A2")
         self.assertTrue(worksheet.auto_filter.ref)
         self.assertTrue(all(cell.font.bold for cell in worksheet[1]))
+        self.assertTrue(
+            all(
+                cell.alignment.vertical == "top"
+                for row in worksheet.iter_rows(min_row=2)
+                for cell in row
+            )
+        )
 
     def test_intervention_and_photo_are_exported_to_detail_sheets(self):
         self.client.force_login(self.user)
@@ -708,8 +768,8 @@ class ProjectXlsxExportTests(TestCase):
         self.assertIsNone(overview_row["Datum hodnocení"])
 
     def test_formula_like_user_text_is_exported_as_text(self):
-        self.first_tree.description = "=2+2"
-        self.first_tree.save(update_fields=["description"])
+        self.first_tree.taxon = "=2+2"
+        self.first_tree.save(update_fields=["taxon"])
         self.client.force_login(self.user)
 
         response = self.client.post(
@@ -719,12 +779,12 @@ class ProjectXlsxExportTests(TestCase):
 
         worksheet = self._workbook(response)["Přehled stromů"]
         headers = [cell.value for cell in worksheet[1]]
-        description_cell = worksheet.cell(
+        taxon_cell = worksheet.cell(
             row=2,
-            column=headers.index("Popis / poznámka") + 1,
+            column=headers.index("Taxon") + 1,
         )
-        self.assertEqual(description_cell.value, "'=2+2")
-        self.assertEqual(description_cell.data_type, "s")
+        self.assertEqual(taxon_cell.value, "'=2+2")
+        self.assertEqual(taxon_cell.data_type, "s")
 
 
 class WorkrecordsGeojsonTests(TestCase):
