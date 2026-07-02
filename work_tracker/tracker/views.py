@@ -9,7 +9,7 @@ import re
 import tempfile
 import logging
 import math
-from collections import defaultdict
+from collections import Counter, defaultdict
 from urllib.parse import urlencode
 import zipstream
 import json
@@ -1507,6 +1507,48 @@ def _export_row_native(record, assessment, shrub_assessment):
     ]
 
 
+def _split_interventions_for_summary(value):
+    if not value:
+        return []
+
+    parts = re.split(r"[,;\n|]+", str(value))
+    return [
+        part.strip()
+        for part in parts
+        if part and part.strip()
+    ]
+
+
+def _add_summary_sheet(wb, export_rows, format_sheet, *, index=None):
+    intervention_counts = Counter()
+
+    for row in export_rows:
+        interventions_value = (
+            row.get("Navržené zásahy")
+            or row.get("Zásahy")
+            or row.get("Navržený zásah")
+        )
+        if not interventions_value:
+            continue
+
+        interventions = _split_interventions_for_summary(interventions_value)
+        for intervention in set(interventions):
+            intervention_counts[intervention] += 1
+
+    ws = wb.create_sheet("Souhrn", index)
+    headers = ["Navržený zásah", "Počet stromů"]
+    ws.append(headers)
+
+    for intervention, count in sorted(
+        intervention_counts.items(),
+        key=lambda item: (-item[1], item[0].lower()),
+    ):
+        ws.append([intervention, count])
+
+    format_sheet(ws, headers, [45, 15])
+    return ws
+
+
 
 
 @login_required
@@ -1764,6 +1806,8 @@ def export_selected_xlsx(request, pk):
     append_safe_row(interventions_ws, intervention_headers)
     append_safe_row(photos_ws, photo_headers)
 
+    export_rows = []
+
     for snapshot in snapshots:
         assessment = snapshot["assessment"] or {}
         shrub_assessment = snapshot["shrub_assessment"] or {}
@@ -1797,7 +1841,7 @@ def export_selected_xlsx(request, pk):
             else assessment.get("vitality_label")
         )
         highest_urgency_intervention = highest_urgency(snapshot["interventions"])
-        append_safe_row(overview_ws, [
+        overview_row = dict(zip(overview_headers, [
             snapshot["preferred_id_label"],
             snapshot["taxon"],
             snapshot["taxon_czech"],
@@ -1856,7 +1900,12 @@ def export_selected_xlsx(request, pk):
             snapshot["parcel_number"],
             snapshot["cadastral_area_name"],
             snapshot["municipality_name"],
-        ])
+        ]))
+        export_rows.append(overview_row)
+        append_safe_row(
+            overview_ws,
+            [overview_row[header] for header in overview_headers],
+        )
 
         for intervention in snapshot["interventions"]:
             append_safe_row(interventions_ws, [
@@ -1894,6 +1943,7 @@ def export_selected_xlsx(request, pk):
                 link_cell.hyperlink = photo["url"]
                 link_cell.style = "Hyperlink"
 
+    _add_summary_sheet(wb, export_rows, format_sheet, index=1)
     format_sheet(
         overview_ws,
         overview_headers,

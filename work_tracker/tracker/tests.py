@@ -578,7 +578,7 @@ class ProjectXlsxExportTests(TestCase):
         workbook = self._workbook(response)
         self.assertEqual(
             workbook.sheetnames,
-            ["Přehled stromů", "Zásahy", "Fotky"],
+            ["Přehled stromů", "Souhrn", "Zásahy", "Fotky"],
         )
         self.assertNotIn("Technická data", workbook.sheetnames)
         worksheet = workbook["Přehled stromů"]
@@ -670,6 +670,41 @@ class ProjectXlsxExportTests(TestCase):
             )
         )
 
+    def test_summary_sheet_counts_each_intervention_once_per_tree(self):
+        TreeIntervention.objects.create(
+            tree=self.first_tree,
+            intervention_type=self.first_intervention.intervention_type,
+            description="Duplicitní řez",
+            urgency=2,
+            status="proposed",
+        )
+        self.client.force_login(self.user)
+
+        workbook = self._workbook(
+            self.client.post(self.url, {"export_all": "1"})
+        )
+        worksheet = workbook["Souhrn"]
+
+        self.assertEqual(
+            [cell.value for cell in worksheet[1]],
+            ["Navržený zásah", "Počet stromů"],
+        )
+        self.assertEqual(worksheet.freeze_panes, "A2")
+        self.assertEqual(worksheet.auto_filter.ref, "A1:B3")
+        self.assertTrue(all(cell.font.bold for cell in worksheet[1]))
+        self.assertEqual(worksheet.column_dimensions["A"].width, 45)
+        self.assertEqual(worksheet.column_dimensions["B"].width, 15)
+        self.assertEqual(
+            [
+                (row[0].value, row[1].value)
+                for row in worksheet.iter_rows(min_row=2)
+            ],
+            [
+                ("RZ – Redukční řez", 2),
+                ("KONT – Bezpečnostní kontrola", 1),
+            ],
+        )
+
     def test_intervention_and_photo_are_exported_to_detail_sheets(self):
         self.client.force_login(self.user)
 
@@ -739,6 +774,11 @@ class ProjectXlsxExportTests(TestCase):
         for sheet_name, key_header in sheet_keys.items():
             rows = self._rows_by_header(workbook[sheet_name], key_header)
             self.assertEqual(set(rows), {"T-001"}, sheet_name)
+        summary_rows = self._rows_by_header(workbook["Souhrn"], "Navržený zásah")
+        self.assertEqual(
+            set(summary_rows),
+            {"KONT – Bezpečnostní kontrola", "RZ – Redukční řez"},
+        )
 
     def test_user_without_project_access_does_not_receive_workbook(self):
         self.client.force_login(self.outsider)
