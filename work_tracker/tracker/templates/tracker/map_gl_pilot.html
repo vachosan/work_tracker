@@ -1547,6 +1547,26 @@
     // Layer name verified in GetCapabilities: https://services.cuzk.gov.cz/wms/wms.asp?service=WMS&request=GetCapabilities
     const CUZK_KATASTR_LAYER_NAME = 'KN';
     const CUZK_KATASTR_OPACITY = 0.6;
+    const ORTHOPHOTO_LAYER_IDS = ['cuzk-ortho'];
+    const CADASTRE_LAYER_IDS = ['cuzk-katastr'];
+    const MAP_LAYER_MODES = {
+      combined: {
+        label: 'Ortofoto + katastr',
+        orthophoto: true,
+        cadastre: true,
+      },
+      orthophoto: {
+        label: 'Ortofoto',
+        orthophoto: true,
+        cadastre: false,
+      },
+      cadastre: {
+        label: 'Katastr',
+        orthophoto: false,
+        cadastre: true,
+      },
+    };
+    let currentMapLayerMode = 'orthophoto';
     const CUZK_DMP_SOURCE_ID = 'cuzk-dmp';
     const CUZK_DMP_LAYER_ID = 'cuzk-dmp-overlay';
     const CUZK_DMP_OPACITY = 0.3;
@@ -1629,7 +1649,7 @@
     };
 
     const streetNamesCheckbox = document.getElementById('streetNamesCheckbox');
-    const katastrCheckbox = document.getElementById('katastrCheckbox');
+    const mapLayerModeSelect = document.getElementById('mapLayerModeSelect');
     const dmpOverlayCheckbox = document.getElementById('dmpOverlayCheckbox');
     const dmpOpacityControl = document.getElementById('dmpOpacityControl');
     const dmpOpacitySlider = document.getElementById('dmpOpacitySlider');
@@ -1843,6 +1863,21 @@
     const setLayerVisibility = (layerId, visible) => {
       if (!map.getLayer(layerId)) return;
       map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+    };
+    const setLayersVisibility = (layerIds, visible) => {
+      layerIds.forEach((layerId) => {
+        setLayerVisibility(layerId, visible);
+      });
+    };
+    const applyMapLayerMode = (mode) => {
+      const normalizedMode = MAP_LAYER_MODES[mode] ? mode : currentMapLayerMode;
+      const selectedMode = MAP_LAYER_MODES[normalizedMode] || MAP_LAYER_MODES.orthophoto;
+      setLayersVisibility(ORTHOPHOTO_LAYER_IDS, selectedMode.orthophoto);
+      setLayersVisibility(CADASTRE_LAYER_IDS, selectedMode.cadastre);
+      currentMapLayerMode = MAP_LAYER_MODES[normalizedMode] ? normalizedMode : 'orthophoto';
+      if (mapLayerModeSelect && mapLayerModeSelect.value !== currentMapLayerMode) {
+        mapLayerModeSelect.value = currentMapLayerMode;
+      }
     };
     const normalizeVegetationType = (value) => value || 'TREE';
     const isVegetationVisible = (value) => enabledVegetationTypes.has(normalizeVegetationType(value));
@@ -2340,13 +2375,11 @@
       if (streetNamesCheckbox) {
         streetNamesCheckbox.addEventListener('change', applyStreetNamesVisibility);
       }
-      const applyKatastrVisibility = () => {
-        const visible = katastrCheckbox && katastrCheckbox.checked;
-        setLayerVisibility('cuzk-katastr', visible);
-      };
-      applyKatastrVisibility();
-      if (katastrCheckbox) {
-        katastrCheckbox.addEventListener('change', applyKatastrVisibility);
+      applyMapLayerMode(mapLayerModeSelect ? mapLayerModeSelect.value : currentMapLayerMode);
+      if (mapLayerModeSelect) {
+        mapLayerModeSelect.addEventListener('change', () => {
+          applyMapLayerMode(mapLayerModeSelect.value);
+        });
       }
       const getDmpOpacity = () => {
         const raw = dmpOpacitySlider ? Number(dmpOpacitySlider.value) : CUZK_DMP_OPACITY * 100;

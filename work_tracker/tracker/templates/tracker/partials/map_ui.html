@@ -314,11 +314,15 @@
 <div id="mapControlsPanel" class="map-controls-panel" aria-hidden="true">
   <div class="map-controls-body">
     <div class="d-flex flex-column gap-2">
-      <div class="form-check">
-        <input class="form-check-input" type="checkbox" id="katastrCheckbox">
-        <label class="form-check-label small" for="katastrCheckbox">
-          Katastr
+      <div>
+        <label class="form-label small mb-1" for="mapLayerModeSelect">
+          Podklad mapy
         </label>
+        <select class="form-select form-select-sm" id="mapLayerModeSelect">
+          <option value="combined">Ortofoto + katastr</option>
+          <option value="orthophoto" selected>Ortofoto</option>
+          <option value="cadastre">Katastr</option>
+        </select>
       </div>
       <div class="form-check">
         <input class="form-check-input" type="checkbox" id="dmpOverlayCheckbox">
